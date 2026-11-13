@@ -957,7 +957,7 @@ function AgentTerminalPane(props: {
                         props.task.codexChatHandoff
                       ) {
                         const threadId =
-                          code.exit_code === 0 && (!code.signal || code.signal === '0')
+                          code.exit_code === 0 && !code.signal
                             ? codexResumeId(code.last_output.join('\n'))
                             : undefined;
                         // /new and /model in the CLI may change the session or its settings.

@@ -748,7 +748,9 @@ function attachPtyOutputHandlers(
       type: 'Exit',
       data: {
         exit_code: exitCode,
-        signal: signal !== undefined ? String(signal) : null,
+        // node-pty reports signal 0 for a normal exit on Unix; only a real
+        // signal number is one, or the renderer reads a clean exit as killed.
+        signal: signal ? String(signal) : null,
         last_output: lines,
       },
     });
