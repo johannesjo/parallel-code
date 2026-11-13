@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { reconcile } from 'solid-js/store';
 import { KanbanPage } from './KanbanPage';
+import { invoke } from '../lib/ipc';
 import { setBoardQuery } from './BoardSearch';
 import { setStore, store } from '../store/core';
 import { getTaskAttentionState } from '../store/taskStatus';
@@ -21,6 +22,8 @@ vi.mock('../lib/ipc', () => ({
     return undefined;
   }),
 }));
+const windowState = vi.hoisted(() => ({ visible: true }));
+vi.mock('../lib/windowVisibility', () => ({ isWindowVisible: () => windowState.visible }));
 vi.mock('../store/core', async () => {
   const { createStore } = await import('solid-js/store');
   const [store, setStore] = createStore({
@@ -188,6 +191,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  windowState.visible = true;
   dispose?.();
   dispose = undefined;
   host.remove();
@@ -195,6 +199,26 @@ afterEach(() => {
 });
 
 describe('KanbanPage', () => {
+  it('stops re-reading KANBAN.md while the window is hidden', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      await mount();
+      const reads = () =>
+        vi.mocked(invoke).mock.calls.filter(([channel]) => channel === 'read_kanban_board').length;
+      const before = reads();
+      vi.advanceTimersByTime(1500);
+      expect(reads()).toBe(before + 1);
+      windowState.visible = false;
+      vi.advanceTimersByTime(1500 * 3);
+      expect(reads()).toBe(before + 1);
+      windowState.visible = true;
+      vi.advanceTimersByTime(1500);
+      expect(reads()).toBe(before + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows the columns and cards of KANBAN.md, with Archive collapsed', async () => {
     await mount();
     expect(columnNames()).toEqual(['Backlog', 'In progress', 'Done']);

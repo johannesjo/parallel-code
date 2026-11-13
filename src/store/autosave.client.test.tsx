@@ -10,6 +10,7 @@ import { createAgentRecord, setTaskPromptDraft } from './tasks';
 import { restartAgent } from './agents';
 import { clearAgentActivity } from './taskStatus';
 import { setTaskReasoningWorkspace } from './canvas';
+import { setPanelUserSize, deletePanelUserSize } from './ui';
 import { emptyWorkspace, updateDraft } from '../investigation/editing';
 
 const { mockSaveState } = vi.hoisted(() => ({ mockSaveState: vi.fn(async () => {}) }));
@@ -303,6 +304,46 @@ describe('setupAutosave scheduling', () => {
       setStore(
         produce((state) => {
           delete state.tasks['switch-autosave'];
+        }),
+      );
+    }
+  });
+
+  it('saves panel resizes without re-serializing large task data', () => {
+    const id = 'resize-autosave';
+    const previousOrder = [...store.taskOrder];
+    const bigText = 'x'.repeat(100_000);
+    setStore('tasks', id, {
+      id,
+      name: 'Resize',
+      projectId: 'p1',
+      worktreePath: '/resize',
+      branchName: '',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+      promptHistory: [{ text: bigText, sentAt: 1 }],
+    });
+    setStore('taskOrder', [...previousOrder, id]);
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      withAutosave(() => {
+        stringify.mockClear();
+        // A divider drag writes the size on every mousemove.
+        for (const px of [200, 201, 202]) setPanelUserSize('resize-autosave:panel', px);
+        const serialized = stringify.mock.results.map((r) => String(r.value));
+        expect(serialized.every((s) => s.length < bigText.length)).toBe(true);
+        vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+        expect(mockSaveState).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      stringify.mockRestore();
+      deletePanelUserSize(['resize-autosave:panel']);
+      setStore('taskOrder', previousOrder);
+      setStore(
+        produce((state) => {
+          delete state.tasks['resize-autosave'];
         }),
       );
     }

@@ -41,6 +41,9 @@ import { createChangeTour, type ChangeTourController } from '../lib/create-chang
 import type { TourLocation } from '../lib/change-tour';
 import { store, updateTaskNotes } from '../store/store';
 
+/** Pause after the last keystroke before the diff search re-highlights. */
+const SEARCH_DEBOUNCE_MS = 150;
+
 interface DiffViewerDialogProps {
   tour?: ChangeTourController;
   startTour?: boolean;
@@ -169,7 +172,18 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
   const [parsedFiles, setParsedFiles] = createSignal<FileDiff[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
+  // The box echoes each keystroke; the query that highlights every rendered
+  // diff line (an innerHTML rewrite per line) waits for typing to pause.
+  const [searchInput, setSearchInput] = createSignal('');
   const [searchQuery, setSearchQuery] = createSignal('');
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const updateSearch = (value: string, delay = SEARCH_DEBOUNCE_MS) => {
+    setSearchInput(value);
+    clearTimeout(searchTimer);
+    if (delay === 0) setSearchQuery(value);
+    else searchTimer = setTimeout(() => setSearchQuery(value), delay);
+  };
+  onCleanup(() => clearTimeout(searchTimer));
   const [activeFilePath, setActiveFilePath] = createSignal<string | null>(null);
   const [tourOpen, setTourOpen] = createSignal(false);
   const [showAllChanges, setShowAllChanges] = createSignal(false);
@@ -265,7 +279,7 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
     });
 
     review.beginDiffLoad();
-    setSearchQuery('');
+    updateSearch('', 0);
     setShowAllChanges(false);
     setLoading(true);
     setError('');
@@ -448,8 +462,8 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
           ref={searchInputRef}
           type="text"
           placeholder="Search..."
-          value={searchQuery()}
-          onInput={(e) => setSearchQuery(e.currentTarget.value)}
+          value={searchInput()}
+          onInput={(e) => updateSearch(e.currentTarget.value)}
           style={{
             background: 'color-mix(in srgb, var(--fg) 6%, transparent)',
             border: `1px solid ${theme.borderSubtle}`,

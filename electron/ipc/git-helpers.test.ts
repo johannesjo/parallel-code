@@ -5,7 +5,12 @@ import path from 'path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { changedFilesFromMaps, countReadableTextLines, ensureSymlinkExcludes } from './git.js';
+import {
+  changedFilesFromMaps,
+  countReadableTextLines,
+  detectRepoGitPaths,
+  ensureSymlinkExcludes,
+} from './git.js';
 import { appendGitInfoExcludeBlock, resolveGitInfoExcludePath } from './git-exclude.js';
 
 const tempDirs: string[] = [];
@@ -160,6 +165,20 @@ describe('git exclude helpers', () => {
       expect(git(worktreePath, ['status', '--short', '--untracked-files=all'])).not.toContain(
         'probe',
       );
+    }));
+
+  it('resolves a linked worktree to its main repo root and shared exclude file', () =>
+    withoutInheritedGitContext(() => {
+      const root = initRepository();
+      const worktreePath = path.join(tempDir(), 'task');
+      git(root, ['worktree', 'add', '-b', 'task', worktreePath]);
+      const realRoot = fs.realpathSync(root);
+
+      expect(detectRepoGitPaths(worktreePath)).toEqual({
+        repoRoot: realRoot,
+        excludePath: path.join(realRoot, '.git', 'info', 'exclude'),
+      });
+      expect(detectRepoGitPaths(tempDir())).toBeNull();
     }));
 
   it('appends an idempotent block with newline padding', () =>

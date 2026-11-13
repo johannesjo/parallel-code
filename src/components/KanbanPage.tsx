@@ -86,6 +86,7 @@ import {
 import { openFileInEditor } from '../lib/shell';
 import { isMac } from '../lib/platform';
 import { errMessage } from '../lib/log';
+import { isWindowVisible } from '../lib/windowVisibility';
 import type { Project } from '../store/types';
 import './github-issues.css';
 import './kanban.css';
@@ -444,6 +445,8 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
       if (columnsRef) columnsRef.scrollLeft = session.scrollLeft;
     });
     const timer = setInterval(() => {
+      // Hidden, nobody sees the board; the next tick after showing catches up.
+      if (!isWindowVisible()) return;
       if (writing || editing() || dragging() || renaming() !== null || adding() !== null) return;
       void reload();
     }, POLL_MS);

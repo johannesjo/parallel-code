@@ -8,8 +8,8 @@ import path from 'path';
 import { exec, execFileSync, MAX_BUFFER } from './git-exec.js';
 import { detectRepoLockKey, findLocalBranchPrefixConflict } from './git-diff-base.js';
 import {
-  appendGitInfoExcludeBlock,
   appendGitInfoExcludeBlockAtPath,
+  gitInfoExcludePath,
   normalizeExcludeLine,
   resolveGitInfoExcludePath,
 } from './git-exclude.js';
@@ -526,8 +526,14 @@ async function seedClaudeSandboxFiles(
  * the repo root or any worktree — both resolve to the shared exclude file.
  */
 export function ensureWorktreeContainerExclude(pathInRepo: string): void {
-  appendGitInfoExcludeBlock(
-    pathInRepo,
+  const excludePath = resolveGitInfoExcludePath(pathInRepo);
+  if (excludePath) ensureWorktreeContainerExcludeAt(excludePath);
+}
+
+/** `ensureWorktreeContainerExclude` for a caller that already resolved the exclude file. */
+export function ensureWorktreeContainerExcludeAt(excludePath: string): void {
+  appendGitInfoExcludeBlockAtPath(
+    excludePath,
     WORKTREE_CONTAINER_EXCLUDE,
     `${WORKTREE_CONTAINER_EXCLUDE_HEADER}\n${WORKTREE_CONTAINER_EXCLUDE}\n`,
     (err) => console.warn(`Failed to git-exclude ${WORKTREE_CONTAINER_EXCLUDE}:`, err),
@@ -544,7 +550,12 @@ export function ensureWorktreeContainerExclude(pathInRepo: string): void {
  */
 export function ensureSandboxExcludes(worktreePath: string): void {
   const excludePath = resolveGitInfoExcludePath(worktreePath, execFileSync);
-  if (!excludePath || seededSandboxExcludes.has(excludePath)) return;
+  if (excludePath) ensureSandboxExcludesAt(excludePath);
+}
+
+/** `ensureSandboxExcludes` for a caller that already resolved the exclude file. */
+export function ensureSandboxExcludesAt(excludePath: string): void {
+  if (seededSandboxExcludes.has(excludePath)) return;
   const result = appendGitInfoExcludeBlockAtPath(
     excludePath,
     SANDBOX_EXCLUDE_HEADER,
@@ -618,14 +629,26 @@ export function ensureSymlinkExcludes(worktreePath: string, symlinkNames: string
  * --git-common-dir`. Returns null when the cwd isn't inside a git repo.
  */
 export function detectRepoRoot(worktreePath: string): string | null {
+  return detectRepoGitPaths(worktreePath)?.repoRoot ?? null;
+}
+
+/**
+ * The main repository root and the shared `.git/info/exclude` file from one
+ * `git rev-parse --git-common-dir`. Agent spawn needs both, and each sync
+ * subprocess blocks the main thread that pumps every PTY.
+ */
+export function detectRepoGitPaths(
+  worktreePath: string,
+): { repoRoot: string; excludePath: string } | null {
   try {
     const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
       cwd: worktreePath,
       encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 3000,
     }).trim();
-    const abs = path.isAbsolute(out) ? out : path.join(worktreePath, out);
-    return path.dirname(abs);
+    const commonDir = path.isAbsolute(out) ? out : path.join(worktreePath, out);
+    return { repoRoot: path.dirname(commonDir), excludePath: gitInfoExcludePath(commonDir) };
   } catch {
     return null;
   }

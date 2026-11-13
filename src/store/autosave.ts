@@ -23,7 +23,6 @@ function structuralSnapshot(): string {
     taskOrder: store.taskOrder,
     collapsedTaskOrder: store.collapsedTaskOrder,
     sidebarVisible: store.sidebarVisible,
-    panelUserSize: store.panelUserSize,
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
     completedTaskCount: store.completedTaskCount,
@@ -168,9 +167,15 @@ function activeTaskSnapshot(): string {
   return JSON.stringify(store.activeTaskId);
 }
 
+/** Divider drags write a size on every mousemove; tracked apart from the
+ *  structural snapshot so a drag doesn't re-serialize every task. */
+function panelSizeSnapshot(): string {
+  return JSON.stringify(store.panelUserSize);
+}
+
 /** Snapshot string of all persisted fields; changes whenever a save is due. */
 export function persistedSnapshot(): string {
-  return structuralSnapshot() + typedTextSnapshot() + activeTaskSnapshot();
+  return structuralSnapshot() + typedTextSnapshot() + activeTaskSnapshot() + panelSizeSnapshot();
 }
 
 /** Quiet period after the last change before a save is written. */
@@ -217,4 +222,5 @@ export function setupAutosave(): void {
   watch(structuralSnapshot);
   watch(typedTextSnapshot);
   watch(activeTaskSnapshot);
+  watch(panelSizeSnapshot);
 }

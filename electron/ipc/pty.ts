@@ -16,10 +16,10 @@ import type { Notify } from './notify.js';
 import { RingBuffer } from '../remote/ring-buffer.js';
 import { resolveUserShell } from '../user-shell.js';
 import {
-  detectRepoRoot,
+  detectRepoGitPaths,
   ensureClaudeSandboxFiles,
-  ensureSandboxExcludes,
-  ensureWorktreeContainerExclude,
+  ensureSandboxExcludesAt,
+  ensureWorktreeContainerExcludeAt,
   refreshWorktreeNodeModules,
 } from './git.js';
 import { loadEnvFile } from './env-file.js';
@@ -899,12 +899,15 @@ export async function spawnAgent(
   // Backfill sandbox placeholders for pre-existing worktrees (and anywhere
   // Claude Code may launch). See ensureClaudeSandboxFiles for the why.
   if (!args.dockerMode && fs.existsSync(cwd)) {
-    // Resolve the repo root once — each helper would otherwise spawn its own
-    // `git rev-parse` subprocess.
-    const repoRoot = detectRepoRoot(cwd);
+    // Resolve the repo root and exclude file once — each helper would
+    // otherwise spawn its own sync `git rev-parse` subprocess.
+    const gitPaths = detectRepoGitPaths(cwd);
+    const repoRoot = gitPaths?.repoRoot ?? null;
     await whilePending(args.agentId, () => ensureClaudeSandboxFiles(cwd, repoRoot));
-    ensureSandboxExcludes(cwd);
-    ensureWorktreeContainerExclude(cwd);
+    if (gitPaths) {
+      ensureSandboxExcludesAt(gitPaths.excludePath);
+      ensureWorktreeContainerExcludeAt(gitPaths.excludePath);
+    }
     // Migrate legacy whole-dir node_modules symlinks and pick up packages
     // installed in the main checkout since worktree creation.
     refreshWorktreeNodeModules(cwd, repoRoot);
