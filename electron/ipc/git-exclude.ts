@@ -21,6 +21,11 @@ export function normalizeExcludeLine(line: string): string {
   return noCr;
 }
 
+/** The exclude file Git reads for a common git dir (shared by all its worktrees). */
+export function gitInfoExcludePath(commonDir: string): string {
+  return path.join(commonDir, 'info', 'exclude');
+}
+
 export function resolveGitInfoExcludePath(
   worktreePath: string,
   execFileSyncImpl: ExecFileSync = childProcess.execFileSync,
@@ -33,7 +38,7 @@ export function resolveGitInfoExcludePath(
       timeout: 3000,
     }).trim();
     const commonDir = path.isAbsolute(out) ? out : path.join(worktreePath, out);
-    return path.join(commonDir, 'info', 'exclude');
+    return gitInfoExcludePath(commonDir);
   } catch {
     return null;
   }

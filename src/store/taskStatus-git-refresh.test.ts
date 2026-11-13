@@ -6,6 +6,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // exact behavior the flag-lifecycle regressions cover.
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock('../lib/ipc', () => ({ invoke: invokeMock }));
+const windowState = vi.hoisted(() => ({ visible: true }));
+vi.mock('../lib/windowVisibility', () => ({ isWindowVisible: () => windowState.visible }));
 vi.mock('../lib/log', async (importOriginal) => ({
   // Keep the real errMessage; only silence the log channels.
   ...(await importOriginal<typeof import('../lib/log')>()),
@@ -101,6 +103,7 @@ function worktreeStatusCalls(taskId: string): unknown[] {
 
 afterEach(() => {
   invokeMock.mockReset();
+  windowState.visible = true;
   for (const agentId of seededAgentIds.splice(0)) {
     clearAgentActivity(agentId);
     setStore('agents', agentId, undefined as unknown as Agent);
@@ -298,5 +301,25 @@ describe('git status freshness', () => {
     await refreshAllTaskGitStatus();
 
     expect(worktreeStatusCalls('t-busy')).toHaveLength(0);
+  });
+
+  it('leaves the active task to its fast timer while the window is visible', async () => {
+    const previousActive = store.activeTaskId;
+    seedTask('t-active');
+    setStore('taskOrder', [...store.taskOrder, 't-active']);
+    setStore('activeTaskId', 't-active');
+    invokeMock.mockResolvedValue(worktreeStatus('task/t-active'));
+    try {
+      await refreshAllTaskGitStatus();
+      expect(worktreeStatusCalls('t-active')).toHaveLength(0);
+
+      // The fast timer pauses while hidden; the sweep must keep the snapshot
+      // from going stale and dropping the task from ready.
+      windowState.visible = false;
+      await refreshAllTaskGitStatus();
+      expect(worktreeStatusCalls('t-active')).toHaveLength(1);
+    } finally {
+      setStore('activeTaskId', previousActive);
+    }
   });
 });

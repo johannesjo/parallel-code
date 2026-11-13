@@ -38,12 +38,13 @@ export {
 } from './git-merge.js';
 export {
   createWorktree,
-  detectRepoRoot,
+  detectRepoGitPaths,
   getBranchWorktreePath,
   ensureClaudeSandboxFiles,
-  ensureSandboxExcludes,
+  ensureSandboxExcludesAt,
   ensureSymlinkExcludes,
   ensureWorktreeContainerExclude,
+  ensureWorktreeContainerExcludeAt,
   getSymlinkCandidates,
   isValidSymlinkName,
   refreshWorktreeNodeModules,

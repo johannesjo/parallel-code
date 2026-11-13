@@ -244,7 +244,9 @@ it('focuses both views on each step, can reveal all changes, and finishes withou
   if (!search) throw new Error('Missing search');
   search.value = 'new';
   search.dispatchEvent(new Event('input', { bubbles: true }));
-  expect(host.textContent).toContain('2 matches');
+  // Debounced: a keystroke must not re-highlight every diff line at once.
+  expect(host.textContent).not.toContain('2 matches');
+  await vi.waitFor(() => expect(host.textContent).toContain('2 matches'));
   click('Next');
   expect(displayedPaths()).toEqual(['second.ts']);
   expect(host.querySelector('[data-testid="file-list"]')?.textContent).toBe('second.ts');
