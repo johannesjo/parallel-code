@@ -12,6 +12,8 @@ import { CloseIcon, ExternalLinkIcon, GitMergeIcon, GitPullRequestIcon, UndoIcon
 import { taskPrUrl } from './pr-actions';
 import { taskLinkedPrUrl } from '../store/task-prs';
 import { laterMenuItems } from './task-later-menu';
+import { CloudHandoffDialog } from './CloudHandoffDialog';
+import { claudeAiActions } from './claude-ai-actions';
 
 interface TaskMenuActions {
   /** Shows the task where it was right-clicked; Finish runs in the task's panel, so it opens it first. */
@@ -19,6 +21,7 @@ interface TaskMenuActions {
   /** Where the task opens in the board's side panel, moving that panel across. */
   openOnOtherSide?: () => void;
   confirmClose: () => void;
+  confirmCloudHandoff: () => void;
 }
 
 /** Ending actions: Finish opens the task with its dialog requested; Close confirms in place. */
@@ -86,7 +89,12 @@ function taskMenuItems(task: Task, actions: TaskMenuActions): MoreMenuItem[] {
         },
       ]
     : laterMenuItems(task);
-  return [...opens, ...setAside, ...endMenuItems(task, actions)];
+  return [
+    ...opens,
+    ...claudeAiActions(task, actions).map((action) => ({ ...action, icon: action.icon() })),
+    ...setAside,
+    ...endMenuItems(task, actions),
+  ];
 }
 
 const stop = (event: Event) => event.stopPropagation();
@@ -112,10 +120,12 @@ export function createTaskContextMenu(options: {
   // shortcut: the row hosts the dialog, so it vanishes if the row unmounts (a tray entry
   // resolving, a card changing lane) — an app-level close-dialog host if that bites.
   const [confirmingClose, setConfirmingClose] = createSignal(false);
+  const [confirmingCloud, setConfirmingCloud] = createSignal(false);
   const actions = {
     open: options.open,
     openOnOtherSide: options.openOnOtherSide,
     confirmClose: () => setConfirmingClose(true),
+    confirmCloudHandoff: () => setConfirmingCloud(true),
   };
   return {
     onContextMenu: (event) => {
@@ -140,6 +150,12 @@ export function createTaskContextMenu(options: {
           open={confirmingClose()}
           task={options.task()}
           onDone={() => setConfirmingClose(false)}
+        />
+        <CloudHandoffDialog
+          open={confirmingCloud()}
+          task={options.task()}
+          showTask={options.open}
+          onDone={() => setConfirmingCloud(false)}
         />
       </div>
     ),

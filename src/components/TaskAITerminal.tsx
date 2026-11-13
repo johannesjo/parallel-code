@@ -45,6 +45,8 @@ import { editAsDocument } from '../documents/store';
 import { saveState } from '../store/persistence';
 import { registerAction, unregisterAction } from '../store/focus';
 import { ConfirmDialog } from './ConfirmDialog';
+import { CloudHandoffDialog } from './CloudHandoffDialog';
+import { claudeAiActions } from './claude-ai-actions';
 import {
   CloseIcon,
   ColumnsIcon,
@@ -743,6 +745,16 @@ function AgentTerminalPane(props: {
   const dockerOverlayLabel = () => getTaskDockerOverlayLabel(props.task.dockerSource);
   const agent = () => store.agents[props.agentId];
   const resumeWithFlags = createResumeWithFlags(() => props.agentId);
+  const [confirmingCloud, setConfirmingCloud] = createSignal(false);
+  // Only the lead agent's pane: Remote Control types into that agent, not the one clicked.
+  const claudeAiPaneActions = () =>
+    props.task.agentIds[0] === props.agentId
+      ? claudeAiActions(props.task, {
+          // The menu closes without refocusing; the CLI's confirmation needs the keyboard.
+          open: () => terminalFocus?.(),
+          confirmCloudHandoff: () => setConfirmingCloud(true),
+        })
+      : [];
   const [terminalOpened, setTerminalOpened] = createSignal(
     untrack(() => !isAgentChat(props.task, props.agentId)),
   );
@@ -809,6 +821,14 @@ function AgentTerminalPane(props: {
         </div>
       </Show>
       <resumeWithFlags.Dialog />
+      <Show when={props.task.agentIds[0] === props.agentId}>
+        <CloudHandoffDialog
+          open={confirmingCloud()}
+          task={props.task}
+          showTask={() => undefined}
+          onDone={() => setConfirmingCloud(false)}
+        />
+      </Show>
       <Show when={agent()}>
         {(a) => (
           <>
@@ -1000,6 +1020,7 @@ function AgentTerminalPane(props: {
                     findBareFile={props.findBareFile}
                     onEditAsDocument={props.onEditAsDocument}
                     paneActions={[
+                      ...claudeAiPaneActions(),
                       {
                         label: 'Resume with flags…',
                         icon: () => <SyncIcon size={14} />,

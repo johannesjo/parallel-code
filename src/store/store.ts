@@ -305,3 +305,11 @@ export {
   startSuperProductivitySync,
 } from './superProductivity';
 export { startSpOpenListener } from './superProductivityOpen';
+export {
+  remoteControlAgent,
+  remoteControlBlocker,
+  remoteControlStarted,
+  runRemoteControl,
+  cloudHandoffCommand,
+  startCloudSession,
+} from './claude-cloud';

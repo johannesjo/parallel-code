@@ -37,7 +37,11 @@ import { CloseIcon, TerminalSmallIcon } from './icons';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
-import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
+import {
+  extractLabel,
+  consumePendingShellCommand,
+  consumePendingShellLaunch,
+} from '../lib/bookmarks';
 import {
   consumePendingSetupScript,
   noteSetupShellExit,
@@ -296,6 +300,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           <For each={props.task.shellAgentIds}>
             {(shellId, i) => {
               const initialCommand = consumePendingShellCommand(shellId);
+              const launch = consumePendingShellLaunch(shellId);
               const setupScript = consumePendingSetupScript(shellId);
               const setupState = () => setupShellState(shellId);
               let shellFocusFn: (() => void) | undefined;
@@ -409,8 +414,9 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     isShell
                     bookmarksEnabled={false}
                     isFocused={isShellPanelFocused()}
-                    command={''}
-                    args={['-l']}
+                    command={launch?.command ?? ''}
+                    args={launch?.args ?? ['-l']}
+                    envFile={launch?.envFile}
                     cwd={props.task.worktreePath}
                     onEditAsDocument={store.documentWorkspacesEnabled ? editAsDocument : undefined}
                     fileLinkMenu={(filePath, line) =>
