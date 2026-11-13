@@ -6,6 +6,7 @@ import { setPendingAction } from '../store/focus';
 import { localMergeLabel } from '../store/local-merge';
 import { getPrChecks } from '../store/pr-checks-state';
 import { taskLeadPr, taskLeadWatchId, taskLinkedPrUrl } from '../store/task-prs';
+import { taskWrapUp } from '../store/task-wrap-up';
 import { getProject } from '../store/projects';
 import { ClockIcon } from './icons';
 import { ProjectSwatch } from './ProjectSwatch';
@@ -138,6 +139,21 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
     openBeside(props.task);
     setPendingAction({ type: 'finish', taskId: props.task.id });
   };
+  // Done: merged with nothing left, so Close is the only step; the dialog still confirms.
+  const closable = () => props.lane === 'done' && !props.task.closingStatus;
+  const openClose = () => {
+    openBeside(props.task);
+    setPendingAction({ type: 'close', taskId: props.task.id });
+  };
+  // Only where the agent is at rest; elsewhere the card already says what it waits on.
+  const wrap = () =>
+    props.lane === 'stopped' || props.lane === 'pr' || props.lane === 'ready'
+      ? taskWrapUp(props.task)
+      : undefined;
+  const looseEnds = () => wrap()?.looseEnds ?? [];
+  // After the merge the label names git state; the recorded items no longer count.
+  const looseEndsTitle = () =>
+    wrap()?.merged ? undefined : props.task.finishItems?.items.join('\n');
   const menu = createTaskContextMenu({
     task: () => props.task,
     open: () => openBeside(props.task),
@@ -205,8 +221,18 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
           </p>
         )}
       </Show>
+      <Show when={looseEnds().length > 0}>
+        <p class="task-board-ask" title={looseEndsTitle()}>
+          <span class="task-board-status muted">
+            <span class="task-board-status-text">Mostly done: {looseEnds().join(' · ')}</span>
+          </span>
+        </p>
+      </Show>
       <Show when={props.task.closingStatus === 'error'}>
         <CloseFailed task={props.task} />
+      </Show>
+      <Show when={closable()}>
+        <AskRow quiet label="Merged, nothing left" action="Close" onAct={openClose} />
       </Show>
       <Show when={localMerge()}>
         <AskRow quiet label={localMergeLabel(props.task)} action="Merge" onAct={openFinish} />

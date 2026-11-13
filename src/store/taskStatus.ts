@@ -1314,6 +1314,16 @@ export function isTaskGitStatusKnown(taskId: string): boolean {
   return isGitStatusUsable(store.taskGitStatus[taskId]);
 }
 
+/** Whether the last git status read still describes the worktree, even while a
+ *  re-read runs: refreshes start on every agent spawn and exit, and a verdict that
+ *  drops out for each would make the board jump. A placeholder (never read) fails. */
+export function isTaskGitStatusFresh(taskId: string): boolean {
+  const git = store.taskGitStatus[taskId];
+  return Boolean(
+    git && !git.error && !git.stale && Date.now() - git.refreshedAt <= GIT_STATUS_STALE_MS,
+  );
+}
+
 function isGitStatusUsable(git: TaskGitStatusSnapshot | undefined): git is TaskGitStatusSnapshot {
   return Boolean(
     git &&

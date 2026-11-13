@@ -4,7 +4,13 @@ import { reconcile } from 'solid-js/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store, setStore } from '../store/core';
 import { boardSidePanelOpen } from '../store/project-pages';
-import { checksFromUpdate, removePrChecks, setPrChecks } from '../store/pr-checks-state';
+import {
+  checksFromUpdate,
+  forgetTaskPrsDetected,
+  markTaskPrsDetected,
+  removePrChecks,
+  setPrChecks,
+} from '../store/pr-checks-state';
 import {
   getTaskFocusedPanel,
   navigateColumn,
@@ -1102,4 +1108,32 @@ describe('board tips', () => {
     vi.advanceTimersByTime(650);
     expect(tip()?.textContent).toContain('Tasks sort themselves by what they need');
   });
+});
+
+it('shows the Done lane only while a merged task with nothing left sits in it', () => {
+  expect(lane('Done')).toBeUndefined();
+  setStore('taskGitStatus', 'pr', {
+    has_committed_changes: true,
+    has_uncommitted_changes: false,
+    current_branch: 'task/pr',
+    base_branch: 'main',
+    head_sha: 'a'.repeat(40),
+    refreshedAt: Date.now(),
+  });
+  markTaskPrsDetected('pr');
+  setPrChecks('pr', {
+    ...checksFromUpdate({ overall: 'none', headSha: 'a'.repeat(40) }),
+    merged: true,
+  });
+  expect(cardNames('Done')).toEqual(['Add dark mode']);
+  expect(lane('Done')?.textContent).toContain('Merged, nothing left');
+  setStore('taskGitStatus', 'pr', 'has_uncommitted_changes', true);
+  expect(lane('Done')).toBeUndefined();
+  expect(lane('Stopped')?.textContent).toContain('Mostly done: Uncommitted changes');
+  // Merging settled the recorded loose ends, so hovering must not list them.
+  setStore('tasks', 'pr', 'finishItems', { items: ['Update the changelog'], publishedAt: 1 });
+  expect(lane('Stopped')?.querySelector('[title*="Update the changelog"]')).toBeNull();
+  setStore('tasks', 'pr', 'finishItems', undefined);
+  removePrChecks('pr');
+  forgetTaskPrsDetected();
 });

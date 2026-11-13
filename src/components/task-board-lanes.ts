@@ -8,12 +8,13 @@ import { isTaskReadyToMergeLocally } from '../store/local-merge';
 import { getProject } from '../store/projects';
 import { sortByProjectGroup } from '../store/sidebar-order';
 import { matchesTaskProjectFilter } from '../store/task-project-filter';
+import { taskWrapUp } from '../store/task-wrap-up';
 import { getTaskOpenQuestion } from '../store/taskStatus';
 import type { Task } from '../store/types';
 import { cardTaskState, finishCheckLabel, type CardTaskState } from './board/task-state';
 import { holdWorking } from './task-board-hold';
 
-export type BoardLaneId = 'needs' | 'working' | 'stopped' | 'pr' | 'ready' | 'snoozed';
+export type BoardLaneId = 'needs' | 'working' | 'stopped' | 'pr' | 'ready' | 'done' | 'snoozed';
 
 export interface BoardLane {
   id: BoardLaneId;
@@ -24,13 +25,15 @@ export interface BoardLane {
 // Left to right. Stopped sits next to Needs you so everything waiting on you
 // is together; Working and In pull request need nothing from you yet. Ready to
 // merge follows the pull requests it graduates from, and also holds tasks
-// without one whose review and checks passed on their current code.
+// without one whose review and checks passed on their current code. Done comes
+// last: merged with nothing left to keep, so the task only waits to be closed.
 const LANE_TITLES: Record<BoardLaneId, string> = {
   needs: 'Needs you',
   stopped: 'Stopped',
   working: 'Working',
   pr: 'In pull request',
   ready: 'Ready to merge',
+  done: 'Done',
   snoozed: 'Snoozed & minimized',
 };
 
@@ -71,6 +74,11 @@ export function boardLaneOf(task: Task): BoardLaneId {
   if (state === 'active' || checking) return 'working';
   // Additional PRs count too, e.g. one in a nested repository with none in the task's own.
   if (task.prUrl || getTaskExtraPrs(task.id).length > 0) {
+    const wrap = taskWrapUp(task);
+    if (wrap.done) return 'done';
+    // Merged with something left over: nothing waits on GitHub any more, only on
+    // you. Until git status says what is left, the task stays where it was.
+    if (wrap.merged && wrap.looseEnds.length > 0) return 'stopped';
     return pullRequestsLane(taskPrsChecks(task), babysat);
   }
   // Finished work the app's review and checks vouch for can merge without a

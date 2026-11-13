@@ -763,6 +763,32 @@ describe('a merged PR', () => {
     __resetForTests();
   });
 
+  it('reports the head it merged, even on the first poll after a restart', async () => {
+    const send = vi.fn();
+    initPrChecks(fakeWindow(send));
+    stubGh((_args, cb) =>
+      cb(
+        null,
+        JSON.stringify({ state: 'MERGED', headRefOid: 'merged-sha', statusCheckRollup: [] }),
+        '',
+      ),
+    );
+    startPrChecksWatcher({
+      taskId: 't1',
+      watchId: 't1',
+      prUrl: 'https://github.com/a/b/pull/1',
+      taskName: 'test',
+      babysit: false,
+      branch: null,
+    });
+    await flushPromises();
+
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({
+      merged: true,
+      headSha: 'merged-sha',
+    });
+  });
+
   it('re-checks the other open PRs of its repository at once', async () => {
     initPrChecks(fakeWindow(vi.fn()));
     const merged = new Set<string>();

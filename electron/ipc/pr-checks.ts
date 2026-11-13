@@ -416,6 +416,9 @@ async function refreshOne(watchId: string): Promise<void> {
     entry.failing = 0;
     entry.checks = [];
     entry.lastRefreshedAt = Date.now();
+    // The merged head lets the board tell a finished task from one with commits
+    // made after the merge; a first poll after restart has no earlier head.
+    if (status.headRefOid) entry.headRefOid = status.headRefOid;
     sendUpdate(entry, {
       cleared: true,
       merged: status.state === 'MERGED',

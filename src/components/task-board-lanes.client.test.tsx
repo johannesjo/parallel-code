@@ -1,8 +1,10 @@
 import { reconcile } from 'solid-js/store';
 import { afterEach, expect, it, vi } from 'vitest';
-import { setStore } from '../store/core';
+import { setStore, store } from '../store/core';
 import {
   extraPrWatchId,
+  forgetTaskPrsDetected,
+  markTaskPrsDetected,
   removePrChecks,
   setPrChecks,
   setTaskExtraPrs,
@@ -42,6 +44,7 @@ afterEach(() => {
   removePrChecks('task-1');
   removePrChecks(extraPrWatchId('task-1', extraUrl));
   setStore('tasks', reconcile({}));
+  forgetTaskPrsDetected();
 });
 
 it('puts a task whose only PR is in a nested repository in pull request', () => {
@@ -154,4 +157,61 @@ it('moves finished work the app review vouches for to Ready to merge, until the 
     setStore('tasks', reconcile({ 'task-1': subtask }));
     expect(boardLaneOf(subtask)).not.toBe('ready');
   }
+});
+
+it('moves a merged task to Done, and back to Stopped while something is left', () => {
+  const merged: Task = {
+    ...task,
+    prUrl: 'https://github.com/acme/app/pull/12',
+    // A branch to probe: its PRs in other repositories are unknown until the probe ran.
+    worktreePath: '/tmp/task-1',
+    branchName: 'task/x',
+  };
+  setStore('tasks', reconcile({ 'task-1': merged }));
+  setStore('taskGitStatus', 'task-1', {
+    has_committed_changes: true,
+    has_uncommitted_changes: false,
+    current_branch: 'task/x',
+    base_branch: 'main',
+    head_sha: 'a'.repeat(40),
+    refreshedAt: Date.now(),
+  });
+  setPrChecks('task-1', checks({ overall: 'pending' }));
+  expect(boardLaneOf(merged)).toBe('pr');
+
+  setPrChecks('task-1', checks({ overall: 'none', merged: true, headSha: 'a'.repeat(40) }));
+  // A PR in another repository may still turn up until the branch probe listed them all.
+  expect(boardLaneOf(merged)).toBe('pr');
+  // Even with loose ends: they only count as settled once every PR is known merged.
+  setStore('tasks', 'task-1', 'finishItems', { items: ['Update the changelog'], publishedAt: 1 });
+  expect(boardLaneOf(store.tasks['task-1'] as Task)).toBe('pr');
+  setStore('tasks', 'task-1', 'finishItems', undefined);
+  markTaskPrsDetected('task-1');
+  expect(boardLaneOf(merged)).toBe('done');
+
+  // A re-read on agent spawn or exit keeps the verdict instead of making the card jump.
+  setStore('taskGitStatus', 'task-1', 'refreshing', true);
+  expect(boardLaneOf(merged)).toBe('done');
+  setStore('taskGitStatus', 'task-1', 'refreshing', false);
+
+  // A commit after the merge would be thrown away with the task.
+  setStore('taskGitStatus', 'task-1', 'head_sha', 'b'.repeat(40));
+  expect(boardLaneOf(merged)).toBe('stopped');
+  setStore('taskGitStatus', 'task-1', 'head_sha', 'a'.repeat(40));
+
+  const withLooseEnds: Task = {
+    ...merged,
+    finishItems: { items: ['Update the changelog'], publishedAt: 1 },
+  };
+  setStore('tasks', reconcile({ 'task-1': withLooseEnds }));
+  // Recorded loose ends were settled by merging, done or skipped.
+  expect(boardLaneOf(withLooseEnds)).toBe('done');
+});
+
+it('keeps a merged task in pull request until git status says what is left', () => {
+  const merged: Task = { ...task, prUrl: 'https://github.com/acme/app/pull/12' };
+  setStore('tasks', reconcile({ 'task-1': merged }));
+  markTaskPrsDetected('task-1');
+  setPrChecks('task-1', checks({ overall: 'none', merged: true, headSha: 'a'.repeat(40) }));
+  expect(boardLaneOf(merged)).toBe('pr');
 });
