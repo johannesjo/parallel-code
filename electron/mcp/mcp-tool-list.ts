@@ -674,7 +674,7 @@ const SUPERVISION_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
 const IMPORT_WORKTREE_TOOL: ToolDef = {
   name: 'import_worktree',
   description:
-    'Bring an existing Git worktree of your project back into Parallel Code as a top-level task, for example when a task disappeared from the app but its worktree and agent session remain. The task uses your agent and resumes the newest session that agent recorded in the worktree, or sessionId if given; it does not take focus, and the user reviews it on its own. Pass the absolute worktree path. Worktrees already tracked as tasks, the main checkout and worktrees of other projects are refused; the error lists the worktrees that can be imported. The worktree and branch stay when the task closes unless cleanupOnClose is true. The result reports taskId and resumedSessionId (null when a new conversation started).',
+    'Bring an existing Git worktree of your project back into Parallel Code as a top-level task, for example when a task disappeared from the app but its worktree and agent session remain. The task uses your agent and resumes the newest session that agent recorded in the worktree, or sessionId if given; it does not take focus, and the user reviews it on its own. Pass the absolute worktree path. Worktrees already tracked as tasks, the main checkout and worktrees of other projects are refused; the error lists the worktrees that can be imported. The worktree and branch stay when the task closes unless cleanupOnClose is true, which is allowed only for worktrees Parallel Code created. The result reports taskId and resumedSessionId (null when a new conversation started).',
   inputSchema: {
     type: 'object',
     properties: {

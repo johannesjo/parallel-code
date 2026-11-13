@@ -258,6 +258,70 @@ it('creates an agent-requested independent task with the creator agent and sandb
   expect(missing).toMatchObject({ ok: false, error: 'Creating task not found' });
 });
 
+it('brings an agent-requested worktree back as a background task resuming its session', async () => {
+  const claude = {
+    id: 'claude-code',
+    name: 'Claude',
+    command: 'claude',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: '',
+  };
+  const lost = '/tmp/project/.worktrees/task/lost';
+  const sessionId = '240604e8-6d6c-43ce-9178-6d63236f39a9';
+  setStore('projects', [{ id: 'project', name: 'Project', path: '/tmp/project', color: '' }]);
+  setStore('agents', 'agent', {
+    id: 'agent',
+    taskId: 'task',
+    def: claude,
+    resumed: false,
+    status: 'running',
+    exitCode: null,
+  });
+  setStore('taskOrder', ['task']);
+  setStore('activeTaskId', 'task');
+  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+    if (channel === IPC.ListImportableWorktrees)
+      return [
+        {
+          path: lost,
+          branch_name: 'task/lost',
+          has_committed_changes: true,
+          has_uncommitted_changes: false,
+          app_created: true,
+        },
+      ];
+    if (channel === IPC.ListSessions)
+      return [{ id: sessionId, agent: 'claude', cwd: lost, updatedAt: 1 }];
+    return undefined;
+  });
+
+  const reply = await phoneRequest(IPC.MCP_ImportWorktreeRequest, {
+    creatorTaskId: 'task',
+    path: lost,
+    cleanupOnClose: false,
+  });
+
+  expect(reply).toMatchObject({ ok: true, data: { resumedSessionId: sessionId } });
+  const taskId = (reply.data as { taskId: string }).taskId;
+  const imported = store.tasks[taskId];
+  expect(imported).toMatchObject({ worktreePath: lost, externalWorktree: true });
+  expect(store.agents[imported?.agentIds[0] ?? '']).toMatchObject({ resumed: true });
+  expect(store.activeTaskId).toBe('task');
+
+  vi.mocked(invoke).mockClear();
+  const again = await phoneRequest(IPC.MCP_ImportWorktreeRequest, {
+    creatorTaskId: 'task',
+    path: lost,
+    cleanupOnClose: false,
+  });
+  expect(again).toMatchObject({
+    ok: false,
+    error: expect.stringContaining('This project has none'),
+  });
+});
+
 it('removes the new worktree and starts no agent when the launch is refused', async () => {
   const agentDef = {
     id: 'codex',
