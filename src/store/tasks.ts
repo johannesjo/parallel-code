@@ -728,6 +728,8 @@ export async function mergeTask(
     cleanup?: boolean;
     /** Set the base checkout's uncommitted changes aside instead of refusing. */
     allowDirtyTarget?: boolean;
+    /** Merge here instead of the task's base, e.g. a sub-task into main rather than its parent. */
+    baseBranch?: string;
   },
 ): Promise<void> {
   // Precondition failures throw so the merge dialog can say why nothing
@@ -764,7 +766,7 @@ export async function mergeTask(
     projectRoot,
     branchName,
     worktreePath: task.worktreePath,
-    baseBranch: task.baseBranch,
+    baseBranch: options?.baseBranch ?? task.baseBranch,
     squash: options?.squash ?? false,
     message: options?.message,
     cleanup,

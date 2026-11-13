@@ -118,11 +118,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             if (!props.confirmDisabled) props.onConfirm();
           }}
           style={{ gap: '8px' }}
+          title={props.confirmLabel}
         >
           <Show when={props.confirmLoading} fallback={props.confirmIcon}>
             <span class="inline-spinner" aria-hidden="true" />
           </Show>
-          {props.confirmLabel ?? 'Confirm'}
+          <span class="dialog-footer-label">{props.confirmLabel ?? 'Confirm'}</span>
         </button>
       </DialogFooter>
     </Dialog>

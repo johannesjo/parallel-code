@@ -7,6 +7,8 @@ import { errMessage } from '../lib/log';
 import {
   backgroundVerifyEnabled,
   getPrChecks,
+  getProject,
+  getProjectBaseBranch,
   getProjectPath,
   getTaskDotStatus,
   getVerifyCommand,
@@ -45,12 +47,25 @@ export function createMergeState(props: MergeStateProps) {
   const [coverageComparison, setCoverageComparison] = createSignal<CoverageComparison | null>(null);
   const requiresSeparateClose = () =>
     Boolean(props.task.delegationParent || props.task.coordinatorMode);
+  // A sub-task forked from its parent lands there by default; this sends it to the
+  // project's base instead. Per dialog, so the task's own base stays as created.
+  const [wantMain, setWantMain] = createSignal(false);
+  const [mainTarget, setMainTarget] = createSignal<string>();
+  let targetRequest = 0;
+  const basedOnParent = () => {
+    const parentId = props.task.coordinatedBy;
+    const parent = parentId ? store.tasks[parentId] : undefined;
+    // A direct-mode coordinator works on the base itself, e.g. main: no separate parent branch.
+    return parent?.gitIsolation === 'worktree' && parent.branchName === props.task.baseBranch;
+  };
+  /** Where the merge lands: the chosen main branch, else the task's base. */
+  const targetBranch = () => mainTarget() ?? props.task.baseBranch;
 
   const resourceSource = () =>
     props.open
       ? {
           path: props.task.worktreePath,
-          baseBranch: props.task.baseBranch,
+          baseBranch: targetBranch(),
           projectRoot: getProjectPath(props.task.projectId),
         }
       : null;
@@ -84,6 +99,42 @@ export function createMergeState(props: MergeStateProps) {
         projectRoot: src.projectRoot,
       }),
   );
+  // Accessors then read undefined during the refetch instead of the previous
+  // target's facts, which unguarded reads (blockers, banners) would show.
+  const clearGitFacts = () => {
+    mutateBranchLog(undefined);
+    mutateBranchCommits(undefined);
+    mutateMergeStatus(undefined);
+    mutateWorktreeStatus(undefined);
+  };
+  async function setMergeIntoMain(on: boolean): Promise<void> {
+    // A newer toggle wins over a lookup still in flight.
+    const request = ++targetRequest;
+    setWantMain(on);
+    // Outcomes shown so far were against the previous target.
+    setMergeError('');
+    setSyncError('');
+    setSyncDone(null);
+    setSyncConflict(null);
+    if (!on) {
+      if (mainTarget() === undefined) return;
+      clearGitFacts();
+      setMainTarget(undefined);
+      return;
+    }
+    try {
+      const project = getProject(props.task.projectId);
+      if (!project) throw new Error('Project not found');
+      const branch = await getProjectBaseBranch(project);
+      if (request !== targetRequest) return;
+      clearGitFacts();
+      setMainTarget(branch);
+    } catch (err) {
+      if (request !== targetRequest) return;
+      setWantMain(false);
+      setMergeError(errMessage(err));
+    }
+  }
   const refetchAll = () => {
     refetchBranchLog();
     refetchBranchCommits();
@@ -102,7 +153,7 @@ export function createMergeState(props: MergeStateProps) {
   /** The task's uncommitted files the base changed too: they block bringing it in. */
   const uncommittedOverlap = () => mergeStatus()?.uncommitted_overlap ?? [];
   const hasCommittedChangesToMerge = () => worktreeStatus()?.has_committed_changes ?? false;
-  const baseBranchName = () => props.task.baseBranch ?? mergeStatus()?.base_branch ?? 'main';
+  const baseBranchName = () => targetBranch() ?? mergeStatus()?.base_branch ?? 'main';
   const selectedAgentId = () => {
     const selected = props.task.selectedAgentId;
     if (
@@ -149,6 +200,7 @@ export function createMergeState(props: MergeStateProps) {
     });
   /** Why Merge is unavailable, in the order the notices above it explain. */
   const mergeBlocker = (): string | undefined => {
+    if (wantMain() && !mainTarget()) return 'Finding the main branch…';
     if (!worktreeStatus()) return 'Checking the branch…';
     if (hasBranchMismatch()) return "The worktree is not on this task's branch.";
     if (!hasCommittedChangesToMerge())
@@ -165,6 +217,9 @@ export function createMergeState(props: MergeStateProps) {
 
   createEffect(() => {
     if (props.open) {
+      targetRequest++;
+      setWantMain(false);
+      setMainTarget(undefined);
       setCleanupAfterMerge(props.initialCleanup);
       setSquash(false);
       setSquashTitle('');
@@ -182,10 +237,7 @@ export function createMergeState(props: MergeStateProps) {
       // new fetch resolves. Then trigger refetch as a safety net for cases
       // where source tracking alone misses (e.g. external rebase by AI
       // agent while dialog was closed).
-      mutateBranchLog(undefined);
-      mutateBranchCommits(undefined);
-      mutateMergeStatus(undefined);
-      mutateWorktreeStatus(undefined);
+      clearGitFacts();
       refetchAll();
     }
   });
@@ -200,7 +252,7 @@ export function createMergeState(props: MergeStateProps) {
     try {
       await invoke(kind === 'merge' ? IPC.MergeBaseIntoTask : IPC.RebaseTask, {
         worktreePath: props.task.worktreePath,
-        baseBranch: props.task.baseBranch,
+        baseBranch: targetBranch(),
       });
       setSyncDone(kind);
       refetchAll();
@@ -251,6 +303,7 @@ export function createMergeState(props: MergeStateProps) {
         cleanup: !requiresSeparateClose() && cleanupAfterMerge(),
         // The dialog warned about them; the backend refuses if the merge touches them.
         allowDirtyTarget: true,
+        baseBranch: mainTarget(),
       });
       void advanceKanbanCard(projectId, branchName, 'done');
       return true;
@@ -275,6 +328,10 @@ export function createMergeState(props: MergeStateProps) {
     uncommittedOverlap,
     hasCommittedChangesToMerge,
     baseBranchName,
+    targetBranch,
+    basedOnParent,
+    mergeIntoMain: wantMain,
+    setMergeIntoMain,
     selectedAgentId,
     hasBranchMismatch,
     adoptableWorktreeBranch,

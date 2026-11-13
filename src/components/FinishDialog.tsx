@@ -221,7 +221,10 @@ export function FinishDialog(props: FinishDialogProps) {
     }
     // The target lives on the button, so the dialog needs no sentence restating it.
     // "local" because nothing is fetched before or pushed after this merge.
-    return `${merge.squash() ? 'Squash merge' : 'Merge'} into local ${merge.baseBranchName()}`;
+    // A sub-task based on its parent targets the parent's long task branch, too wide for the button.
+    const intoParent = merge.basedOnParent() && merge.targetBranch() === props.task.baseBranch;
+    const target = intoParent ? 'parent task' : `local ${merge.baseBranchName()}`;
+    return `${merge.squash() ? 'Squash merge' : 'Merge'} into ${target}`;
   };
   // Said elsewhere in this dialog: merge safety by the notices on top, the
   // verify command by the readiness line, PR checks by the PR section.
@@ -585,7 +588,7 @@ export function FinishDialog(props: FinishDialogProps) {
         closeLabel="Back to Finish"
         taskName={props.task.name}
         worktreePath={props.task.worktreePath}
-        baseBranch={props.task.baseBranch}
+        baseBranch={merge.targetBranch()}
         branchName={props.task.branchName}
         projectRoot={getProject(props.task.projectId)?.path}
         coverageReportPath={getProject(props.task.projectId)?.coverageReportPath}

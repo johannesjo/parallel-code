@@ -347,6 +347,14 @@ export function getProjectPath(projectId: string): string | undefined {
   return store.projects.find((p) => p.id === projectId)?.path;
 }
 
+/** The branch new tasks start from: the project setting, else the repository's main branch. */
+export async function getProjectBaseBranch(project: Project): Promise<string> {
+  return (
+    project.defaultBaseBranch ??
+    (await invoke<string>(IPC.GetMainBranch, { projectRoot: project.path }))
+  );
+}
+
 export function projectIsGitRepo(projectId: string): boolean {
   return getProject(projectId)?.isGitRepo !== false;
 }

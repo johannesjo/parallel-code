@@ -3231,9 +3231,20 @@ html:is(
 
 .dialog-footer-actions {
   display: flex;
+  max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.dialog-footer :is(.btn-primary, .btn-secondary, .btn-danger) > svg {
+  flex-shrink: 0;
+}
+
+.dialog-footer-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dialog-footer-error {
@@ -3244,6 +3255,8 @@ html:is(
 .dialog-footer :is(.btn-primary, .btn-secondary, .btn-danger) {
   display: inline-flex;
   flex-shrink: 0;
+  /* A label naming a long branch truncates inside the dialog rather than running past its edge. */
+  max-width: 100%;
   white-space: nowrap;
   align-items: center;
   justify-content: center;

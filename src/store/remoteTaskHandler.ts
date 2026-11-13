@@ -17,7 +17,7 @@ import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
 import { store } from './core';
 import { delegationRequest } from './delegation';
 import { importWorktreeForAgent } from './agent-import-worktree';
-import { codeProjects, getProject, getProjectPath } from './projects';
+import { codeProjects, getProject, getProjectBaseBranch, getProjectPath } from './projects';
 import {
   closeTask,
   createTask,
@@ -195,9 +195,7 @@ async function newTaskGitDefaults(
   // Non-git projects can't use worktree isolation; fall back to working
   // directly in the project folder.
   if (project.isGitRepo === false) return { gitIsolation: 'none', baseBranch: '', symlinkDirs: [] };
-  const baseBranch =
-    project.defaultBaseBranch ??
-    (await invoke<string>(IPC.GetMainBranch, { projectRoot: project.path }));
+  const baseBranch = await getProjectBaseBranch(project);
   // Match the desktop New Task default without opting remote users into
   // newly discovered entries that have no confirmation UI. A saved project
   // include list is that confirmation, so it applies here too.

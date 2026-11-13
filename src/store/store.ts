@@ -5,6 +5,7 @@ export {
   addProject,
   removeProject,
   updateProject,
+  getProjectBaseBranch,
   getProjectPath,
   getProjectBranchPrefix,
   pickAndAddProject,

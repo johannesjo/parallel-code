@@ -6,7 +6,15 @@ import { FinishDialog } from './FinishDialog';
 import { invoke } from '../lib/ipc';
 import { setStore } from '../store/core';
 import { showNotification } from '../store/notification';
-import { getPrChecks, getTaskChecks, mergeTask, pushTask, sendPrompt, store } from '../store/store';
+import {
+  getPrChecks,
+  getProjectBaseBranch,
+  getTaskChecks,
+  mergeTask,
+  pushTask,
+  sendPrompt,
+  store,
+} from '../store/store';
 import {
   getPullRequestDetails,
   markPullRequestReadyForTask,
@@ -20,14 +28,15 @@ import type { PullRequestDetails } from '../ipc/types';
 import type { Task } from '../store/types';
 
 vi.mock('../store/store', () => ({
-  store: { agents: {} },
+  store: { agents: {}, tasks: {} },
   backgroundVerifyEnabled: () => false,
   cancelTaskVerification: vi.fn(async () => true),
   getBackgroundVerifyHold: () => undefined,
   runBackgroundVerify: vi.fn(async () => undefined),
   runTaskVerification: vi.fn(async () => undefined),
   stageVerificationFailurePrompt: vi.fn(() => false),
-  getProject: () => undefined,
+  getProject: (id: string) => (id === 'project' ? { id, path: '/repo' } : undefined),
+  getProjectBaseBranch: vi.fn(async () => 'main'),
   getProjectPath: () => '/repo',
   getPrChecks: vi.fn(() => undefined),
   getVerifyCommand: () => undefined,
@@ -116,7 +125,11 @@ vi.mock('./CreatePrDialog', () => ({
     </Show>
   ),
 }));
-vi.mock('./ChangedFilesList', () => ({ ChangedFilesList: () => null }));
+vi.mock('./ChangedFilesList', () => ({
+  ChangedFilesList: (props: { baseBranch?: string }) => (
+    <div data-testid="changed-files" data-base={props.baseBranch} />
+  ),
+}));
 // Covered by its own tests; its store imports reach past this file's mocks.
 const reviewProps = vi.hoisted(() => ({
   current: undefined as
@@ -340,6 +353,121 @@ describe('FinishDialog merge', () => {
     expect(confirmButton()?.textContent).toBe('Merge into local main');
     confirmButton()?.click();
     expect(mergeTask).toHaveBeenCalled();
+  });
+
+  // A sub-task's base is its parent's long task branch, which overflowed the button.
+  const parentBranch = 'task/for-finish-dialog-for-sub-tasks-the-f879f6';
+  const withCoordinator = () => {
+    store.tasks.coordinator = task({ id: 'coordinator', branchName: parentBranch });
+    onTestFinished(() => {
+      delete store.tasks.coordinator;
+    });
+  };
+  const mainOption = () =>
+    [...document.querySelectorAll('label')].find((l) =>
+      l.textContent?.includes('Merge into the main branch instead'),
+    );
+
+  it.each([
+    [parentBranch, 'Merge into parent task'],
+    ['main', 'Merge into local main'],
+  ])('names the parent only when a sub-task merges into it: %s', async (base, label) => {
+    withCoordinator();
+    mount({ task: task({ id: 'child', coordinatedBy: 'coordinator', baseBranch: base }) });
+    await flush();
+    expect(confirmButton()?.textContent).toBe(label);
+    // Main is already the target of a main-based sub-task, so only a parent-based one offers it.
+    expect(!!mainOption()).toBe(base === parentBranch);
+  });
+
+  it('lets a parent-based sub-task merge into main instead', async () => {
+    withCoordinator();
+    mount({ task: task({ id: 'child', coordinatedBy: 'coordinator', baseBranch: parentBranch }) });
+    await flush();
+    mainOption()?.querySelector('input')?.click();
+    await flush();
+    expect(confirmButton()?.textContent).toBe('Merge into local main');
+    expect(document.body.textContent).toContain("Also brings the parent task's commits");
+    expect(invoke).toHaveBeenCalledWith(
+      IPC.CheckMergeStatus,
+      expect.objectContaining({ baseBranch: 'main' }),
+    );
+    confirmButton()?.click();
+    expect(mergeTask).toHaveBeenCalledWith(
+      'child',
+      expect.objectContaining({ baseBranch: 'main' }),
+    );
+  });
+
+  it('compares files and updates the branch against main once chosen', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 2 };
+      if (channel === IPC.MergeBaseIntoTask) return undefined;
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    withCoordinator();
+    mount({ task: task({ id: 'child', coordinatedBy: 'coordinator', baseBranch: parentBranch }) });
+    await flush();
+    const files = () => document.querySelector<HTMLElement>('[data-testid="changed-files"]');
+    expect(files()?.dataset.base).toBe(parentBranch);
+    mainOption()?.querySelector('input')?.click();
+    await flush();
+    expect(files()?.dataset.base).toBe('main');
+    pickUpdateRoute('Merge commit');
+    button('Update branch')?.click();
+    expect(invoke).toHaveBeenCalledWith(IPC.MergeBaseIntoTask, {
+      worktreePath: '/repo/.worktrees/parent',
+      baseBranch: 'main',
+    });
+  });
+
+  it('offers no main option under a direct-mode coordinator working on main', async () => {
+    store.tasks.coordinator = task({
+      id: 'coordinator',
+      branchName: 'main',
+      gitIsolation: 'direct',
+    });
+    onTestFinished(() => {
+      delete store.tasks.coordinator;
+    });
+    mount({ task: task({ id: 'child', coordinatedBy: 'coordinator', baseBranch: 'main' }) });
+    await flush();
+    expect(confirmButton()?.textContent).toBe('Merge into local main');
+    expect(mainOption()).toBeUndefined();
+  });
+
+  it('drops an update outcome from the parent once main is chosen', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 2 };
+      if (channel === IPC.MergeBaseIntoTask) return undefined;
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    withCoordinator();
+    mount({ task: task({ id: 'child', coordinatedBy: 'coordinator', baseBranch: parentBranch }) });
+    await flush();
+    pickUpdateRoute('Merge commit');
+    button('Update branch')?.click();
+    await flush();
+    await flush();
+    expect(document.querySelector('[role="status"]')?.textContent).toContain('Merged');
+    mainOption()?.querySelector('input')?.click();
+    await flush();
+    expect(document.querySelector('[role="status"]')?.textContent ?? '').not.toContain('Merged');
+  });
+
+  it('stays on the parent when the main branch cannot be found', async () => {
+    vi.mocked(getProjectBaseBranch).mockRejectedValueOnce(new Error('no main branch'));
+    withCoordinator();
+    mount({ task: task({ id: 'child', coordinatedBy: 'coordinator', baseBranch: parentBranch }) });
+    await flush();
+    const box = mainOption()?.querySelector('input');
+    box?.click();
+    await flush();
+    expect(box?.checked).toBe(false);
+    expect(confirmButton()?.textContent).toBe('Merge into parent task');
+    expect(document.body.textContent).toContain('no main branch');
   });
 
   it('prefills the squash description once commits load, if ticked before', async () => {

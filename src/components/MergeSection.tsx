@@ -232,7 +232,7 @@ export function MergeChanges(props: MergeSectionProps) {
             branchName={props.task.branchName}
             isActive={props.open}
             onFileClick={props.onDiffFileClick}
-            baseBranch={props.task.baseBranch}
+            baseBranch={props.state.targetBranch()}
             coverageReportPath={getProject(props.task.projectId)?.coverageReportPath}
             onCoverageComparisonChange={props.state.setCoverageComparison}
           />
@@ -325,7 +325,23 @@ export function MergeOptions(props: Pick<MergeSectionProps, 'task' | 'state'>) {
           />
           Squash commits
         </label>
+        <Show when={props.state.basedOnParent()}>
+          <label style={optionStyle}>
+            <input
+              type="checkbox"
+              checked={props.state.mergeIntoMain()}
+              onChange={(e) => void props.state.setMergeIntoMain(e.currentTarget.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Merge into the main branch instead
+          </label>
+        </Show>
       </div>
+      <Show when={props.state.mergeIntoMain()}>
+        <p style={{ 'font-size': '12px', color: theme.fgMuted, margin: '6px 0 0' }}>
+          Also brings the parent task's commits from before this sub-task started.
+        </p>
+      </Show>
       <Show when={!props.task.externalWorktree && props.state.requiresSeparateClose()}>
         <p style={{ 'font-size': '12px', color: theme.fgMuted, margin: '6px 0 0' }}>
           Merge first, then close this task to detach its children safely.
