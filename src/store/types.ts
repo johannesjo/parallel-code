@@ -1,5 +1,6 @@
 import type { PrBabysit } from '../lib/pr-babysit';
 import type { ProjectIconId } from '../lib/project-icon';
+import type { TeleportTarget } from '../lib/claude-session-url';
 import type {
   CompletionRecord,
   SubtaskVerification,
@@ -301,9 +302,9 @@ export interface Task {
    *  whichever session in the worktree happens to be newest. */
   agentSessionIds?: Record<string, string>;
   /** Claude web session the first pane teleports on its first launch
-   *  (`claude --teleport <id>`); see buildTaskAgentArgs. Not persisted: after a
-   *  restart the pane resumes instead. */
-  teleportSessionId?: string;
+   *  (`claude --teleport [id]`; no id lets the user pick one in the CLI); see
+   *  buildTaskAgentArgs. Not persisted: after a restart the pane resumes instead. */
+  teleport?: TeleportTarget;
   selectedAgentId?: string;
   /** Layout for a task's AI terminals when it has more than one agent.
    *  'split' (default) tiles them side by side; 'tabs' shows only the selected

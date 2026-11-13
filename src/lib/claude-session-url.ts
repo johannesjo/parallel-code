@@ -26,6 +26,25 @@ export function isClaudeSessionUrl(text: string): boolean {
   return parseClaudeSessionUrl(text) !== null;
 }
 
+/**
+ * The web sessions list. Standing in for a dropped link, it asks for the CLI's
+ * own picker (`claude --teleport` without an id), which lists only the
+ * sessions of the repository it runs in, so the project picks the repo.
+ */
+export const CLAUDE_SESSIONS_URL = 'https://claude.ai/code';
+
+/** What `claude --teleport` continues: a named session, or one picked in the CLI. */
+export interface TeleportTarget {
+  sessionId?: string;
+}
+
+/** Teleport target of a dropped link: a session link or the sessions list. */
+export function parseTeleportTarget(text: string): TeleportTarget | null {
+  if (text === CLAUDE_SESSIONS_URL) return {};
+  const sessionId = parseClaudeSessionUrl(text);
+  return sessionId ? { sessionId } : null;
+}
+
 /** The web session link for a teleport session id. */
 export function claudeSessionUrl(sessionId: string): string {
   return `https://claude.ai/code/${sessionId}`;

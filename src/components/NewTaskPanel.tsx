@@ -25,6 +25,7 @@ import { registerFocusFn, unregisterFocusFn } from '../store/focused-panel';
 import { setStore } from '../store/core';
 import {
   ChevronRightThinIcon,
+  CloudIcon,
   FolderIcon,
   GitBranchIcon,
   GitHubIcon,
@@ -71,7 +72,11 @@ import { SegmentedButtons } from './SegmentedButtons';
 import { autoTaskNameFromPrompt, nextDefaultTaskName } from '../lib/clean-task-name';
 import { isAgentInstalled, pickDefaultAgent } from '../lib/default-agent';
 import { extractGitHubUrl, parseGitHubUrl } from '../lib/github-url';
-import { parseClaudeSessionUrl } from '../lib/claude-session-url';
+import {
+  CLAUDE_SESSIONS_URL,
+  parseTeleportTarget,
+  type TeleportTarget,
+} from '../lib/claude-session-url';
 import { sessionAgentForCommand } from '../../electron/shared/session-record';
 import { buildIssuePrompt, buildPrTaskPrompt, workItemTaskName } from '../lib/github-prompts';
 import { getGitHubIssue, getPullRequestDetails, readGitHubIssue } from '../store/github';
@@ -133,9 +138,11 @@ function teleportProjectId(): string | null {
 }
 
 /** `session_011CUabcd…` → "Teleport 011CUabc": short, and the branch is
- *  replaced by the session's own once teleport checks it out. */
-function teleportTaskName(sessionId: string): string {
-  return `Teleport ${sessionId.replace(/^session_/, '').slice(0, 8)}`;
+ *  replaced by the session's own once teleport checks it out. Before the CLI's
+ *  picker runs there is no session to name yet. */
+function teleportTaskName(target: TeleportTarget): string {
+  const { sessionId } = target;
+  return sessionId ? `Teleport ${sessionId.replace(/^session_/, '').slice(0, 8)}` : 'Cloud session';
 }
 
 export function NewTaskPanel(props: NewTaskPanelProps) {
@@ -230,13 +237,14 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   // Dropped files become paths in the prompt, as on the terminal, so the agent can open
   // them; images from a browser have no path and are saved to a temp file first.
   function handleFileDragOver(e: DragEvent): void {
-    if (loading() || !e.dataTransfer?.types.includes('Files')) return;
+    // The prompt that would receive the paths is hidden while teleporting.
+    if (loading() || teleportTarget() || !e.dataTransfer?.types.includes('Files')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   }
   function handleFileDrop(e: DragEvent): void {
     const dt = e.dataTransfer;
-    if (loading() || !dt?.files.length) return;
+    if (loading() || teleportTarget() || !dt?.files.length) return;
     // Stops the textarea's default of inserting only the file name, and the app's
     // GitHub link drop from reading a browser image's URL.
     e.preventDefault();
@@ -263,7 +271,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     orchestrationEnabled() &&
     hasOtherTasks() &&
     promptPaused() &&
-    prompt().trim().length >= SPLIT_TIP_MIN_PROMPT;
+    usedPrompt().length >= SPLIT_TIP_MIN_PROMPT;
   function addDelegationRequest(): void {
     setPrompt(prompt().trimEnd() + DELEGATION_REQUEST);
     promptRef.focus();
@@ -357,18 +365,20 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       (dropUrl) => {
         if (!dropUrl || !untrack(() => props.open)) return;
         untrack(() => {
-          const teleportId = parseClaudeSessionUrl(dropUrl);
-          const defaults = teleportId ? null : getGitHubDropDefaults(dropUrl);
-          if (!teleportId && !prompt().trim()) setPrompt(`review ${dropUrl}`);
-          const dropName = teleportId ? teleportTaskName(teleportId) : defaults?.name;
+          const teleport = parseTeleportTarget(dropUrl);
+          const defaults = teleport ? null : getGitHubDropDefaults(dropUrl);
+          if (!teleport && !prompt().trim()) setPrompt(`review ${dropUrl}`);
+          const dropName = teleport ? teleportTaskName(teleport) : defaults?.name;
           if (dropName && !name().trim()) {
             setName(dropName);
             setDroppedNameUrl(defaults ? dropUrl : undefined);
           }
-          if (teleportId) setSelectedProjectId(teleportProjectId());
+          // The CLI's picker lists the chosen project's sessions, so browsing keeps it.
+          if (teleport?.sessionId) setSelectedProjectId(teleportProjectId());
           else if (defaults?.projectId) setSelectedProjectId(defaults.projectId);
-          const claude = teleportId ? store.availableAgents.find(isInstalledClaude) : undefined;
+          const claude = teleport ? store.availableAgents.find(isInstalledClaude) : undefined;
           if (claude) setSelectedAgent(claude);
+          if (teleport) focusEntry();
         });
       },
       { defer: true },
@@ -431,17 +441,19 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
               targets.find((p) => p.id === store.lastProjectId)?.id ??
               targets[0]?.id ??
               null;
-            const teleportId = dropUrl ? parseClaudeSessionUrl(dropUrl) : null;
-            const defaults = dropUrl && !teleportId ? getGitHubDropDefaults(dropUrl) : null;
+            const teleport = dropUrl ? parseTeleportTarget(dropUrl) : null;
+            const defaults = dropUrl && !teleport ? getGitHubDropDefaults(dropUrl) : null;
 
-            if (dropUrl && !teleportId) setPrompt(`review ${dropUrl}`);
+            if (dropUrl && !teleport) setPrompt(`review ${dropUrl}`);
             if (defaults) {
               setName(defaults.name);
               setDroppedNameUrl(dropUrl ?? undefined);
             }
-            if (teleportId) setName(teleportTaskName(teleportId));
+            if (teleport) setName(teleportTaskName(teleport));
             setSelectedProjectId(
-              teleportId ? teleportProjectId() : (defaults?.projectId ?? fallbackProjectId),
+              teleport?.sessionId
+                ? teleportProjectId()
+                : (defaults?.projectId ?? fallbackProjectId),
             );
 
             // Pre-fill from an arena comparison or canvas branch.
@@ -475,7 +487,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             if (cancelled) return;
             setSelectedAgent(
               store.availableAgents.find((a) => a.id === prefill?.agentId) ??
-                (teleportId ? store.availableAgents.find(isInstalledClaude) : undefined) ??
+                (teleport ? store.availableAgents.find(isInstalledClaude) : undefined) ??
                 pickDefaultAgent(store.availableAgents, store.lastAgentId),
             );
           })().catch((err) => {
@@ -786,12 +798,16 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     }
   }
 
+  // A teleport hides the prompt: text typed before the link arrived must not
+  // reach the task, its name, or its links.
+  const usedPrompt = () => (teleportTarget() ? '' : prompt().trim());
+
   // Name derived from what the user typed: the trimmed name, else a concise
   // name from the prompt. Empty when neither is provided.
   const effectiveName = () => {
     const n = name().trim();
     if (n) return n;
-    const p = prompt().trim();
+    const p = usedPrompt();
     if (!p) return '';
     // Keep the stored task/worktree name concise; the title bar can render a longer label.
     return autoTaskNameFromPrompt(p);
@@ -802,9 +818,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const resolvedName = () =>
     effectiveName() || nextDefaultTaskName(Object.values(store.tasks).map((t) => t.name));
 
-  /** Web session a dropped claude.ai link teleports into this task, if any. */
-  const teleportSessionId = () =>
-    store.newTaskDropUrl ? parseClaudeSessionUrl(store.newTaskDropUrl) : null;
+  /** Web session a dropped claude.ai link, or Teleport from cloud, teleports into this task. */
+  const teleportTarget = () =>
+    store.newTaskDropUrl ? parseTeleportTarget(store.newTaskDropUrl) : null;
 
   /** A same-repo PR is checked out on its own head branch; forks get a prefixed branch. */
   const prUsesHeadBranch = () => !!githubPr() && !githubPr()?.isCrossRepository;
@@ -849,6 +865,22 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     !canvasPrefill()?.canvasSource &&
     !store.newTaskDropUrl &&
     store.newTaskPrefillPrompt?.githubUrl === undefined;
+
+  // Teleporting is a source of its own, so it needs the same free slot, plus Claude Code.
+  // A picked PR would check out its branch in the worktree that teleport also checks out.
+  const canBrowseCloudSessions = () =>
+    canPickFromGitHub() && !githubPr() && store.availableAgents.some(isInstalledClaude);
+
+  /** Creates the task at once: the session is picked in its terminal, so the
+   *  form has nothing left to ask. A failed creation reopens the form on it. */
+  function browseCloudSessions(): void {
+    setGithubPickerOpen(false);
+    const claude = store.availableAgents.find(isInstalledClaude);
+    if (claude) setSelectedAgent(claude);
+    if (!name().trim()) setName(teleportTaskName({}));
+    setStore('newTaskDropUrl', CLAUDE_SESSIONS_URL);
+    void handleSubmit(new Event('submit', { cancelable: true }));
+  }
 
   /** The prompt without the text generated by the last pick: what the user typed.
    *  Generated text the user edited no longer matches, so it counts as theirs and is kept. */
@@ -977,10 +1009,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       return;
     }
 
-    const p = prompt().trim() || undefined;
+    const p = usedPrompt() || undefined;
     const isFromDrop = !!store.newTaskDropUrl;
-    const teleportId = teleportSessionId() ?? undefined;
-    if (teleportId && !isClaudeCommand(agent.command)) {
+    const teleport = teleportTarget() ?? undefined;
+    if (teleport && !isClaudeCommand(agent.command)) {
       setError('Teleporting a web session needs Claude Code');
       return;
     }
@@ -999,7 +1031,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           ? (prefill.githubUrl ?? undefined)
           : undefined
         : ((p ? extractGitHubUrl(p) : null) ??
-          (teleportId ? undefined : (store.newTaskDropUrl ?? undefined)));
+          (teleport ? undefined : (store.newTaskDropUrl ?? undefined)));
 
     setLoading(true);
     setError('');
@@ -1051,7 +1083,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         initialPrompt: isFromDrop ? undefined : p,
         githubUrl: ghUrl,
         pullRequestNumber: githubPr()?.number,
-        teleportSessionId: teleportId,
+        teleport,
         skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
         dockerMode: dockerMode() || undefined,
         dockerSource: dockerMode()
@@ -1087,7 +1119,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
               )
             : create({ ...options, activate: quick }),
         onCreated: (taskId) => {
-          // Drop flow: prefill prompt without auto-sending
+          // Drop flow: prefill prompt without auto-sending.
           if (isFromDrop && p) {
             setPrefillPrompt(taskId, p);
           }
@@ -1170,10 +1202,21 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     };
   }
 
+  /**
+   * Focuses the prompt, or — while it is hidden for a teleport — the submit
+   * button, falling back to the panel while branches load so Escape still
+   * reaches it.
+   */
+  function focusEntry(): void {
+    if (!teleportTarget()) promptRef?.focus();
+    else if (submitRef && !submitRef.disabled) submitRef.focus();
+    else panelRef?.focus();
+  }
+
   createFocusRestore(() => props.open);
   onMount(() => {
-    promptRef?.focus();
-    registerFocusFn('new-task', () => promptRef?.focus());
+    focusEntry();
+    registerFocusFn('new-task', focusEntry);
     onCleanup(() => unregisterFocusFn('new-task'));
     onCleanup(registerOpenDraft(openDraft));
   });
@@ -1191,6 +1234,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   return (
     <section
       ref={panelRef}
+      tabIndex={-1}
       aria-labelledby={titleId}
       data-new-task-panel
       class="new-task-appearing"
@@ -1260,9 +1304,12 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
           >
             <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
-              <label for={promptInputId} style={sectionLabelStyle}>
-                Prompt <span style={{ opacity: '0.5', 'text-transform': 'none' }}>(optional)</span>
-              </label>
+              <Show when={!teleportTarget()}>
+                <label for={promptInputId} style={sectionLabelStyle}>
+                  Prompt{' '}
+                  <span style={{ opacity: '0.5', 'text-transform': 'none' }}>(optional)</span>
+                </label>
+              </Show>
               <Show when={canPickFromGitHub()}>
                 <button
                   type="button"
@@ -1329,20 +1376,29 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 </InlineBanner>
               )}
             </Show>
-            <Show when={teleportSessionId()}>
-              {(id) => (
+            <Show when={teleportTarget()}>
+              {(target) => (
                 <InlineBanner color={theme.accent}>
                   <span style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
                     <span style={{ flex: '1' }}>
-                      Teleports Claude web session {id()}: Claude Code continues it here and checks
-                      out its branch.
+                      <Show
+                        when={target().sessionId}
+                        fallback="Teleport, then pick one of this project's Claude web sessions in the task's terminal: Claude Code continues it here and checks out its branch."
+                      >
+                        {(id) => (
+                          <>
+                            Teleports Claude web session {id()}: Claude Code continues it here and
+                            checks out its branch.
+                          </>
+                        )}
+                      </Show>
                     </span>
                     <button
                       type="button"
                       class="btn-secondary"
                       onClick={() => {
                         // The generated name describes the teleport; one the user typed stays.
-                        if (name() === teleportTaskName(id())) setName('');
+                        if (name() === teleportTaskName(target())) setName('');
                         setStore('newTaskDropUrl', null);
                       }}
                       style={{
@@ -1364,6 +1420,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             <textarea
               ref={promptRef}
               id={promptInputId}
+              // A teleported session brings its own conversation; a prompt would never be sent.
+              hidden={!!teleportTarget()}
               class="input-field"
               value={prompt()}
               onInput={(e) => handlePromptInput(e.currentTarget.value)}
@@ -1503,7 +1561,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 <label for={nameInputId} style={sectionLabelStyle}>
                   Task name{' '}
                   <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
-                    (optional — derived from prompt)
+                    {teleportTarget() ? '(optional)' : '(optional — derived from prompt)'}
                   </span>
                 </label>
                 <input
@@ -1782,6 +1840,31 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             'flex-shrink': '0',
           }}
         >
+          {/* Beside the create buttons, not the GitHub picker: it creates the task at once. */}
+          <Show when={canBrowseCloudSessions() && !teleportTarget()}>
+            <button
+              type="button"
+              class="btn-secondary btn-with-icon"
+              disabled={!canSubmit()}
+              onClick={browseCloudSessions}
+              aria-label="Teleport from cloud"
+              title="Creates a Claude task here and runs claude --teleport; pick one of this project's web sessions in its terminal"
+              style={{
+                padding: '9px 14px',
+                background: 'transparent',
+                border: `1px solid ${theme.border}`,
+                'border-radius': 'var(--radius-md)',
+                color: theme.fgMuted,
+                cursor: 'pointer',
+                'font-size': '14px',
+                'white-space': 'nowrap',
+                'flex-shrink': '0',
+              }}
+            >
+              <CloudIcon size={14} />
+              <span class="new-task-cloud-label">Teleport from cloud</span>
+            </button>
+          </Show>
           {/* Space stays reserved so the reason coming and going never moves the buttons. */}
           <span
             data-submit-reason
@@ -1838,7 +1921,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             }}
           >
             <PlusIcon size={14} />
-            Create Task
+            {teleportTarget() ? 'Teleport' : 'Create Task'}
             <kbd
               class="new-task-submit-kbd"
               aria-hidden="true"
@@ -1890,7 +1973,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         }}
         onCancel={() => {
           setConfirmDiscard(false);
-          promptRef?.focus();
+          focusEntry();
         }}
       />
     </section>

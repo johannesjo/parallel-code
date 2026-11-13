@@ -1208,7 +1208,7 @@ it('teleports a dropped Claude web session into the new task', async () => {
     await vi.waitFor(() => expect(store.tasks.teleported).toBeDefined());
     const task = store.tasks.teleported;
     expect(task.name).toBe('Teleport 011CUabc');
-    expect(task.teleportSessionId).toBe('session_011CUabcXYZ');
+    expect(task.teleport).toEqual({ sessionId: 'session_011CUabcXYZ' });
     expect(task.githubUrl).toBeUndefined();
     // No minted id: the first launch must teleport, not start a new session.
     expect(task.agentSessionIds?.[task.agentIds[0]]).toBeUndefined();
@@ -1241,7 +1241,7 @@ it('takes a Claude web session link dropped while the panel is already open', as
       .querySelector('form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(store.tasks['late-drop']).toBeDefined());
-    expect(store.tasks['late-drop'].teleportSessionId).toBe('session_011CUabcXYZ');
+    expect(store.tasks['late-drop'].teleport).toEqual({ sessionId: 'session_011CUabcXYZ' });
     expect(store.tasks['late-drop'].name).toBe('Teleport 011CUabc');
   } finally {
     setStore('newTaskDropUrl', null);
@@ -1300,7 +1300,7 @@ it('retries a refused teleport in the project matching the session repo', async 
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(store.tasks.retried, host.textContent ?? '').toBeDefined());
     expect(store.tasks.retried.projectId).toBe('web');
-    expect(store.tasks.retried.teleportSessionId).toBe('session_011CUabcXYZ');
+    expect(store.tasks.retried.teleport).toEqual({ sessionId: 'session_011CUabcXYZ' });
   } finally {
     setStore('newTaskDropUrl', null);
   }
@@ -1333,5 +1333,122 @@ it('creates an ordinary task when the user declines the teleport', async () => {
     .querySelector('form')
     ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   await vi.waitFor(() => expect(store.tasks.declined).toBeDefined());
-  expect(store.tasks.declined.teleportSessionId).toBeUndefined();
+  expect(store.tasks.declined.teleport).toBeUndefined();
+});
+
+it("browses the project's Claude web sessions through the CLI picker", async () => {
+  const submit = host.querySelector<HTMLButtonElement>('button[type="submit"]');
+  await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) => {
+    if (channel === IPC.CreateTask)
+      return Promise.resolve({
+        id: 'browsed',
+        branch_name: 'task/cloud-session',
+        worktree_path: '/project/.worktrees/cloud-session',
+      });
+    return Promise.resolve(originalInvoke?.(channel, args));
+  });
+  try {
+    const browse = () =>
+      [...host.querySelectorAll('button')].find((b) => b.textContent === 'Teleport from cloud');
+    await vi.waitFor(() => expect(browse()).toBeDefined());
+    // A link teleport would switch to the last teleport project; browsing must not.
+    setStore({
+      projects: [
+        { id: 'project', name: 'Project', path: '/project', color: '#abc' },
+        { id: 'other', name: 'Other', path: '/other', color: '#def' },
+      ],
+      lastTeleportProjectId: 'other',
+    });
+    const select = host.querySelector('select');
+    if (!select) throw new Error('Missing project select');
+    select.value = 'project';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+    // One click: the CLI's picker runs in the task's terminal, so the form has nothing to add.
+    browse()?.click();
+    await vi.waitFor(() => expect(store.tasks.browsed, host.textContent ?? '').toBeDefined());
+    const task = store.tasks.browsed;
+    expect(task.name).toBe('Cloud session');
+    expect(task.teleport).toEqual({});
+    expect(task.agentSessionIds?.[task.agentIds[0]]).toBeUndefined();
+    expect(task.mainAgentView).toBe('terminal');
+    expect(task.projectId).toBe('project');
+  } finally {
+    setStore('newTaskDropUrl', null);
+  }
+});
+
+it('asks for no prompt when teleporting a web session link', async () => {
+  const submit = host.querySelector<HTMLButtonElement>('button[type="submit"]');
+  await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) => {
+    if (channel === IPC.CreateTask)
+      return Promise.resolve({
+        id: 'no-prompt',
+        branch_name: 'task/teleport',
+        worktree_path: '/project/.worktrees/teleport',
+      });
+    return Promise.resolve(originalInvoke?.(channel, args));
+  });
+  try {
+    host.querySelector('textarea')?.focus();
+    typePrompt('typed before the link arrived: https://github.com/owner/repo/issues/42');
+    setStore({
+      lastTeleportProjectId: 'project',
+      newTaskDropUrl: 'https://claude.ai/code/session_011CUabcXYZ',
+    });
+    // The teleported session already has its conversation; a prompt would never be sent.
+    expect(host.querySelector('textarea')?.hidden).toBe(true);
+    expect(submit?.textContent).toContain('Teleport');
+    expect(submit?.textContent).not.toContain('Create Task');
+    expect(host.textContent).not.toContain('Prompt (optional)');
+    // The submit button already teleports; a second cloud action would compete with it.
+    expect(host.textContent).not.toContain('Teleport from cloud');
+    // Focus left the hidden prompt; Enter and Escape need a focused field in the panel.
+    expect(document.activeElement).toBe(submit);
+    // A cleared name must not fall back to one derived from the hidden prompt.
+    const nameInput = taskNameInput();
+    nameInput.value = '';
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    host
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(store.tasks['no-prompt']).toBeDefined());
+    expect(store.tasks['no-prompt'].prefillPrompt).toBeUndefined();
+    expect(store.tasks['no-prompt'].githubUrl).toBeUndefined();
+    expect(store.tasks['no-prompt'].name).not.toContain('typed');
+  } finally {
+    setStore('newTaskDropUrl', null);
+  }
+});
+
+it('offers no cloud session browse once a PR is checked out', async () => {
+  const pr = {
+    kind: 'pr',
+    number: 7,
+    title: 'Fix login',
+    url: 'https://github.com/o/r/pull/7',
+    author: 'dev',
+    updatedAt: '2026-10-01T00:00:00Z',
+    labels: [],
+    isDraft: false,
+    baseRefName: 'main',
+    isCrossRepository: false,
+  };
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) =>
+    channel === IPC.ListGitHubWorkItems
+      ? Promise.resolve([pr])
+      : Promise.resolve(originalInvoke?.(channel, args)),
+  );
+  const buttonTexts = () => [...host.querySelectorAll('button')].map((b) => b.textContent);
+  await vi.waitFor(() => expect(buttonTexts()).toContain('Teleport from cloud'));
+  [...host.querySelectorAll('button')].find((b) => b.textContent === 'From GitHub…')?.click();
+  await vi.waitFor(() => expect(host.querySelector('.github-item-option')).not.toBeNull());
+  host.querySelector<HTMLButtonElement>('.github-item-option')?.click();
+  await vi.waitFor(() => expect(host.textContent).toContain('Checks out PR #7'));
+  expect(buttonTexts()).not.toContain('Teleport from cloud');
 });

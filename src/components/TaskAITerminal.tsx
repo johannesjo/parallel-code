@@ -1000,7 +1000,9 @@ function AgentTerminalPane(props: {
                         showNotification(
                           'Resume failed. Your existing conversation was not replaced; review the terminal error before retrying.',
                         );
-                      const teleportId = props.task.teleportSessionId;
+                      // Only a named session can be refused: the CLI's picker (no id)
+                      // lists just the sessions of the repo it runs in.
+                      const teleportId = props.task.teleport?.sessionId;
                       const teleportRepo =
                         teleportId && props.task.agentIds[0] === a().id && !a().resumed
                           ? parseTeleportRepoMismatch(code.last_output)

@@ -649,10 +649,16 @@ describe('the model and level a launch sets itself', () => {
 
 describe('buildTaskAgentArgs for a teleported web session', () => {
   const TELEPORT = 'session_011CUabcXYZ';
-  const task = { teleportSessionId: TELEPORT, agentIds: ['a1'] };
+  const task = { teleport: { sessionId: TELEPORT }, agentIds: ['a1'] };
 
   it('teleports the first launch of the first pane', () => {
     expect(buildTaskAgentArgs(claudeAgent, task, false, 'a1')).toEqual(['--teleport', TELEPORT]);
+  });
+
+  it("opens the CLI's session picker when no session was named", () => {
+    expect(buildTaskAgentArgs(claudeAgent, { ...task, teleport: {} }, false, 'a1')).toEqual([
+      '--teleport',
+    ]);
   });
 
   it('keeps permissions flags alongside the teleport', () => {

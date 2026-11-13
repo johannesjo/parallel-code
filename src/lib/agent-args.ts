@@ -111,25 +111,27 @@ type AgentLaunchTask = Pick<Task, 'skipPermissions' | 'mcpConfigPath' | 'mcpLaun
       | 'codexChatThreadId'
       | 'codexChatHandoff'
       | 'claudeChatSessionId'
-      | 'teleportSessionId'
+      | 'teleport'
     >
   >;
 
-/** `--teleport <id>` for the first fresh launch of a task created from a Claude
- *  web session link. The pane has no PC-assigned session id then (see
- *  initTaskInStore), so a later resume falls back to `--continue`, which in a
- *  fresh worktree is the teleported conversation; a fresh restart mints an id
- *  and starts a new session instead of teleporting twice. */
+/** `--teleport [id]` for the first fresh launch of a task created from a Claude
+ *  web session link, or from the sessions list (no id: the CLI's picker). The
+ *  pane has no PC-assigned session id then (see initTaskInStore), so a later
+ *  resume falls back to `--continue`, which in a fresh worktree is the
+ *  teleported conversation; a fresh restart mints an id and starts a new
+ *  session instead of teleporting twice. */
 function teleportArgs(
   agentDef: AgentDef,
   task: AgentLaunchTask,
   launch: { resumed: boolean; agentId?: string; sessionId?: string },
 ): string[] | null {
-  const id = task.teleportSessionId;
-  if (!id || launch.resumed || launch.sessionId) return null;
+  const teleport = task.teleport;
+  if (!teleport || launch.resumed || launch.sessionId) return null;
   if (launch.agentId !== task.agentIds?.[0]) return null;
   if (agentDef.command.split('/').pop() !== 'claude') return null;
-  return ['--teleport', id, ...agentDef.args];
+  const id = teleport.sessionId ? [teleport.sessionId] : [];
+  return ['--teleport', ...id, ...agentDef.args];
 }
 
 function positionalAgentArgs(

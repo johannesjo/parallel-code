@@ -3844,6 +3844,13 @@ html:is(
   }
 }
 
+/* Three footer buttons fit in a narrow tile only if the cloud one drops its label. */
+@container new-task-panel (max-width: 480px) {
+  .new-task-cloud-label {
+    display: none;
+  }
+}
+
 .new-task-panel-form :is(input, textarea) {
   user-select: text;
 }

@@ -3,6 +3,7 @@ import {
   isClaudeSessionUrl,
   parseClaudeSessionUrl,
   parseTeleportRepoMismatch,
+  parseTeleportTarget,
 } from './claude-session-url';
 
 describe('parseClaudeSessionUrl', () => {
@@ -29,6 +30,23 @@ describe('parseClaudeSessionUrl', () => {
     expect(parseClaudeSessionUrl('https://claude.ai/code/--dangerously-skip')).toBeNull();
     expect(parseClaudeSessionUrl('https://claude.ai/code/session_a%20b')).toBeNull();
     expect(isClaudeSessionUrl('https://github.com/o/r/pull/1')).toBe(false);
+  });
+});
+
+describe('parseTeleportTarget', () => {
+  it('teleports a session link into that session', () => {
+    expect(parseTeleportTarget('https://claude.ai/code/session_011CUabcXYZ')).toEqual({
+      sessionId: 'session_011CUabcXYZ',
+    });
+  });
+
+  it("browses the CLI's picker for the sessions list link", () => {
+    expect(parseTeleportTarget('https://claude.ai/code')).toEqual({});
+  });
+
+  it('ignores other links', () => {
+    expect(parseTeleportTarget('https://claude.ai/code/')).toBeNull();
+    expect(parseTeleportTarget('https://github.com/acme/web/pull/1')).toBeNull();
   });
 });
 
