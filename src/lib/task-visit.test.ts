@@ -63,7 +63,7 @@ describe('changesSinceVisit', () => {
     ).toEqual(['rating outdated']);
   });
 
-  it('reports an app-run verify that finished after the visit', () => {
+  it('reports an app-run verify that failed after the visit; a pass asks nothing', () => {
     const finishedAfter = new Date(5_000).toISOString();
     const finishedBefore = new Date(500).toISOString();
     expect(
@@ -79,7 +79,7 @@ describe('changesSinceVisit', () => {
         headSha: 'aaa',
         verificationRun: { status: 'passed', finishedAt: finishedAfter },
       }),
-    ).toEqual(['verify passed']);
+    ).toEqual([]);
     expect(
       changesSinceVisit({
         visit,
@@ -96,7 +96,7 @@ describe('changesSinceVisit', () => {
     ).toEqual([]);
   });
 
-  it('summarises app-run suite checks that finished after the visit, skipping reused verify runs', () => {
+  it('reports app-run suite checks that failed after the visit, skipping reused verify runs', () => {
     const after = new Date(5_000).toISOString();
     const before = new Date(500).toISOString();
     const check = (status: 'passed' | 'failed', finishedAt: string, reused?: boolean) => ({
@@ -111,9 +111,9 @@ describe('changesSinceVisit', () => {
         checks: [check('passed', after), check('failed', after)],
       }),
     ).toEqual(['checks failed']);
-    expect(changesSinceVisit({ visit, headSha: 'aaa', checks: [check('passed', after)] })).toEqual([
-      'checks passed',
-    ]);
+    expect(changesSinceVisit({ visit, headSha: 'aaa', checks: [check('passed', after)] })).toEqual(
+      [],
+    );
     expect(
       changesSinceVisit({
         visit,
@@ -131,9 +131,9 @@ describe('changesSinceVisit', () => {
         confidence: { publishedAt: 500, fingerprint: 'rated' },
         codeFingerprint: { fingerprint: 'newer', at: 2_000 },
         verificationRun: { status: 'failed', finishedAt: new Date(5_000).toISOString() },
-        checks: [{ status: 'passed', finishedAt: new Date(5_000).toISOString() }],
+        checks: [{ status: 'failed', finishedAt: new Date(5_000).toISOString() }],
       }),
-    ).toEqual(['new commits', 'rating outdated', 'verify failed', 'checks passed']);
+    ).toEqual(['new commits', 'rating outdated', 'verify failed', 'checks failed']);
   });
 });
 

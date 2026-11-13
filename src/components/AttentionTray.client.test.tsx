@@ -220,6 +220,23 @@ it("keeps the line's space while empty and while the task is open", () => {
   expect(changesText()).toBe('\u00a0');
 });
 
+it('adds the line to review rows only; a question is answered either way', () => {
+  setStore('tasks', 'child', { needsReview: true, lastVisit: { at: 1_000, headSha: 'old' } });
+  setHead('new');
+  applyAgentHookEvent({
+    agentId: 'two',
+    taskId: 'child',
+    state: 'waiting',
+    event: 'PermissionRequest',
+    at: Date.now(),
+  });
+  const [question, review] = rows();
+  expect(question.querySelector('[data-testid="attention-changes"]')).toBeNull();
+  expect(review.querySelector('[data-testid="attention-changes"]')?.textContent).toBe(
+    'new commits',
+  );
+});
+
 it('stamps the visit with the current HEAD when the user leaves a task', () => {
   const stop = startTaskVisitTracker();
   try {

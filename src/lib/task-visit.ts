@@ -35,16 +35,11 @@ export interface VisitChangesInput {
   checks?: readonly (RunResult & Pick<Partial<SuiteCheckRun>, 'reused'>)[];
 }
 
-/** Outcome of the runs that finished after `at`: any failure wins; cancelled runs say nothing. */
-function outcomeSince(runs: readonly RunResult[], at: number): 'passed' | 'failed' | undefined {
-  const finished = runs.filter(
-    (run) =>
-      (run.status === 'passed' || run.status === 'failed') &&
-      run.finishedAt !== null &&
-      Date.parse(run.finishedAt) > at,
+/** Whether a run that finished after `at` failed. A pass asks nothing of the user. */
+function failedSince(runs: readonly RunResult[], at: number): boolean {
+  return runs.some(
+    (run) => run.status === 'failed' && run.finishedAt !== null && Date.parse(run.finishedAt) > at,
   );
-  if (finished.some((run) => run.status === 'failed')) return 'failed';
-  return finished.length ? 'passed' : undefined;
 }
 
 function ratingOutdatedSince(input: VisitChangesInput, visit: TaskVisit): boolean {
@@ -61,9 +56,10 @@ function ratingOutdatedSince(input: VisitChangesInput, visit: TaskVisit): boolea
 }
 
 /**
- * What the app itself observed since the visit: git HEAD, diff fingerprints,
- * and its own verify and check runs. Agent self-reports are deliberately not
- * inputs — this line separates receipts from claims.
+ * What the app itself observed since the visit that is worth a second look:
+ * git HEAD, diff fingerprints, and failures of its own verify and check runs.
+ * Agent self-reports are deliberately not inputs — this line separates
+ * receipts from claims.
  */
 export function changesSinceVisit(input: VisitChangesInput): string[] {
   const { visit } = input;
@@ -73,13 +69,10 @@ export function changesSinceVisit(input: VisitChangesInput): string[] {
   if (visit.headSha && input.headSha && input.headSha !== visit.headSha)
     changes.push('new commits');
   if (ratingOutdatedSince(input, visit)) changes.push('rating outdated');
-  const verify = outcomeSince(input.verificationRun ? [input.verificationRun] : [], visit.at);
-  if (verify) changes.push('verify ' + verify);
+  if (failedSince(input.verificationRun ? [input.verificationRun] : [], visit.at))
+    changes.push('verify failed');
   // A reused check is the verify run above, already reported.
-  const checks = outcomeSince(
-    (input.checks ?? []).filter((check) => !check.reused),
-    visit.at,
-  );
-  if (checks) changes.push('checks ' + checks);
+  const checks = (input.checks ?? []).filter((check) => !check.reused);
+  if (failedSince(checks, visit.at)) changes.push('checks failed');
   return changes;
 }

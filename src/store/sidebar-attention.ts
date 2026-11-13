@@ -28,7 +28,8 @@ export interface AttentionEntry {
   /** Only a timestamp recorded by the source, never a derived first-seen time. */
   since?: number;
   panel: string | null;
-  /** App-attested changes since the user last had the task open; never agent claims. */
+  /** App-attested changes since the user last had the task open, on reviews only;
+   *  never agent claims. */
   changes: string[];
 }
 
@@ -146,9 +147,14 @@ export function computeAttentionEntries(): AttentionEntry[] {
   const entries = [...new Set([...store.taskOrder, ...store.collapsedTaskOrder])].flatMap(
     (taskId) => {
       const reasons = taskAttentionEntries(taskId);
-      if (!reasons.length) return [];
-      const changes = getTaskChangesSinceVisit(taskId);
-      return reasons.map((reason) => ({ ...reason, changes }));
+      // Only a review is judged on evidence; a question is answered either way.
+      const changes = reasons.some((reason) => reason.kind === 'review')
+        ? getTaskChangesSinceVisit(taskId)
+        : [];
+      return reasons.map((reason) => ({
+        ...reason,
+        changes: reason.kind === 'review' ? changes : [],
+      }));
     },
   );
   const rank = (entry: AttentionEntry) =>

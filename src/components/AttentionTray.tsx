@@ -87,21 +87,23 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
                 · {props.entry.detail}
               </Show>
             </span>
-            {/* Neutral and always present: it is evidence, not urgency, and the
-                row must not grow when a change arrives. */}
-            <span
-              data-testid="attention-changes"
-              style={{
-                'font-size': sf(11),
-                color: theme.fgSubtle,
-                overflow: 'hidden',
-                'text-overflow': 'ellipsis',
-                'white-space': 'nowrap',
-                width: '100%',
-              }}
-            >
-              {changesLine() || ' '}
-            </span>
+            {/* Neutral, and always present on a review row: it is evidence, not
+                urgency, and the row must not grow when a change arrives. */}
+            <Show when={props.entry.kind === 'review'}>
+              <span
+                data-testid="attention-changes"
+                style={{
+                  'font-size': sf(11),
+                  color: theme.fgSubtle,
+                  overflow: 'hidden',
+                  'text-overflow': 'ellipsis',
+                  'white-space': 'nowrap',
+                  width: '100%',
+                }}
+              >
+                {changesLine() || ' '}
+              </span>
+            </Show>
             <div
               style={{
                 display: 'flex',
