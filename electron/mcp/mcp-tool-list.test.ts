@@ -334,6 +334,17 @@ describe('session capability tool sets', () => {
     });
   });
 
+  it('tells ordinary sessions, not legacy coordinators, that get_task_diff reads peers', () => {
+    const description = (tools: ToolDef[]) =>
+      tools.find((tool) => tool.name === 'get_task_diff')?.description ?? '';
+    const ordinary = description(
+      selectTools('task', '', false, { profile: 'ordinary', canCreate: true, peers: true }),
+    );
+    expect(ordinary).toContain('list_agent_sessions');
+    expect(ordinary).not.toContain('Scoped to your own direct children');
+    expect(description(selectTools('', 'coordinator-xyz'))).not.toContain('peer');
+  });
+
   it('never grants children creation even if a malformed capability requests it', () => {
     expect(names('child-review', true)).toEqual([...canvas, ...finish, 'signal_done']);
     expect(names('child-automatic', true)).toEqual([...canvas, 'land_self', 'signal_done']);

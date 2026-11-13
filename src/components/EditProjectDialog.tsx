@@ -263,10 +263,10 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                       description={
                         <>
                           Eligible top-level agents in this project can discover each other, read
-                          output, and send messages held for your review. Messages never type into
-                          terminals automatically. Running sessions get the tools after a supported
-                          restart and resume; sessions with custom MCP configuration need separate
-                          setup.
+                          output and diffs, and send messages held for your review. Messages never
+                          type into terminals automatically. Running sessions get the tools after a
+                          supported restart and resume; sessions with custom MCP configuration need
+                          separate setup.
                         </>
                       }
                     />

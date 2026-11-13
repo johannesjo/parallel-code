@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   promptSnapshot: vi.fn(),
   writePrompt: vi.fn(),
   inputBlocker: vi.fn(),
+  worktreeDiff: vi.fn(),
 }));
 vi.mock('node:child_process', () => ({
   execFile: Object.assign(vi.fn(), { [promisify.custom]: mocks.git }),
@@ -41,6 +42,7 @@ vi.mock('../ipc/pty.js', () => ({
   getAgentInputBlocker: mocks.inputBlocker,
 }));
 vi.mock('../ipc/tasks.js', () => ({ deleteTask: mocks.remove }));
+vi.mock('./worktree-diff.js', () => ({ getWorktreeDiff: mocks.worktreeDiff }));
 vi.mock('./canvas-config.js', () => ({
   canConfigureCanvasMcp: (command: string, args: string[]) =>
     command === 'codex' && !args.includes('--mcp-config'),
@@ -1060,6 +1062,63 @@ describe('held peer messages and access', () => {
         sessionInstanceId: peer.sessionInstanceId,
       }),
     ).resolves.toMatchObject({ output: 'Hello peer', truncated: false });
+  });
+
+  it('lets a top-level peer read another top-level task diff only after opt-in', async () => {
+    await register('parent');
+    await register('peer');
+    const parent = session('parent');
+    const diff = {
+      files: [{ path: 'a.ts', lines_added: 1, lines_removed: 0, status: 'M', committed: true }],
+      diff: '+x',
+    };
+    mocks.worktreeDiff.mockResolvedValue(diff);
+    await expect(service.callTool(parent, 'get_task_diff', { taskId: 'peer' })).rejects.toThrow(
+      'Peer access',
+    );
+    expect(mocks.worktreeDiff).not.toHaveBeenCalled();
+    policy(true);
+    await expect(service.callTool(parent, 'get_task_diff', { taskId: 'peer' })).resolves.toEqual(
+      diff,
+    );
+    expect(mocks.worktreeDiff).toHaveBeenCalledWith('/external/peer');
+    // Opt-in covers the diff only; status and prompts stay limited to own children.
+    await expect(service.callTool(parent, 'get_task_status', { taskId: 'peer' })).rejects.toThrow(
+      'no longer active',
+    );
+    await expect(
+      service.callTool(parent, 'send_prompt', { taskId: 'peer', prompt: 'hi' }),
+    ).rejects.toThrow('no longer active');
+  });
+
+  it('keeps peer diffs out of other projects, foreign children, checkouts and self', async () => {
+    await register('parent');
+    await register('peer');
+    await register('other', { projectRoot: '/other', projectId: 'other' });
+    await register('foreign-child', { parentTaskId: 'peer' });
+    await register('child', { parentTaskId: 'parent' });
+    await register('checkout', { gitIsolation: 'direct', worktreePath: '/repo' });
+    const parent = session('parent');
+    const child = session('child', 'child-instance', true);
+    const noPeers: SessionCaller = {
+      ...session('peer'),
+      capabilities: { profile: 'ordinary', canCreate: true, peers: false },
+    };
+    policy(true);
+    await expect(service.callTool(parent, 'get_task_diff', { taskId: 'checkout' })).rejects.toThrow(
+      'project checkout',
+    );
+    for (const taskId of ['other', 'foreign-child', 'parent'])
+      await expect(service.callTool(parent, 'get_task_diff', { taskId })).rejects.toThrow(
+        'no longer active',
+      );
+    await expect(service.callTool(noPeers, 'get_task_diff', { taskId: 'parent' })).rejects.toThrow(
+      'Peer access',
+    );
+    await expect(service.callTool(child, 'get_task_diff', { taskId: 'peer' })).rejects.toThrow(
+      'unavailable',
+    );
+    expect(mocks.worktreeDiff).not.toHaveBeenCalled();
   });
 
   it('keeps project page agents out of peer scope', async () => {

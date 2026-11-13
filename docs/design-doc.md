@@ -97,7 +97,7 @@ If context is missing, conflicting, closing, or not restored yet, fail closed fo
 | V2 discovery/output              | Only recipients in the caller's allowed relationship/scope; permission checks apply to discovery as well as reads.                                                                                                              |
 | V2 prompts                       | Children may contact only their own parent. Top-level tasks may contact their own children. Unrelated top-level peers require a project-level opt-in. Peer prompts wait for a ready recipient with no user draft or input hold. |
 
-In V2, **Allow peer access between tasks** defaults off and explicitly enables discovery, output access, and automatic messages between eligible top-level sessions in that project. It does not expand a child's scope beyond its parent. No cross-project grants in this design. Treat output and prompts as untrusted peer content, not system instructions.
+In V2, **Allow peer access between tasks** defaults off and explicitly enables discovery, output access, diff access (`get_task_diff` on a peer's taskId, worktree tasks only), and automatic messages between eligible top-level sessions in that project. It does not expand a child's scope beyond its parent. No cross-project grants in this design. Treat output and prompts as untrusted peer content, not system instructions.
 
 ### Exact V1 tool exposure and completion loop
 
