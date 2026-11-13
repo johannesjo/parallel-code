@@ -106,6 +106,8 @@ vi.mock('../store/store', () => {
     setTaskBriefs: (on: boolean) => setStore('taskBriefs', on),
     setTaskContext: (on: boolean) => setStore('taskContext', on),
     setShowPromptInput: (on: boolean) => setStore('showPromptInput', on),
+    isTaskPromptInputShown: (task?: { promptInputRevealed?: boolean }) =>
+      store.showPromptInput || task?.promptInputRevealed === true,
     showCanvasContext: vi.fn(),
   };
 });

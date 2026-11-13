@@ -394,6 +394,9 @@ export interface Task {
    *  restart (app or machine) doesn't discard what the user typed but never
    *  sent. Cleared on send. */
   promptDraft?: string;
+  /** Shows the prompt box for a staged draft while the user keeps it hidden
+   *  in Settings; cleared on send. Restored from a non-empty draft. */
+  promptInputRevealed?: boolean;
   terminalInputPending?: boolean;
   terminalInputPendingFromQuestion?: boolean;
   delegationParent?: boolean;

@@ -15,6 +15,7 @@ import { setPlanContent, setPrefillPrompt, setTaskPromptDraftActive } from './ta
 import { setActiveTask } from './navigation';
 import { saveState } from './persistence';
 import { aiTerminalPanels, setTaskFocusedPanel } from './focused-panel';
+import { revealTaskPromptInput } from './prompt-input-visibility';
 import type { CanvasTab, Task } from './types';
 import type { ReasoningProfile } from '../investigation/profiles';
 import type { ReasoningWorkspace } from '../investigation/editing';
@@ -71,7 +72,7 @@ export function stageCanvasRequest(taskId: string, request: string): void {
   if (!task || task.closingStatus) return;
   const text = [task.prefillPrompt ?? task.promptDraft ?? '', request].filter(Boolean).join('\n\n');
   setTaskPromptDraftActive(taskId, true);
-  setStore('showPromptInput', true);
+  revealTaskPromptInput(taskId);
   setPrefillPrompt(taskId, text);
   queueMicrotask(() => {
     if (store.tasks[taskId]) setTaskFocusedPanel(taskId, 'prompt');
@@ -278,6 +279,6 @@ export function appendBrowserReference(taskId: string, reference: string): void 
   const text = draft ? `${draft}\n\n${reference}` : reference;
   batch(() => {
     setStore('tasks', taskId, { promptDraft: text, prefillPrompt: text, promptDraftActive: true });
-    setStore('showPromptInput', true);
+    revealTaskPromptInput(taskId);
   });
 }

@@ -319,6 +319,16 @@ describe('focus navigation neighbor map', () => {
     expect(mockStore.focusedPanel['task-1']).toBe('changed-files');
   });
 
+  it('reaches a prompt box shown for a staged draft while the setting hides it', () => {
+    setTask('task-1', { promptInputRevealed: true });
+    mockStore.showPromptInput = false;
+    mockStore.focusedPanel['task-1'] = 'ai-terminal';
+
+    navigateRow('down');
+
+    expect(mockStore.focusedPanel['task-1']).toBe('prompt');
+  });
+
   it('falls back from vanished focused panels before navigating', () => {
     setTask('task-1');
     mockStore.focusedPanel['task-1'] = 'removed-panel';
