@@ -165,6 +165,7 @@ import { startAgentHookStatusListener } from './store/agentHookStatus';
 import { applyPlanContent } from './store/canvas';
 import { startBackgroundChecks } from './store/background-checks';
 import { startPreviousTaskTracker } from './store/previous-task';
+import { startTaskVisitTracker } from './store/task-visits';
 import type { PlanContentMessage } from './store/canvas';
 import { CircleCheckIcon, GitHubMarkIcon, SyncIcon } from './components/icons';
 
@@ -440,6 +441,7 @@ function App() {
     const stopAgentHookStatusListener = startAgentHookStatusListener();
     const stopBackgroundChecks = startBackgroundChecks();
     const stopPreviousTaskTracker = startPreviousTaskTracker();
+    const stopTaskVisitTracker = startTaskVisitTracker();
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
@@ -926,6 +928,7 @@ function App() {
       stopAgentHookStatusListener();
       stopBackgroundChecks();
       stopPreviousTaskTracker();
+      stopTaskVisitTracker();
       stopDocumentListeners();
       stopWindowVisibilityTracking();
       offPlanContent();

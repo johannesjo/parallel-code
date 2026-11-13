@@ -1018,6 +1018,7 @@ describe('next task that needs you', () => {
         taskId: 'review',
         label: 'Answer',
         panel: 'ai-terminal:asking',
+        changes: [],
       },
     ];
     openNextAttentionTask();

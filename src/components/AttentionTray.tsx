@@ -31,6 +31,8 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
   const task = () => store.tasks[props.entry.taskId];
   const project = () => store.projects.find((p) => p.id === task()?.projectId);
   const resume = () => task()?.collapsed && !opensReview(props.entry);
+  const changesLine = () =>
+    props.entry.changes.length ? 'Since you looked: ' + props.entry.changes.join(' · ') : '';
   // Finish needs the task's panel, so it opens the task the way a click on this row does.
   const menu = createTaskContextMenu({ task: () => task(), open: () => props.onOpen() });
   return (
@@ -42,7 +44,9 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
             class="task-item sidebar-attention-row"
             aria-current={store.activeTaskId === props.entry.taskId ? 'true' : undefined}
             data-attention={getTaskAttentionState(props.entry.taskId)}
-            title={[t().name, props.entry.label, props.entry.detail].filter(Boolean).join(' — ')}
+            title={[t().name, props.entry.label, props.entry.detail, changesLine()]
+              .filter(Boolean)
+              .join(' — ')}
             onClick={() => props.onOpen()}
             onContextMenu={(event) => menu.onContextMenu(event)}
             style={{
@@ -76,6 +80,21 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
                 {' '}
                 · {props.entry.detail}
               </Show>
+            </span>
+            {/* Neutral and always present: it is evidence, not urgency, and the
+                row must not grow when a change arrives. */}
+            <span
+              data-testid="attention-changes"
+              style={{
+                'font-size': sf(11),
+                color: theme.fgSubtle,
+                overflow: 'hidden',
+                'text-overflow': 'ellipsis',
+                'white-space': 'nowrap',
+                width: '100%',
+              }}
+            >
+              {changesLine() || ' '}
             </span>
             <div
               style={{
