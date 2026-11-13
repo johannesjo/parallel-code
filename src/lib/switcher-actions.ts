@@ -39,7 +39,7 @@ export const ACTION_INFO: Record<string, ActionInfo> = {
   toggleBoardView: { keywords: 'kanban overview' },
   toggleGitHubIssues: { keywords: 'github issues pull requests pr' },
   openNextAttentionTask: { keywords: 'attention waiting blocked question' },
-  openPreviousAttentionTask: { keywords: 'attention waiting blocked question' },
+  openPreviousTask: { keywords: 'back last recent return toggle' },
   toggleHelp: { keywords: 'shortcuts keyboard keys' },
   toggleSettings: { keywords: 'preferences options config' },
   newThinkingTour: { keywords: 'thinking space explain' },

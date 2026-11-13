@@ -79,7 +79,7 @@ describe('DEFAULT_BINDINGS', () => {
     expect(binding?.modifiers).not.toHaveProperty('cmdOrCtrl');
   });
 
-  it('binds previous attention task to Ctrl+Shift+Tab, never Cmd+Shift+Tab', () => {
+  it('binds previous task to Ctrl+Shift+Tab, never Cmd+Shift+Tab', () => {
     const binding = DEFAULT_BINDINGS.find((b) => b.id === 'app.nav.previous-attention');
     expect(binding).toMatchObject({
       key: 'Tab',

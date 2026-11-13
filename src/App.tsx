@@ -3,7 +3,7 @@ import { KanbanPage } from './components/KanbanPage';
 import { TaskBoard } from './components/TaskBoard';
 import { openBesideBoard } from './components/board/TaskStatus';
 import { navigateBoard, navigateBoardTask } from './components/task-board-keys';
-import { openNextAttentionTask, openPreviousAttentionTask } from './components/next-attention-task';
+import { openNextAttentionTask, openPreviousTask } from './components/next-attention-task';
 import {
   BoardSidePanelClose,
   BoardSidePanelHandle,
@@ -164,6 +164,7 @@ import { startRemoteStatusSync } from './store/remoteStatusSync';
 import { startAgentHookStatusListener } from './store/agentHookStatus';
 import { applyPlanContent } from './store/canvas';
 import { startBackgroundChecks } from './store/background-checks';
+import { startPreviousTaskTracker } from './store/previous-task';
 import type { PlanContentMessage } from './store/canvas';
 import { CircleCheckIcon, GitHubMarkIcon, SyncIcon } from './components/icons';
 
@@ -438,6 +439,7 @@ function App() {
     const stopMCPListeners = initMCPListeners();
     const stopAgentHookStatusListener = startAgentHookStatusListener();
     const stopBackgroundChecks = startBackgroundChecks();
+    const stopPreviousTaskTracker = startPreviousTaskTracker();
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
@@ -813,7 +815,7 @@ function App() {
       toggleBoardView: () => withViewTransition(toggleBoardView),
       toggleGitHubIssues: () => toggleGitHubIssues(),
       openNextAttentionTask: () => openNextAttentionTask(),
-      openPreviousAttentionTask: () => openPreviousAttentionTask(),
+      openPreviousTask: () => openPreviousTask(),
       switchDocument: () => {
         if (store.activeDocumentProjectId && isDocumentAgentTaskId(store.activeTaskId))
           setFilesOpen(true);
@@ -923,6 +925,7 @@ function App() {
       stopRemoteStatusSync();
       stopAgentHookStatusListener();
       stopBackgroundChecks();
+      stopPreviousTaskTracker();
       stopDocumentListeners();
       stopWindowVisibilityTracking();
       offPlanContent();

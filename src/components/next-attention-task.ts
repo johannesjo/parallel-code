@@ -1,6 +1,7 @@
 import { store } from '../store/core';
 import { isAiTerminalPanel } from '../store/focused-panel';
 import { boardShown } from '../store/project-pages';
+import { previousTaskId } from '../store/previous-task';
 import { samePanelKindIn } from '../store/store';
 import type { Task } from '../store/types';
 import { askingPanel, openTask } from './board/task-state';
@@ -24,15 +25,12 @@ function attentionQueue(): Task[] {
 }
 
 /**
- * The task `step` places from the current one, wrapping around; when the
- * current one is not waiting, the first going forward or the last going back.
- * An answered task leaves the queue, so the next press starts again from the
- * most urgent.
+ * The task after the current one, wrapping around; when the current one is not
+ * waiting, the first. An answered task leaves the queue, so the next press
+ * starts again from the most urgent.
  */
-function stepInQueue(queue: Task[], currentId: string | null, step: 1 | -1): Task | undefined {
-  const at = queue.findIndex((task) => task.id === currentId);
-  const from = at === -1 && step === -1 ? 0 : at;
-  const next = queue[(from + step + queue.length) % queue.length];
+function nextInQueue(queue: Task[], currentId: string | null): Task | undefined {
+  const next = queue[(queue.findIndex((task) => task.id === currentId) + 1) % queue.length];
   return next?.id === currentId ? undefined : next;
 }
 
@@ -47,10 +45,7 @@ function landingPanel(taskId: string): string | null {
   return same ?? asking;
 }
 
-function openAttentionTask(step: 1 | -1): void {
-  const task = stepInQueue(attentionQueue(), store.activeTaskId, step);
-  if (!task) return;
-  const panel = landingPanel(task.id);
+function openBesideBoardOrInLayout(task: Task, panel: string | null): void {
   if (!boardShown()) {
     // The layout scrolls the active task into view itself.
     openTask(task, panel);
@@ -76,10 +71,19 @@ function revealBoardCard(taskId: string): void {
 
 /** Opens the next waiting task, beside the board while it is shown. */
 export function openNextAttentionTask(): void {
-  openAttentionTask(1);
+  const task = nextInQueue(attentionQueue(), store.activeTaskId);
+  if (task) openBesideBoardOrInLayout(task, landingPanel(task.id));
 }
 
-/** Opens the previous waiting task, beside the board while it is shown. */
-export function openPreviousAttentionTask(): void {
-  openAttentionTask(-1);
+/**
+ * Goes back to the task that was active before this one, beside the board
+ * while it is shown, on the pane it was left on. Closing, snoozed and
+ * minimized tasks are skipped: opening one would wake it or restart its agents.
+ */
+export function openPreviousTask(): void {
+  const id = previousTaskId();
+  const task = id ? store.tasks[id] : undefined;
+  if (!task || task.closingStatus === 'closing' || task.closingStatus === 'removing') return;
+  if (task.collapsed || task.snoozedUntilCi || task.snoozedUntil !== undefined) return;
+  openBesideBoardOrInLayout(task, null);
 }

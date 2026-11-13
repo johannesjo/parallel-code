@@ -19,7 +19,8 @@ import {
   unregisterFocusFn,
 } from '../store/store';
 import { boardHasFocus, navigateBoard, navigateBoardTask } from './task-board-keys';
-import { openNextAttentionTask, openPreviousAttentionTask } from './next-attention-task';
+import { openNextAttentionTask, openPreviousTask } from './next-attention-task';
+import { startPreviousTaskTracker } from '../store/previous-task';
 import { retryCloseTask } from '../store/tasks';
 import { setTaskProjectFilter } from '../store/navigation';
 import type { AttentionEntry } from '../store/sidebar-attention';
@@ -959,23 +960,6 @@ describe('next task that needs you', () => {
     expect(boardSidePanelOpen()).toBe(true);
   });
 
-  it('goes back up the list, wrapping to the last, with the previous command', () => {
-    setStore('tasks', 'idle2', task('idle2', 'Tidy tests'));
-    setStore('taskOrder', ['review', 'pr', 'idle', 'idle2']);
-    setStore('activeTaskId', 'idle');
-    const visited = [1, 2, 3].map(() => {
-      openPreviousAttentionTask();
-      return store.activeTaskId;
-    });
-    expect(visited).toEqual(['review', 'idle2', 'idle']);
-  });
-
-  it('starts from the least urgent going back when the current task is not waiting', () => {
-    setStore('activeTaskId', 'pr');
-    openPreviousAttentionTask();
-    expect(store.activeTaskId).toBe('idle');
-  });
-
   it('starts from the most urgent once the current task stops waiting', () => {
     setStore('activeTaskId', 'idle');
     setStore('tasks', 'idle', 'prUrl', 'https://github.com/o/r/pull/7');
@@ -1080,6 +1064,80 @@ describe('next task that needs you', () => {
     setStore('tasks', 'idle', 'prUrl', 'https://github.com/o/r/pull/7');
     setStore('activeTaskId', 'review');
     openNextAttentionTask();
+    expect(store.activeTaskId).toBe('review');
+  });
+});
+
+describe('previous task', () => {
+  let stopTracker: () => void;
+  beforeEach(() => {
+    stopTracker = startPreviousTaskTracker();
+  });
+  afterEach(() => stopTracker());
+
+  it('returns to the task you came from after answering one, and back again', () => {
+    setStore('activeTaskId', 'pr');
+    openNextAttentionTask();
+    expect(store.activeTaskId).toBe('review');
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('pr');
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('review');
+  });
+
+  it('remembers only the last switch, not the whole run', () => {
+    setStore('tasks', 'idle2', task('idle2', 'Tidy tests'));
+    setStore('activeTaskId', 'pr');
+    setStore('activeTaskId', 'review');
+    setStore('activeTaskId', 'idle2');
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('review');
+  });
+
+  it('returns to the last task from a page without one', () => {
+    setStore('activeTaskId', 'pr');
+    setStore('activeTaskId', null);
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('pr');
+  });
+
+  it('restores the pane you left in that task', () => {
+    setStore('activeTaskId', 'pr');
+    setTaskFocusedPanel('pr', 'notes');
+    setStore('activeTaskId', 'review');
+    setTaskFocusedPanel('review', 'notes');
+    setTaskFocusedPanel('pr', 'shell:0');
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('pr');
+    expect(getTaskFocusedPanel('pr')).toBe('shell:0');
+  });
+
+  it('opens it beside the board while the board is shown', () => {
+    setStore('activeTaskId', 'pr');
+    setStore('activeTaskId', 'review');
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('pr');
+    expect(boardSidePanelOpen()).toBe(true);
+  });
+
+  it('stays put when there is no previous task yet', () => {
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('idle');
+  });
+
+  it('stays put when the previous task is closing, snoozed or minimized', () => {
+    setStore('activeTaskId', 'pr');
+    setStore('activeTaskId', 'review');
+    setStore('tasks', 'pr', 'closingStatus', 'closing');
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('review');
+    setStore('tasks', 'pr', 'closingStatus', undefined);
+    setStore('tasks', 'pr', 'snoozedUntil', Date.now() + 60_000);
+    openPreviousTask();
+    expect(store.activeTaskId).toBe('review');
+    setStore('tasks', 'pr', 'snoozedUntil', undefined);
+    setStore('tasks', 'pr', 'collapsed', true);
+    openPreviousTask();
     expect(store.activeTaskId).toBe('review');
   });
 });
