@@ -25,6 +25,8 @@ import {
   getBranchDivergence,
   markAgentBusy,
   clearAgentActivity,
+  startTaskStatusPolling,
+  stopTaskStatusPolling,
 } from './taskStatus';
 import { undoBranchAdoption } from './task-branch';
 import { IPC } from '../../electron/ipc/channels';
@@ -319,6 +321,37 @@ describe('git status freshness', () => {
       await refreshAllTaskGitStatus();
       expect(worktreeStatusCalls('t-active')).toHaveLength(1);
     } finally {
+      setStore('activeTaskId', previousActive);
+    }
+  });
+
+  it('pauses the 5s active-task poll while the window is hidden', async () => {
+    const previousActive = store.activeTaskId;
+    seedTask('t-poll');
+    setStore('taskOrder', [...store.taskOrder, 't-poll']);
+    setStore('activeTaskId', 't-poll');
+    invokeMock.mockResolvedValue(worktreeStatus('task/t-poll'));
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      startTaskStatusPolling();
+      await flush();
+      expect(worktreeStatusCalls('t-poll')).toHaveLength(1);
+
+      windowState.visible = false;
+      // Three 5s ticks, all well inside the 30s+ background sweep interval.
+      for (let tick = 0; tick < 3; tick++) {
+        vi.advanceTimersByTime(5_000);
+        await flush();
+      }
+      expect(worktreeStatusCalls('t-poll')).toHaveLength(1);
+
+      windowState.visible = true;
+      vi.advanceTimersByTime(5_000);
+      await flush();
+      expect(worktreeStatusCalls('t-poll')).toHaveLength(2);
+    } finally {
+      stopTaskStatusPolling();
+      vi.useRealTimers();
       setStore('activeTaskId', previousActive);
     }
   });
