@@ -118,6 +118,22 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           nothing is left to merge.
         </div>
       </Show>
+      <Show when={props.state.nothingToMerge()}>
+        <div
+          role="status"
+          style={{
+            // Nothing needs attention: with no work on the branch, closing the task is all that is left.
+            padding: '8px 12px',
+            'border-radius': 'var(--radius-md)',
+            border: `1px solid ${theme.border}`,
+            'margin-bottom': '12px',
+            'font-size': '13px',
+          }}
+        >
+          Nothing on this branch: it has no commits and no uncommitted changes, so nothing is left
+          to merge.
+        </div>
+      </Show>
       <Show when={props.state.worktreeStatus()?.has_uncommitted_changes}>
         <div
           style={{
@@ -129,8 +145,14 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           Uncommitted changes in the worktree are not part of this merge.
         </div>
       </Show>
-      {/* No merge runs once the branch has landed, so the base checkout's changes do not matter. */}
-      <Show when={!props.state.alreadyLanded() && props.state.targetUncommitted()}>
+      {/* No merge runs once the branch has landed or holds nothing, so the base checkout's changes do not matter. */}
+      <Show
+        when={
+          !props.state.alreadyLanded() &&
+          !props.state.nothingToMerge() &&
+          props.state.targetUncommitted()
+        }
+      >
         {(target) => (
           <div
             data-testid="target-uncommitted"
@@ -156,7 +178,14 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           </div>
         )}
       </Show>
-      <Show when={!props.state.worktreeStatus.loading && !props.state.hasCommittedChangesToMerge()}>
+      {/* A branch with no work at all has the quiet notice above: closing is the way out, nothing needs attention. */}
+      <Show
+        when={
+          !props.state.worktreeStatus.loading &&
+          !props.state.hasCommittedChangesToMerge() &&
+          !props.state.nothingToMerge()
+        }
+      >
         <div
           style={{
             ...bannerStyle(theme.warning),

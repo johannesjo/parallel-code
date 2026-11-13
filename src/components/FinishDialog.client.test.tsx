@@ -681,20 +681,6 @@ describe('FinishDialog merge blocker', () => {
     );
   });
 
-  it('says next to the disabled merge button why it is disabled', async () => {
-    mockInvoke((channel) => {
-      if (channel === IPC.GetBranchLog) return '';
-      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 0 };
-      return { current_branch: 'task/parent', has_committed_changes: false };
-    });
-    mount();
-    await flush();
-    expect(confirmButton()?.disabled).toBe(true);
-    expect(document.querySelector('[data-testid="footer-note"]')?.textContent).toBe(
-      'No commits on this branch yet.',
-    );
-  });
-
   it('asks for a commit when the changes are not committed yet', async () => {
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';
@@ -747,6 +733,59 @@ describe('FinishDialog with the branch already on the base', () => {
     confirmButton()?.click();
     expect(mergeTask).not.toHaveBeenCalled();
     expect(handlers.onCloseTask).toHaveBeenCalled();
+  });
+});
+
+describe('FinishDialog with no work on the branch', () => {
+  it('says nothing is left to merge and offers to close the task', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus)
+        return {
+          conflicting_files: [],
+          main_ahead_count: 3,
+          remote: 'unpushed',
+          target_uncommitted: { path: '/repo', files: ['a.ts'], overlap: ['a.ts'] },
+        };
+      return {
+        current_branch: 'task/parent',
+        has_committed_changes: false,
+        has_uncommitted_changes: false,
+      };
+    });
+    const handlers = mount();
+    await flush();
+    expect(document.body.textContent).toContain(
+      'Nothing on this branch: it has no commits and no uncommitted changes, so nothing is left to merge.',
+    );
+    expect(document.querySelector('[data-testid="target-uncommitted"]')).toBeNull();
+    // The quiet notice says it all; no warning that the merge has nothing to bring in.
+    expect(document.body.textContent).not.toContain('Nothing to merge:');
+    // An empty branch has nothing to push or to open a PR with.
+    expect(document.querySelector('section[aria-label="Pull request"]')).toBeNull();
+    expect(
+      [...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Push'),
+    ).toBe(false);
+    expect(document.querySelector('[data-testid="footer-note"]')?.textContent).toBe('');
+    expect(confirmButton()?.textContent).toBe('Close task');
+    expect(confirmButton()?.disabled).toBe(false);
+    confirmButton()?.click();
+    expect(mergeTask).not.toHaveBeenCalled();
+    expect(handlers.onCloseTask).toHaveBeenCalled();
+  });
+
+  it("does not offer to close while the worktree is off the task's branch", async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 0 };
+      // The other branch may hold the task's work.
+      return { current_branch: 'task/other', has_committed_changes: false };
+    });
+    mount();
+    await flush();
+    expect(document.body.textContent).not.toContain('nothing is left to merge');
+    expect(confirmButton()?.textContent).not.toBe('Close task');
+    expect(confirmButton()?.disabled).toBe(true);
   });
 });
 
