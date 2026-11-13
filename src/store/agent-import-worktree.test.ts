@@ -97,6 +97,18 @@ describe('importWorktreeForAgent', () => {
     expect(mocks.createImportedTask).not.toHaveBeenCalled();
   });
 
+  it('removes on close only worktrees the app created', async () => {
+    await importWorktreeForAgent(request({ cleanupOnClose: true }));
+    expect(mocks.createImportedTask).toHaveBeenCalledWith(
+      expect.objectContaining({ cleanupOnClose: true }),
+    );
+    mocks.invoke.mockResolvedValue([{ ...lost, app_created: false }]);
+    await expect(importWorktreeForAgent(request({ cleanupOnClose: true }))).rejects.toThrow(
+      'cleanupOnClose',
+    );
+    expect(mocks.createImportedTask).toHaveBeenCalledOnce();
+  });
+
   it('refuses a creator in a Docker sandbox', async () => {
     state.tasks.creator = { ...(state.tasks.creator as object), dockerMode: true };
     await expect(importWorktreeForAgent(request())).rejects.toThrow('Docker');

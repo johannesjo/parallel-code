@@ -31,6 +31,11 @@ export async function importWorktreeForAgent(
   if (!agentDef) throw new Error('Importing agent not found');
 
   const worktree = await findImportable(projectRoot, req.path);
+  // Deleting a worktree the user made by hand cannot be undone; only they may opt into that.
+  if (req.cleanupOnClose && !worktree.app_created)
+    throw new Error(
+      'cleanupOnClose is only allowed for worktrees Parallel Code created; import without it',
+    );
   const sessionId = await chooseSession(worktree.path, agentDef.command, req.sessionId);
   const taskId = await createImportedTask({
     projectId: creator.projectId,
