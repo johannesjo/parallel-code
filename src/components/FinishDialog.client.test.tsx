@@ -1,4 +1,4 @@
-import { Show, type JSX } from 'solid-js';
+import { Show, batch, createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { closeTaskNow } from './CloseTaskDialog';
@@ -57,6 +57,7 @@ vi.mock('../lib/ipc', () => ({
 }));
 vi.mock('./ConfirmDialog', () => ({
   ConfirmDialog: (props: {
+    open: boolean;
     message: JSX.Element;
     confirmLabel: string;
     confirmDisabled?: boolean;
@@ -64,7 +65,7 @@ vi.mock('./ConfirmDialog', () => ({
     footerNote?: string;
     onConfirm: () => void;
   }) => (
-    <div>
+    <div data-testid="finish" hidden={!props.open}>
       {props.message}
       {props.extraActions}
       <span data-testid="footer-note">{props.footerNote}</span>
@@ -90,6 +91,28 @@ const refreshCodeFingerprint = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('../store/task-brief', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../store/task-brief')>()),
   refreshCodeFingerprint,
+}));
+// Covered by its own tests; here only whether it shows and how it hands back.
+vi.mock('./CreatePrDialog', () => ({
+  CreatePrDialog: (props: {
+    open: boolean;
+    backLabel: string;
+    onClose: () => void;
+    onCreated: (created: { url: string; existed: boolean; draft: boolean }) => void;
+  }) => (
+    <Show when={props.open}>
+      <div data-testid="create-pr">
+        <button onClick={() => props.onClose()}>{props.backLabel}</button>
+        <button
+          onClick={() =>
+            props.onCreated({ url: 'https://github.com/o/r/pull/7', existed: false, draft: false })
+          }
+        >
+          Create PR
+        </button>
+      </div>
+    </Show>
+  ),
 }));
 vi.mock('./ChangedFilesList', () => ({ ChangedFilesList: () => null }));
 // Covered by its own tests; its store imports reach past this file's mocks.
@@ -237,7 +260,12 @@ const reported = () =>
   task({ verification: { checks: [{ name: 'Tests', command: 'npm test', result: 'passed' }] } });
 
 function mount(
-  options: { task?: Task; tour?: ChangeTourController; initialCleanup?: boolean } = {},
+  options: {
+    task?: Task;
+    tour?: ChangeTourController;
+    initialCleanup?: boolean;
+    initialCreatePr?: boolean;
+  } = {},
 ) {
   const handlers = {
     onClose: vi.fn(),
@@ -253,7 +281,7 @@ function mount(
         open
         task={options.task ?? task()}
         initialCleanup={options.initialCleanup ?? true}
-        initialCreatePr={false}
+        initialCreatePr={options.initialCreatePr ?? false}
         tour={options.tour ?? tour()}
         onTourClick={() => {}}
         onPushStart={() => {}}
@@ -358,6 +386,97 @@ describe('FinishDialog merge', () => {
       'parent',
       expect.objectContaining({ squash: true, message: `feat: thing\n\n${body?.value}` }),
     );
+  });
+});
+
+describe('FinishDialog opened for Create PR', () => {
+  const button = (name: string) =>
+    [...document.querySelectorAll('button')].find((b) => b.textContent === name);
+  const finish = () => document.querySelector<HTMLElement>('[data-testid="finish"]');
+  const finishHidden = () => finish()?.hidden;
+
+  it('shows only Create pull request, and cancelling it closes everything', () => {
+    const handlers = mount({ initialCreatePr: true });
+    expect(document.querySelector('[data-testid="create-pr"]')).not.toBeNull();
+    expect(finishHidden()).toBe(true);
+    button('Cancel')?.click();
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it('closes everything once the PR is created', () => {
+    const handlers = mount({ initialCreatePr: true });
+    button('Create PR')?.click();
+    expect(showNotification).toHaveBeenCalledWith('Created pull request #7', expect.anything());
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it('opens Finish alone otherwise', () => {
+    mount();
+    expect(finishHidden()).toBe(false);
+    expect(document.querySelector('[data-testid="create-pr"]')).toBeNull();
+  });
+
+  // Reopens the same dialog in another mode, as TaskPanel does.
+  function mountSwitchable(initialCreatePr: boolean) {
+    const [open, setOpen] = createSignal(true);
+    const [createPr, setCreatePr] = createSignal(initialCreatePr);
+    dispose = render(
+      () => (
+        <FinishDialog
+          open={open()}
+          task={task()}
+          initialCleanup
+          initialCreatePr={createPr()}
+          tour={tour()}
+          onTourClick={() => {}}
+          onPushStart={() => {}}
+          onDiffFileClick={() => {}}
+          onClose={() => setOpen(false)}
+          onCloseTask={() => {}}
+          onOpenPullRequest={() => {}}
+          onPushDone={() => {}}
+          onRegenerateTour={() => {}}
+          onConfigureChecks={() => {}}
+        />
+      ),
+      document.body,
+    );
+    // Opened again the way TaskPanel does it: mode and open in one batch.
+    const reopen = (asCreatePr: boolean) =>
+      batch(() => {
+        setCreatePr(asCreatePr);
+        setOpen(true);
+      });
+    return { open, setOpen, reopen };
+  }
+
+  it('never shows Finish when reopened for Create PR after a plain Finish', () => {
+    const { setOpen, reopen } = mountSwitchable(false);
+    setOpen(false);
+    // Any toggle of `hidden` means Finish was shown for a render before hiding again.
+    const observer = new MutationObserver(() => {});
+    observer.observe(document.body, { attributeFilter: ['hidden'], subtree: true });
+    reopen(true);
+    const toggles = observer.takeRecords().filter((r) => r.target === finish());
+    observer.disconnect();
+    expect(finishHidden()).toBe(true);
+    expect(toggles).toEqual([]);
+  });
+
+  it('never shows Create PR when reopened as Finish after cancelling Create PR alone', () => {
+    const { open, reopen } = mountSwitchable(true);
+    button('Cancel')?.click();
+    expect(open()).toBe(false);
+    const observer = new MutationObserver(() => {});
+    observer.observe(document.body, { childList: true, subtree: true });
+    reopen(false);
+    const mounted = observer
+      .takeRecords()
+      .flatMap((r) => [...r.addedNodes])
+      .some((n) => n instanceof HTMLElement && n.dataset.testid === 'create-pr');
+    observer.disconnect();
+    expect(mounted).toBe(false);
+    expect(finishHidden()).toBe(false);
   });
 });
 

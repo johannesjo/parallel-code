@@ -116,6 +116,7 @@ async function mount(
         commits={options.commits ?? oneCommit}
         push={push}
         onCreated={onCreated}
+        backLabel="Back to Finish"
         onClose={() => {}}
       />
     ),

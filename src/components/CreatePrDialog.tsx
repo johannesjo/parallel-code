@@ -10,6 +10,8 @@ import { GitPullRequestIcon, UploadIcon } from './icons';
 import { PrDraftButton } from './PrDraftButton';
 
 interface CreatePrDialogProps extends CreatePrStateProps {
+  /** Names where cancelling leads: back to Finish, or out when opened on its own. */
+  backLabel: string;
   onClose: () => void;
 }
 
@@ -153,7 +155,7 @@ export function CreatePrDialog(props: CreatePrDialogProps) {
       }
       confirmLoading={busy()}
       confirmDisabled={busy() || !!s.unavailable() || (!existing() && !s.title().trim())}
-      cancelLabel={busy() ? 'Close' : 'Back to Finish'}
+      cancelLabel={busy() ? 'Close' : props.backLabel}
       onConfirm={confirm}
       onCancel={() => props.onClose()}
     />
