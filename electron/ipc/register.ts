@@ -704,6 +704,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
         IPC.MCP_ImportWorktreeRequest,
         { ...request },
       ),
+    confirmCrossProjectRead: async (request) => {
+      if (win.isDestroyed()) throw new Error('Desktop app is not available');
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        title: 'Allow reading another project?',
+        message: `An agent in project "${request.projectName}" wants to read tasks in project "${request.targetProjectName}".`,
+        // Task names can come from agents, so the name stays out of the headline the user acts on.
+        detail: `Asking task: ${request.taskName.slice(0, 80)}\n\nIf you allow it, this agent session can read the output and diffs of that project’s top-level tasks until the session ends. It cannot send them prompts or change anything there.`,
+        buttons: ['Allow', 'Deny'],
+        // Deny is the default: Enter or Escape on an unexpected dialog must not grant access.
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0;
+    },
   });
   const { transport, delegation, pendingSpawns, canvasOwners, wideBindAgents, needsWideBind } = mcp;
   const taskNames = new Map<string, string>();

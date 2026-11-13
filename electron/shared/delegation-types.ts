@@ -48,6 +48,8 @@ export interface TaskAuthorityInput {
 
 export interface ProjectDelegationPolicy {
   projectId: string;
+  /** Shown to agents on peer results and to the user in cross-project read confirmations. */
+  projectName: string;
   allowPeerAccess: boolean;
 }
 
@@ -106,6 +108,8 @@ export interface PeerSession {
   agentId: string;
   sessionInstanceId: string;
   taskId: string;
+  projectId: string;
+  projectName: string;
   name: string;
   agentLabel: string;
   branchName: string;
@@ -131,6 +135,7 @@ export type DelegationRequest =
   | { action: 'unregister'; taskId: string }
   | { action: 'projectPolicy'; policy: ProjectDelegationPolicy }
   | { action: 'orchestrationSetting'; enabled: boolean }
+  | { action: 'crossProjectReadSetting'; enabled: boolean }
   | { action: 'pause'; taskId: string; paused: boolean }
   | { action: 'childLimit'; taskId: string; limit: number }
   | { action: 'inbox'; taskId: string }

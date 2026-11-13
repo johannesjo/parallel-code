@@ -14,6 +14,7 @@ import type {
 } from '../shared/delegation-types.js';
 import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../shared/coordinator-limits.js';
 import { setProjectWorktreeSettings } from '../ipc/project-worktree.js';
+import type { CrossProjectReadRequest } from './cross-project-reads.js';
 
 const mocks = vi.hoisted(() => ({
   git: vi.fn(),
@@ -95,6 +96,9 @@ let createIndependent: Mock<(request: IndependentTaskRequest) => Promise<{ taskI
 let importWorktree: Mock<
   (request: ImportWorktreeRequest) => Promise<{ taskId: string; resumedSessionId: string | null }>
 >;
+let confirmCrossProjectRead: Mock<(request: CrossProjectReadRequest) => Promise<boolean>>;
+/** Answers the oldest open cross-project confirmation. */
+let answers: Array<(allowed: boolean) => void>;
 
 function task(taskId: string, extra: Partial<TaskAuthorityInput> = {}): TaskAuthorityInput {
   return {
@@ -155,7 +159,7 @@ function childRecord(): CoordinatedTask {
   };
 }
 function policy(allowPeerAccess = false) {
-  service.updatePolicy({ projectId: 'project', allowPeerAccess });
+  service.updatePolicy({ projectId: 'project', projectName: 'Project', allowPeerAccess });
 }
 async function send(sender: SessionCaller, target: SessionCaller, requestId = 'message-1') {
   return (await service.callTool(sender, 'send_agent_prompt', {
@@ -226,6 +230,10 @@ beforeEach(() => {
   prepareParent = vi.fn(async () => {});
   createIndependent = vi.fn(async () => ({ taskId: 'sibling' }));
   importWorktree = vi.fn(async () => ({ taskId: 'imported', resumedSessionId: null }));
+  answers = [];
+  confirmCrossProjectRead = vi.fn(
+    () => new Promise<boolean>((resolveAnswer) => answers.push(resolveAnswer)),
+  );
   service = new DelegationService({
     coordinator: async () => core as unknown as Coordinator,
     currentCoordinator: () => core as unknown as Coordinator,
@@ -235,6 +243,7 @@ beforeEach(() => {
     persist,
     createIndependent,
     importWorktree,
+    confirmCrossProjectRead,
   });
 });
 afterEach(() => {
@@ -1078,9 +1087,11 @@ describe('held peer messages and access', () => {
     );
     expect(mocks.worktreeDiff).not.toHaveBeenCalled();
     policy(true);
-    await expect(service.callTool(parent, 'get_task_diff', { taskId: 'peer' })).resolves.toEqual(
-      diff,
-    );
+    await expect(service.callTool(parent, 'get_task_diff', { taskId: 'peer' })).resolves.toEqual({
+      ...diff,
+      projectId: 'project',
+      projectName: 'Project',
+    });
     expect(mocks.worktreeDiff).toHaveBeenCalledWith('/external/peer');
     // Opt-in covers the diff only; status and prompts stay limited to own children.
     await expect(service.callTool(parent, 'get_task_status', { taskId: 'peer' })).rejects.toThrow(
@@ -1108,10 +1119,13 @@ describe('held peer messages and access', () => {
     await expect(service.callTool(parent, 'get_task_diff', { taskId: 'checkout' })).rejects.toThrow(
       'project checkout',
     );
-    for (const taskId of ['other', 'foreign-child', 'parent'])
+    for (const taskId of ['foreign-child', 'parent'])
       await expect(service.callTool(parent, 'get_task_diff', { taskId })).rejects.toThrow(
         'no longer active',
       );
+    await expect(service.callTool(parent, 'get_task_diff', { taskId: 'other' })).rejects.toThrow(
+      'other projects is off',
+    );
     await expect(service.callTool(noPeers, 'get_task_diff', { taskId: 'parent' })).rejects.toThrow(
       'Peer access',
     );
@@ -1962,9 +1976,13 @@ describe('user handoffs', () => {
   it('preserves user handoffs when peer policy changes in this or another project', async () => {
     const { request } = await setup();
     await service.request(request);
-    service.updatePolicy({ projectId: 'unrelated-project', allowPeerAccess: true });
+    service.updatePolicy({
+      projectId: 'unrelated-project',
+      projectName: 'Unrelated',
+      allowPeerAccess: true,
+    });
     expect(service.state('pair').messages[0].state).toBe('waiting');
-    service.updatePolicy({ projectId: 'project', allowPeerAccess: false });
+    service.updatePolicy({ projectId: 'project', projectName: 'Project', allowPeerAccess: false });
     expect(service.state('pair').messages[0].state).toBe('waiting');
   });
 
@@ -1995,5 +2013,215 @@ describe('user handoffs', () => {
     await service.request({ action: 'orchestrationSetting', enabled: false });
     await expect(service.request({ ...request, requestId: 'again' })).rejects.toThrow('disabled');
     expect(mocks.writePrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe('cross-project reads', () => {
+  const diff = { files: [], diff: '' };
+  async function setup() {
+    await register('caller');
+    await register('other', { projectId: 'other', projectRoot: '/other' });
+    service.updatePolicy({ projectId: 'other', projectName: 'Other', allowPeerAccess: false });
+    mocks.worktreeDiff.mockResolvedValue(diff);
+    return { caller: session('caller'), other: session('other') };
+  }
+  const setting = (enabled: boolean) =>
+    service.request({ action: 'crossProjectReadSetting', enabled });
+  const output = (caller: SessionCaller, target: SessionCaller) =>
+    service.callTool(caller, 'get_agent_output', {
+      agentId: target.agentId,
+      sessionInstanceId: target.sessionInstanceId,
+    });
+  const asked = (count: number) =>
+    vi.waitFor(() => expect(confirmCrossProjectRead).toHaveBeenCalledTimes(count));
+  async function answer(allowed: boolean) {
+    answers.shift()?.(allowed);
+    // Let the decision settle before the next read.
+    await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+  }
+  async function approve(caller: SessionCaller, target: SessionCaller, count = 1) {
+    await expect(output(caller, target)).rejects.toThrow('retry later');
+    await asked(count);
+    await answer(true);
+  }
+
+  it('keeps other projects hidden and unreadable while the setting is off', async () => {
+    const { caller, other } = await setup();
+    await expect(service.callTool(caller, 'list_agent_sessions', {})).resolves.toEqual([]);
+    await expect(output(caller, other)).rejects.toThrow('other projects is off');
+    await expect(service.callTool(caller, 'get_task_diff', { taskId: 'other' })).rejects.toThrow(
+      'other projects is off',
+    );
+    expect(confirmCrossProjectRead).not.toHaveBeenCalled();
+    expect(mocks.worktreeDiff).not.toHaveBeenCalled();
+  });
+
+  it('asks once per session and project, without blocking, and reads after approval', async () => {
+    const { caller, other } = await setup();
+    await setting(true);
+    await expect(service.callTool(caller, 'list_agent_sessions', {})).resolves.toEqual([
+      expect.objectContaining({
+        taskId: 'other',
+        projectId: 'other',
+        projectName: 'Other',
+        readOnly: true,
+      }),
+    ]);
+    expect(confirmCrossProjectRead).not.toHaveBeenCalled();
+    await expect(output(caller, other)).rejects.toThrow('retry later');
+    await expect(service.callTool(caller, 'get_task_diff', { taskId: 'other' })).rejects.toThrow(
+      'retry later',
+    );
+    await asked(1);
+    expect(confirmCrossProjectRead).toHaveBeenCalledWith({
+      sessionInstanceId: caller.sessionInstanceId,
+      taskName: 'caller',
+      projectName: 'repo',
+      targetProjectId: 'other',
+      targetProjectName: 'Other',
+    });
+    await answer(true);
+    await expect(output(caller, other)).resolves.toMatchObject({
+      projectId: 'other',
+      projectName: 'Other',
+      output: 'Hello peer',
+    });
+    await expect(service.callTool(caller, 'get_task_diff', { taskId: 'other' })).resolves.toEqual({
+      ...diff,
+      projectId: 'other',
+      projectName: 'Other',
+    });
+    expect(mocks.worktreeDiff).toHaveBeenCalledWith('/external/other');
+    // A restarted pane is a new session and asks again.
+    const relaunched = session('caller', 'caller-relaunch');
+    await approve(relaunched, other, 2);
+    await expect(output(relaunched, other)).resolves.toMatchObject({ output: 'Hello peer' });
+  });
+
+  it('refuses every write across projects, even after approval', async () => {
+    const { caller, other } = await setup();
+    await setting(true);
+    await approve(caller, other);
+    await expect(send(caller, other)).rejects.toThrow('read-only');
+    await expect(
+      service.callTool(caller, 'send_prompt', { taskId: 'other', prompt: 'hi' }),
+    ).rejects.toThrow('no longer active');
+    for (const name of ['suggest_close_task', 'archive_task', 'get_task_status'])
+      await expect(
+        service.callTool(caller, name, { taskId: 'other', reason: 'done' }),
+      ).rejects.toThrow('no longer active');
+    expect(service.state('other').messages).toEqual([]);
+    expect(core.archiveTask).not.toHaveBeenCalled();
+  });
+
+  it('reports a denial clearly and hides that project for the session', async () => {
+    const { caller, other } = await setup();
+    await setting(true);
+    await expect(output(caller, other)).rejects.toThrow('retry later');
+    await asked(1);
+    await answer(false);
+    await expect(output(caller, other)).rejects.toThrow('denied');
+    await expect(service.callTool(caller, 'get_task_diff', { taskId: 'other' })).rejects.toThrow(
+      'denied',
+    );
+    await expect(service.callTool(caller, 'list_agent_sessions', {})).resolves.toEqual([]);
+    expect(confirmCrossProjectRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets decisions of ended sessions and accepts long project names', async () => {
+    const { caller, other } = await setup();
+    service.updatePolicy({
+      projectId: 'other',
+      projectName: 'O'.repeat(300),
+      allowPeerAccess: false,
+    });
+    await setting(true);
+    await approve(caller, other);
+    await expect(output(caller, other)).resolves.toMatchObject({ projectName: 'O'.repeat(200) });
+    sessions = sessions.filter((entry) => entry !== caller);
+    service.expireMessages();
+    sessions.push(caller);
+    await expect(output(caller, other)).rejects.toThrow('retry later');
+    await asked(2);
+  });
+
+  it('asks again when the confirmation could not be shown', async () => {
+    const { caller, other } = await setup();
+    await setting(true);
+    confirmCrossProjectRead.mockRejectedValueOnce(new Error('Desktop app is not available'));
+    await expect(output(caller, other)).rejects.toThrow('retry later');
+    await asked(1);
+    await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+    await approve(caller, other, 2);
+    await expect(output(caller, other)).resolves.toMatchObject({ output: 'Hello peer' });
+  });
+
+  it('revokes approvals when the setting turns off mid-session and ignores late answers', async () => {
+    const { caller, other } = await setup();
+    await setting(true);
+    await approve(caller, other);
+    await setting(false);
+    await expect(output(caller, other)).rejects.toThrow('other projects is off');
+    await expect(service.callTool(caller, 'get_task_diff', { taskId: 'other' })).rejects.toThrow(
+      'other projects is off',
+    );
+    await expect(service.callTool(caller, 'list_agent_sessions', {})).resolves.toEqual([]);
+    await setting(true);
+    // The earlier approval is gone; a dialog answered after the setting turned off counts for nothing.
+    await expect(output(caller, other)).rejects.toThrow('retry later');
+    await asked(2);
+    await setting(false);
+    await answer(true);
+    await setting(true);
+    await expect(output(caller, other)).rejects.toThrow('retry later');
+    await asked(3);
+  });
+
+  it('keeps children, checkout-mode tasks, page agents and shells out of cross-project reads', async () => {
+    const { caller } = await setup();
+    await register('child', { parentTaskId: 'caller' });
+    const otherProject = { projectId: 'other', projectRoot: '/other' };
+    await register('other-child', { ...otherProject, parentTaskId: 'other' });
+    await register('other-direct', {
+      ...otherProject,
+      gitIsolation: 'direct',
+      worktreePath: '/other',
+    });
+    await register('gh-agent-other', {
+      ...otherProject,
+      gitIsolation: 'none',
+      worktreePath: '/other',
+      branchName: '',
+    });
+    const child = session('child', 'child-instance', true);
+    const targets = ['other-child', 'other-direct', 'gh-agent-other'].map((id) => session(id));
+    const shell = session('other', 'other-shell');
+    shell.agentId = 'agent-other-shell';
+    mocks.meta.mockImplementation((agentId: string) => ({
+      agentId,
+      isShell: agentId === shell.agentId,
+    }));
+    await setting(true);
+    await expect(service.callTool(caller, 'list_agent_sessions', {})).resolves.toEqual([
+      expect.objectContaining({ taskId: 'other', agentId: 'agent-other' }),
+      // The caller's own child stays listed through the parent relationship.
+      expect.objectContaining({ taskId: 'child', readOnly: false }),
+    ]);
+    await expect(service.callTool(child, 'list_agent_sessions', {})).resolves.toEqual([
+      expect.objectContaining({ taskId: 'caller' }),
+    ]);
+    for (const target of [...targets, shell])
+      await expect(output(caller, target)).rejects.toThrow('scope');
+    await expect(output(child, session('other', 'other-2'))).rejects.toThrow('scope');
+    await expect(
+      service.callTool(caller, 'get_task_diff', { taskId: 'other-direct' }),
+    ).rejects.toThrow('outside your read scope');
+    await expect(
+      service.callTool(caller, 'get_task_diff', { taskId: 'other-child' }),
+    ).rejects.toThrow('no longer active');
+    await expect(service.callTool(child, 'get_task_diff', { taskId: 'other' })).rejects.toThrow(
+      'unavailable',
+    );
+    expect(confirmCrossProjectRead).not.toHaveBeenCalled();
   });
 });

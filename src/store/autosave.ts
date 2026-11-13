@@ -66,6 +66,7 @@ function structuralSnapshot(): string {
     coordinatorNotificationDelayMs: store.coordinatorNotificationDelayMs,
     maxIndependentTasksPerCreator: store.maxIndependentTasksPerCreator,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
+    allowCrossProjectReads: store.allowCrossProjectReads,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled,
     taskContext: store.taskContext,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,

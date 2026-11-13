@@ -30,6 +30,12 @@ export async function setMcpOrchestrationEnabled(enabled: boolean): Promise<void
   setStore('mcpOrchestrationEnabled', enabled);
 }
 
+/** Like project peer policies: the main process applies the change before the UI shows it. */
+export async function setAllowCrossProjectReads(enabled: boolean): Promise<void> {
+  await delegationRequest({ action: 'crossProjectReadSetting', enabled });
+  setStore('allowCrossProjectReads', enabled);
+}
+
 export function taskAuthorityInput(
   task: Task | PersistedTask,
   project: Project,

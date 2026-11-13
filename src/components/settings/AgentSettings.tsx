@@ -5,6 +5,7 @@ import {
   setDockerImage,
   setShareDockerAgentAuth,
   setMcpOrchestrationEnabled,
+  setAllowCrossProjectReads,
   setCoordinatorNotificationDelayMs,
   setMaxIndependentTasksPerCreator,
   setPreferUiMode,
@@ -41,6 +42,21 @@ export function AgentSettings() {
       setMcpSettingError(`Could not change agent orchestration: ${String(error)}`);
     } finally {
       setSavingMcpSetting(false);
+    }
+  }
+
+  const [savingCrossProject, setSavingCrossProject] = createSignal(false);
+  const [crossProjectError, setCrossProjectError] = createSignal<string | null>(null);
+
+  async function changeCrossProjectReads(enabled: boolean) {
+    setSavingCrossProject(true);
+    setCrossProjectError(null);
+    try {
+      await setAllowCrossProjectReads(enabled);
+    } catch (error) {
+      setCrossProjectError(`Could not change cross-project reads: ${String(error)}`);
+    } finally {
+      setSavingCrossProject(false);
     }
   }
   return (
@@ -96,6 +112,16 @@ export function AgentSettings() {
           onChange={setDefaultPropagateSkipPermissions}
           description="Pre-tick Propagate to sub-tasks when skip-permissions are enabled for an eligible worktree task. Needs agent orchestration"
         />
+        <SettingsCheckboxRow
+          label="Allow agents to read tasks in other projects"
+          checked={store.allowCrossProjectReads}
+          disabled={!store.mcpOrchestrationEnabled || savingCrossProject()}
+          onChange={(enabled) => void changeCrossProjectReads(enabled)}
+          description="Top-level worktree agents can find top-level worktree tasks in your other projects and read their output and diffs. They cannot send them prompts or change them. The first read of each project asks you to allow or deny it for that agent session. Turning this off revokes every approval at once. Needs agent orchestration"
+        />
+        <span role="alert" style={{ 'font-size': '12px', color: theme.error, 'min-height': '1lh' }}>
+          {crossProjectError()}
+        </span>
         <SettingsCard>
           <label
             style={{

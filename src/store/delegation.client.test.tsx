@@ -62,6 +62,8 @@ function message(deliveryId = 'one', agentId = 'second'): PeerMessage {
     taskId: task.id,
     sessionInstanceId: `${agentId}-instance`,
     name: task.name,
+    projectId: 'project',
+    projectName: 'Project',
     agentLabel: 'Claude',
     branchName: task.branchName,
     status: 'running',

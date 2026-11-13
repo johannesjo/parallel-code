@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { realpath } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Coordinator } from './coordinator.js';
 import type { CoordinatedTask } from './types.js';
@@ -9,6 +9,11 @@ import { parseSignalDoneInput } from '../shared/completion-report.js';
 import { CLOSE_SUGGESTION_REASON_MAX } from '../shared/close-suggestion.js';
 import { parseLandSelfInput } from './land-self-input.js';
 import { getWorktreeDiff } from './worktree-diff.js';
+import {
+  createCrossProjectReads,
+  type CrossProjectReadAccess,
+  type CrossProjectReadRequest,
+} from './cross-project-reads.js';
 import { isProjectPageAgentTaskId } from '../shared/project-page-agents.js';
 import {
   getAgentPromptReadiness,
@@ -65,6 +70,13 @@ const MAX_REQUESTS_PER_SENDER = 2000;
 const MAX_TOTAL_MESSAGES = 2000;
 const MAX_TOTAL_REQUESTS = 20000;
 const ID = /^[a-zA-Z0-9_-]{1,128}$/;
+const CROSS_PROJECT_REFUSALS: Record<Exclude<CrossProjectReadAccess, 'allowed'>, string> = {
+  off: 'Reading tasks in other projects is off. Only the user can turn on "Allow agents to read tasks in other projects" in Settings > Agents.',
+  pending:
+    'The user has not yet allowed this session to read project "{project}"; Parallel Code is asking now. Continue with other work and retry later; do not wait or retry in a loop.',
+  denied:
+    'The user denied this session access to project "{project}". Do not retry; ask the user if you need it.',
+};
 // Shown on a queued message, so a delivery that cannot happen yet says why.
 const WAITING_FOR_PROMPT: Record<AgentPromptReadinessReason, string | undefined> = {
   ready: undefined,
@@ -198,6 +210,7 @@ export class DelegationService {
   private readonly delivering = new Set<string>();
   private readonly readyMessages = new Map<string, number>();
   private readonly closes = new Map<string, Promise<{ detachedChildIds: string[] }>>();
+  private readonly crossProject: ReturnType<typeof createCrossProjectReads>;
 
   constructor(
     private readonly options: {
@@ -213,9 +226,12 @@ export class DelegationService {
       importWorktree: (
         request: ImportWorktreeRequest,
       ) => Promise<{ taskId: string; resumedSessionId: string | null }>;
+      /** Asks the user; resolves true to allow. Agents never wait on it. */
+      confirmCrossProjectRead: (request: CrossProjectReadRequest) => Promise<boolean>;
     },
   ) {
     this.orchestrationEnabled = options.orchestrationEnabled ?? true;
+    this.crossProject = createCrossProjectReads(options.confirmCrossProjectRead);
   }
 
   /** Applies the saved per-creator cap; tasks already open past a lowered cap stay open. */
@@ -365,9 +381,13 @@ export class DelegationService {
 
   updatePolicy(policy: ProjectDelegationPolicy): void {
     id(policy.projectId, 'projectId');
-    if (typeof policy.allowPeerAccess !== 'boolean')
+    if (typeof policy.allowPeerAccess !== 'boolean' || typeof policy.projectName !== 'string')
       throw new DelegationError('Invalid project policy');
-    this.policies.set(policy.projectId, { ...policy });
+    // Display only, and project names have no length limit: clip rather than refuse the policy.
+    this.policies.set(policy.projectId, {
+      ...policy,
+      projectName: policy.projectName.slice(0, 200),
+    });
     for (const message of this.messages.values()) {
       if (message.state === 'waiting' && !this.canDeliverMessage(message)) {
         message.state = 'closed';
@@ -727,9 +747,17 @@ export class DelegationService {
     const childId = id(params.taskId, 'taskId');
     const peer = name === 'get_task_diff' ? this.peerTask(task, childId) : undefined;
     if (peer) {
-      if (!caller.capabilities.peers || !this.canContact(task.taskId, childId))
+      const across = peer.projectId !== task.projectId;
+      if (
+        !caller.capabilities.peers ||
+        !(across
+          ? this.crossProjectTarget(task.taskId, childId)
+          : this.canContact(task.taskId, childId))
+      )
         throw new DelegationError(
-          'Peer access to this task is unavailable: it must be open and its project must allow peer access between tasks (a setting only the user can change).',
+          across
+            ? 'This task is outside your read scope: only open top-level worktree tasks of other projects can be read.'
+            : 'Peer access to this task is unavailable: it must be open and its project must allow peer access between tasks (a setting only the user can change).',
           403,
         );
       // A checkout-mode task's path is the project root, whose diff isn't that task's work.
@@ -738,9 +766,10 @@ export class DelegationService {
           'This task works in the project checkout, so it has no diff of its own.',
           403,
         );
+      if (across) this.assertCrossProjectRead(caller, peer);
       // shortcut: diffs against the detected main branch, since registered top-level tasks
       // don't record their base — pass the renderer's base branch through if peers stack.
-      return getWorktreeDiff(peer.worktreePath);
+      return { ...(await getWorktreeDiff(peer.worktreePath)), ...this.projectOf(peer) };
     }
     const child = coordinator?.getTaskStatus(childId);
     // Closed, merged and self-landed children leave the coordinator entirely.
@@ -798,17 +827,59 @@ export class DelegationService {
     return !target.parentTaskId && this.policies.get(sender.projectId)?.allowPeerAccess === true;
   }
 
-  /** Another top-level task of the caller's project: its diff is readable once peer access allows. */
+  /** Another top-level task: its diff is readable once peer access or cross-project reads allow. */
   private peerTask(caller: Authority, targetId: string): Authority | undefined {
     const target = this.tasks.get(targetId);
-    if (
-      !target ||
-      targetId === caller.taskId ||
-      target.projectId !== caller.projectId ||
-      target.parentTaskId
-    )
-      return undefined;
+    if (!target || targetId === caller.taskId || target.parentTaskId) return undefined;
     return target;
+  }
+
+  /**
+   * A top-level worktree task of another project, as seen from a top-level worktree task:
+   * readable (never writable) once the global setting and the user's confirmation allow.
+   * Children, page agents and checkout-mode tasks stay out on both sides.
+   */
+  private crossProjectTarget(callerId: string, targetId: string): Authority | undefined {
+    const caller = this.tasks.get(callerId),
+      target = this.tasks.get(targetId);
+    const eligible = (task: Authority | undefined): task is Authority =>
+      !!task &&
+      !task.closed &&
+      !task.closing &&
+      !task.parentTaskId &&
+      task.gitIsolation === 'worktree';
+    return this.orchestrationEnabled &&
+      eligible(caller) &&
+      eligible(target) &&
+      caller.projectId !== target.projectId
+      ? target
+      : undefined;
+  }
+
+  /** Never blocks: the first read of a project asks the user and fails until they allow it. */
+  private assertCrossProjectRead(caller: SessionCaller, target: Authority): void {
+    const task = this.requireTask(caller.taskId);
+    const targetProjectName = this.projectOf(target).projectName;
+    const access = this.crossProject.access({
+      sessionInstanceId: caller.sessionInstanceId,
+      taskName: task.name,
+      projectName: this.projectOf(task).projectName,
+      targetProjectId: target.projectId,
+      targetProjectName,
+    });
+    if (access !== 'allowed')
+      throw new DelegationError(
+        CROSS_PROJECT_REFUSALS[access].replace('{project}', targetProjectName),
+        403,
+      );
+  }
+
+  /** Projects without a saved policy yet (new this session) fall back to their folder name. */
+  private projectOf(task: Authority): { projectId: string; projectName: string } {
+    return {
+      projectId: task.projectId,
+      projectName: this.policies.get(task.projectId)?.projectName ?? basename(task.projectRoot),
+    };
   }
 
   private peer(session: SessionCaller): PeerSession {
@@ -817,6 +888,7 @@ export class DelegationService {
       agentId: session.agentId,
       sessionInstanceId: session.sessionInstanceId,
       taskId: session.taskId,
+      ...this.projectOf(task),
       name: task.name,
       agentLabel: task.agentCommand,
       branchName: task.branchName,
@@ -824,23 +896,44 @@ export class DelegationService {
     };
   }
 
-  private target(caller: SessionCaller, params: Record<string, unknown>): SessionCaller {
+  /** Sessions of other projects are reachable for reads only, after the user's confirmation. */
+  private target(
+    caller: SessionCaller,
+    params: Record<string, unknown>,
+    access: 'read' | 'write',
+  ): SessionCaller {
     const agentId = id(params.agentId, 'agentId'),
       instance = id(params.sessionInstanceId, 'sessionInstanceId');
     const target = this.options
       .sessions()
       .find((s) => s.agentId === agentId && s.sessionInstanceId === instance);
+    const across =
+      target && !this.canContact(caller.taskId, target.taskId)
+        ? this.crossProjectTarget(caller.taskId, target.taskId)
+        : undefined;
     if (
       !target ||
       target.agentId === caller.agentId ||
-      !this.canContact(caller.taskId, target.taskId) ||
-      getAgentMeta(agentId)?.isShell
+      getAgentMeta(agentId)?.isShell ||
+      (!across && !this.canContact(caller.taskId, target.taskId))
     )
       throw new DelegationError(
         'Recipient unavailable or outside your scope. For your own child tasks, use send_prompt with their taskId.',
         403,
       );
+    if (across && access === 'write')
+      throw new DelegationError(
+        'Sessions in other projects are read-only: send_agent_prompt reaches only sessions in your own project.',
+        403,
+      );
+    if (across) this.assertCrossProjectRead(caller, across);
     return target;
+  }
+
+  /** Listing asks nothing: the global setting covers discovery; reads confirm per project. */
+  private listableAcross(caller: SessionCaller, targetId: string): boolean {
+    const target = this.crossProjectTarget(caller.taskId, targetId);
+    return !!target && this.crossProject.visible(caller.sessionInstanceId, target.projectId);
   }
 
   private async peerTool(
@@ -856,9 +949,9 @@ export class DelegationService {
           (s) =>
             s.agentId !== caller.agentId &&
             !getAgentMeta(s.agentId)?.isShell &&
-            this.canContact(caller.taskId, s.taskId),
+            (this.canContact(caller.taskId, s.taskId) || this.listableAcross(caller, s.taskId)),
         )
-        .map((s) => this.peer(s));
+        .map((s) => ({ ...this.peer(s), readOnly: !this.canContact(caller.taskId, s.taskId) }));
     if (name === 'wait_for_agent_prompt') {
       const deliveryId = id(params.deliveryId, 'deliveryId');
       const message = this.messages.get(deliveryId);
@@ -890,7 +983,7 @@ export class DelegationService {
       this.requireCaller(caller);
       return this.receipt(message);
     }
-    const target = this.target(caller, params);
+    const target = this.target(caller, params, name === 'get_agent_output' ? 'read' : 'write');
     if (name === 'get_agent_output') {
       const maxBytes = params.maxBytes ?? 16_384;
       if (
@@ -904,6 +997,7 @@ export class DelegationService {
       if (raw === null) throw new DelegationError('Recipient exited', 404);
       const decoded = Buffer.from(stripAnsi(Buffer.from(raw, 'base64').toString('utf8')));
       return {
+        ...this.projectOf(this.requireTask(target.taskId)),
         output: decoded.subarray(Math.max(0, decoded.length - maxBytes)).toString('utf8'),
         truncated: decoded.length > maxBytes,
         observedAt: new Date().toISOString(),
@@ -1000,6 +1094,7 @@ export class DelegationService {
       this.messageRequestCount -= requests.size;
       this.messageRequests.delete(instance);
     }
+    this.crossProject.forget(liveInstances);
     for (const message of this.messages.values()) {
       if (
         message.state === 'waiting' &&
@@ -1182,6 +1277,11 @@ export class DelegationService {
       case 'orchestrationSetting':
         this.setOrchestrationEnabled(request.enabled);
         return { enabled: this.orchestrationEnabled };
+      case 'crossProjectReadSetting':
+        if (typeof request.enabled !== 'boolean')
+          throw new DelegationError('Invalid cross-project read setting');
+        this.crossProject.setEnabled(request.enabled);
+        return { enabled: request.enabled };
       case 'unregister': {
         const taskId = id(request.taskId);
         if (this.tasks.get(taskId)?.delegationParent || this.tasks.get(taskId)?.coordinatorMode)

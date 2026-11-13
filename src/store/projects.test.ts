@@ -412,9 +412,18 @@ it('changes project peer permission only after backend acknowledgment', async ()
   await updateProjectCoordination('consent', true);
   expect(invoke).toHaveBeenLastCalledWith(IPC.DelegationRequest, {
     action: 'projectPolicy',
-    policy: { projectId: 'consent', allowPeerAccess: true },
+    policy: { projectId: 'consent', projectName: 'Consent', allowPeerAccess: true },
   });
   expect(store.projects[0].allowPeerAccess).toBe(true);
+});
+
+it("tells the main process a new project's name, with peer access off", () => {
+  vi.mocked(invoke).mockResolvedValueOnce({});
+  const id = addProject('Shop', '/work/shop-repo', true);
+  expect(invoke).toHaveBeenCalledWith(IPC.DelegationRequest, {
+    action: 'projectPolicy',
+    policy: { projectId: id, projectName: 'Shop', allowPeerAccess: false },
+  });
 });
 
 describe('quick edit projects', () => {

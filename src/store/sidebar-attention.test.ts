@@ -327,6 +327,8 @@ describe('independent attention reasons', () => {
       sessionInstanceId: 'session',
       taskId: 'task-1',
       name: 'Task',
+      projectId: 'project',
+      projectName: 'Project',
       agentLabel: 'Claude',
       branchName: 'task',
       status: 'running',

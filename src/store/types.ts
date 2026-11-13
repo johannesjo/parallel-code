@@ -664,6 +664,7 @@ export interface PersistedState {
   darkThemePreset?: LookPreset;
   darkThemeCustomId?: string | null;
   mcpOrchestrationEnabled?: boolean;
+  allowCrossProjectReads?: boolean;
   documentWorkspacesEnabled?: boolean;
   taskContext?: boolean;
   documentFullWidth?: boolean;
@@ -882,6 +883,8 @@ export interface AppStore {
   darkThemePreset: LookPreset;
   darkThemeCustomId: string | null;
   mcpOrchestrationEnabled: boolean;
+  /** Opt-in: top-level agents may read (never prompt) tasks in other projects, confirmed per session. */
+  allowCrossProjectReads: boolean;
   documentWorkspacesEnabled: boolean;
   /** Opt-in: the task's goal and the agent's plan in a Context pane (split view) or a plan line
    *  under the title (stacked view), in place of the header brief. */

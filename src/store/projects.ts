@@ -56,6 +56,11 @@ export function addProject(name: string, path: string, isGitRepo?: boolean): str
       s.lastProjectId = id;
     }),
   );
+  // Agents and cross-project read confirmations show this name instead of the folder name.
+  void delegationRequest({
+    action: 'projectPolicy',
+    policy: { projectId: id, projectName: name, allowPeerAccess: false },
+  }).catch((error: unknown) => console.warn('Could not send the new project name:', error));
   return id;
 }
 
@@ -472,9 +477,10 @@ export async function updateProjectCoordination(
   projectId: string,
   allowPeerAccess: boolean,
 ): Promise<void> {
+  const projectName = store.projects.find((p) => p.id === projectId)?.name ?? projectId;
   await delegationRequest({
     action: 'projectPolicy',
-    policy: { projectId, allowPeerAccess },
+    policy: { projectId, projectName, allowPeerAccess },
   });
   updateProject(projectId, { allowPeerAccess });
 }
