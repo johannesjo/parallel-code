@@ -1134,31 +1134,11 @@ main.board-panel-left > .plan-board-shell {
   height: auto;
   min-height: 0;
 }
-/* A pill straddling the edge facing the board, centred on it and above the
-   resize handle it overlaps, so it reads as a tab of the boundary. */
+/* Straddles the edge facing the board, centred on it and above the resize
+   handle it overlaps, so it reads as a tab of the boundary. The pill itself
+   is `.edge-tab` in styles.css. */
 .board-side-panel-close {
-  position: absolute;
-  top: 50%;
   left: -8px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 44px;
-  padding: 0;
-  translate: 0 -50%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--bg-elevated);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.board-side-panel-close:hover {
-  border-color: var(--fg-muted);
-  background: var(--bg-hover);
-  color: var(--fg);
 }
 /* Ordered after the panel, the board would otherwise paint over the half of
    the tab that sticks out, and take its clicks. */

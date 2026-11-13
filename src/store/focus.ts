@@ -111,6 +111,11 @@ function isLeftColumnPanel(panel: string): boolean {
   );
 }
 
+/** Cells of the split layout's side column, which the user can hide. */
+export function isSideColumnPanel(panel: string): boolean {
+  return panel !== 'canvas' && !isLeftColumnPanel(panel);
+}
+
 /** Shell panel ids split into the visual rows of the task's shell layout. */
 function shellRows(taskId: string, shellCount: number): string[][] {
   const cols = shellColumns(getTaskShellLayout(taskId), shellCount);
@@ -138,6 +143,10 @@ function buildMainGrid(panelId: string): string[][] {
     const toolbarCols = shellToolbarPanels(task);
     const aiCols = aiTerminalPanels(task);
     if (isDocumentAgentTaskId(panelId)) return [aiCols, ['prompt']];
+
+    if (store.taskSplitMode[panelId] && store.taskSideCollapsed) {
+      return [['title'], aiCols, ...(store.showPromptInput ? [['prompt']] : [])];
+    }
 
     if (store.taskSplitMode[panelId]) {
       const grid: string[][] = [['title']];

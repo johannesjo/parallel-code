@@ -1954,6 +1954,31 @@ describe('new task defaults persistence', () => {
   });
 });
 
+describe('task side column', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  async function lastSaved(): Promise<Record<string, unknown>> {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    return JSON.parse(lastCall[1].json) as Record<string, unknown>;
+  }
+
+  it('keeps a hidden side column across restarts, showing it unless it was hidden', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskSideCollapsed: true }));
+    await loadState();
+    expect(store.taskSideCollapsed).toBe(true);
+    expect((await lastSaved()).taskSideCollapsed).toBe(true);
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskSideCollapsed: 'yes' }));
+    await loadState();
+    expect(store.taskSideCollapsed).toBe(false);
+    expect((await lastSaved()).taskSideCollapsed).toBeUndefined();
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.taskSideCollapsed).toBe(false);
+  });
+});
+
 describe('task brief settings', () => {
   beforeEach(() => vi.clearAllMocks());
 

@@ -47,7 +47,7 @@ export function BoardSidePanelClose() {
     <Show when={!store.showNewTaskPanel}>
       <button
         type="button"
-        class="board-side-panel-close"
+        class="edge-tab board-side-panel-close"
         title="Close side panel (Escape)"
         aria-label="Close side panel"
         onClick={() => closeSidePanel()}
