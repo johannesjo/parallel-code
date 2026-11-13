@@ -200,3 +200,54 @@ it('offers actions on the terminal process even without a selection', () => {
   expect(run).toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledWith(false);
 });
+
+it('shows a blocked pane action without running it', () => {
+  const run = vi.fn();
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(
+    () => (
+      <TerminalSelectionMenu
+        x={20}
+        y={30}
+        text=""
+        recipients={[]}
+        onSend={vi.fn()}
+        onClose={vi.fn()}
+        paneActions={[{ label: 'Enable Remote Control', disabled: true, run }]}
+      />
+    ),
+    host,
+  );
+  button('Enable Remote Control').click();
+  expect(run).not.toHaveBeenCalled();
+});
+
+it('steps over a blocked pane action with the arrow keys', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(
+    () => (
+      <TerminalSelectionMenu
+        x={20}
+        y={30}
+        text=""
+        recipients={[]}
+        onSend={vi.fn()}
+        onClose={vi.fn()}
+        paneActions={[
+          { label: 'Continue in cloud…', run: vi.fn() },
+          { label: 'Enable Remote Control', disabled: true, run: vi.fn() },
+          { label: 'Resume with flags…', run: vi.fn() },
+        ]}
+      />
+    ),
+    host,
+  );
+  const menu = document.querySelector<HTMLElement>('[role="menu"]');
+  const press = () =>
+    menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  press();
+  press();
+  expect(document.activeElement?.textContent?.trim()).toBe('Resume with flags…');
+});

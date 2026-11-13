@@ -9,6 +9,7 @@ export interface TerminalLinkAction {
   /** Built when the menu renders, inside its owner. */
   icon?: () => JSX.Element;
   title?: string;
+  disabled?: boolean;
   run: () => void;
 }
 
@@ -92,7 +93,10 @@ export function TerminalSelectionMenu(props: {
           }
           if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
             e.preventDefault();
-            const buttons = [...(menu?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+            // Disabled items cannot take focus, so stepping onto one would stall the arrows.
+            const buttons = [
+              ...(menu?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []),
+            ];
             const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
             const step = e.key === 'ArrowDown' ? 1 : -1;
             // With no item focused yet, the arrows start from either end.
@@ -173,6 +177,7 @@ export function TerminalSelectionMenu(props: {
             <button
               role="menuitem"
               title={action.title}
+              disabled={action.disabled}
               onClick={() => {
                 action.run();
                 props.onClose(false);

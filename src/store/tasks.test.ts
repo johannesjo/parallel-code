@@ -103,7 +103,10 @@ vi.mock('./projects', () => ({
   getProjectBranchPrefix: vi.fn(),
   isProjectMissing: vi.fn(),
 }));
-vi.mock('../lib/bookmarks', () => ({ setPendingShellCommand: vi.fn() }));
+vi.mock('../lib/bookmarks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/bookmarks')>()),
+  setPendingShellCommand: vi.fn(),
+}));
 // No close animation: a closed task leaves the store on a 0ms timer, which the
 // top-level afterEach drains, so it cannot delete the next test's same-id task.
 vi.mock('../lib/reducedMotion', () => ({ prefersMotion: () => false }));
@@ -187,12 +190,14 @@ import {
   selectActiveNeighborAfterRemoval,
   updateTaskName,
   forgetTask,
+  runBookmarkInTask,
+  spawnProgramForTask,
 } from './tasks';
 import { armSpCompletion, fireSpCompletion, onTaskRenamed } from './superProductivity';
 import { updateTaskBranch } from './task-branch';
 import { getCoordinatorChildren } from './sidebar-order';
 import { recordMergedLines, recordTaskMerged } from './completion';
-import { markAgentSpawned, rescheduleTaskStatusPolling } from './taskStatus';
+import { isAgentIdle, markAgentSpawned, rescheduleTaskStatusPolling } from './taskStatus';
 import { saveState } from './persistence';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
 import { getProject, getProjectBranchPrefix, getProjectPath, isProjectMissing } from './projects';
@@ -2940,5 +2945,23 @@ describe('mergeTask / pushTask preconditions', () => {
     vi.mocked(getProjectPath).mockReturnValue(undefined);
     await expect(pushTask('task-2', channel)).rejects.toThrow('Project folder not found');
     expect(mockInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('runBookmarkInTask', () => {
+  it('never types a bookmark into a quiet program terminal such as a cloud session', () => {
+    mockTasks['task-b'] = { agentIds: [], shellAgentIds: [] };
+    const programId = spawnProgramForTask('task-b', { command: 'claude', args: ['--cloud', 'x'] });
+    vi.mocked(isAgentIdle).mockReturnValue(true);
+    mockInvoke.mockClear();
+    mockInvoke.mockResolvedValue(undefined);
+
+    runBookmarkInTask('task-b', 'npm test');
+
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      IPC.WriteToAgent,
+      expect.objectContaining({ agentId: programId }),
+    );
+    expect(mockTasks['task-b'].shellAgentIds).toHaveLength(2);
   });
 });

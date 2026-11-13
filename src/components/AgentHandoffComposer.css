@@ -218,9 +218,9 @@ html[data-look='islands-light'] .terminal-selection-menu {
     0 0 0 1px rgba(0, 0, 0, 0.06),
     0 10px 28px rgba(0, 0, 0, 0.18);
 }
-html[data-look='obsidian-light'] .terminal-selection-menu button:hover,
+html[data-look='obsidian-light'] .terminal-selection-menu button:not(:disabled):hover,
 html[data-look='obsidian-light'] .terminal-selection-menu button:focus-visible,
-html[data-look='islands-light'] .terminal-selection-menu button:hover,
+html[data-look='islands-light'] .terminal-selection-menu button:not(:disabled):hover,
 html[data-look='islands-light'] .terminal-selection-menu button:focus-visible {
   background: var(--bg-hover);
 }
@@ -239,9 +239,13 @@ html[data-look='islands-light'] .terminal-selection-menu button:focus-visible {
   text-align: left;
   cursor: pointer;
 }
-.terminal-selection-menu button:hover,
+.terminal-selection-menu button:not(:disabled):hover,
 .terminal-selection-menu button:focus-visible {
   background: color-mix(in srgb, var(--bg-elevated) 78%, var(--fg));
+}
+.terminal-selection-menu button:disabled {
+  color: var(--fg-muted);
+  cursor: default;
 }
 .terminal-selection-menu [role='alert'] {
   color: var(--error);

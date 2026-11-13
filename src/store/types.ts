@@ -246,6 +246,8 @@ export interface Agent {
   generation: number;
   /** The session generation that already received the canvas tool guidance with a prompt. */
   canvasGuidanceGeneration?: number;
+  /** The session generation that `/remote-control` was sent to; a restart ends Remote Control. */
+  remoteControlGeneration?: number;
   spawnDelayMs?: number;
   attachExisting?: boolean;
 }

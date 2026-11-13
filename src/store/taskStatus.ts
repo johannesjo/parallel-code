@@ -1,4 +1,5 @@
 import { createEffect, createRoot, createSignal, untrack } from 'solid-js';
+import { isClaudeCommand } from '../lib/claude-cloud';
 import { createStore } from 'solid-js/store';
 import { isAgentChat } from './agent-chat';
 import { isAgentSuspended } from './agent-suspend';
@@ -1139,7 +1140,7 @@ function isAgentBlockedOnInput(agentId: string): boolean {
 
 /** Hooks run for Claude only when its command is `claude` (main's `isClaudeCommand`). */
 function isClaudeAgent(agentId: string): boolean {
-  return store.agents?.[agentId]?.def?.command?.split(/[\\/]/).pop() === 'claude';
+  return isClaudeCommand(store.agents?.[agentId]?.def?.command ?? '');
 }
 
 /** Whether a hook's `working` claim still stands. A lost `Stop` would hold it
