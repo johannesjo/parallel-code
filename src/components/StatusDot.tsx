@@ -21,6 +21,7 @@ const REVIEW_COLOR = theme.review;
  *  motion means working, a filled badge needs you, an outline is at rest. */
 type StatusGlyph =
   | 'spinner'
+  | 'shell'
   | 'question'
   | 'error'
   | 'review'
@@ -116,9 +117,11 @@ export function getStatusGlyph(
   // that agent is often the one fixing CI, and the CI glyph returns when it stops.
   if (ci === 'failed') return 'ci_failed';
   if (ci === 'running') return 'ci_running';
+  // A plain terminal gets its own CLI-style glyph so it never reads as an agent working.
+  if (attention === 'shell_busy') return 'shell';
   // Review outranks activity in the attention state, so a busy task under
   // review shows the review ring rather than a spinner in its colour.
-  if (attention === 'shell_busy' || (status === 'busy' && !attention)) return 'spinner';
+  if (status === 'busy' && !attention) return 'spinner';
   // Same precedence as the colour: a resting attention state beats the dot status.
   const resting = attention === 'review' || attention === 'ready' ? attention : status;
   if (resting === 'review') return 'review';
@@ -193,6 +196,8 @@ export function StatusDot(props: {
           class="status-glyph-spinner"
           style={{ width: `${SPINNERS[size()]}px`, height: `${SPINNERS[size()]}px` }}
         />
+      ) : glyph() === 'shell' ? (
+        <span class="status-glyph-shell" style={{ height: `${SPINNERS[size()]}px` }} />
       ) : glyph() === 'question' ? (
         badge('?', getDotShadow(props.attention))
       ) : glyph() === 'error' ? (

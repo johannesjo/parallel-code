@@ -3969,6 +3969,18 @@ html:is(
   animation: spinnerSpin 0.9s linear infinite;
 }
 
+/* Terminal busy: the classic CLI spinner (| / — \) stepping round. A bar, not
+   a ring, so a running shell never reads as an agent working; under reduced
+   motion the still bar keeps it apart from the agent's hollow ring. */
+.status-glyph-shell {
+  display: inline-block;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  /* A bar repeats every 180°, so 8 steps per turn show all four poses. */
+  animation: spinnerSpin 1s steps(8) infinite;
+}
+
 /* CI progress: a wedge that fills from 12 o'clock as checks finish, inside a
    slowly turning dashed ring. Only the ring turns so the wedge stays readable,
    and the filled wedge keeps it apart from the agent's ring spinner. */
@@ -6450,6 +6462,7 @@ button.tour-save-state:not(:disabled):hover {
 
   /* The hollow ring alone still says "working"; only the rotation goes. */
   .status-glyph-spinner,
+  .status-glyph-shell,
   .status-glyph-ci::before {
     animation: none;
   }
