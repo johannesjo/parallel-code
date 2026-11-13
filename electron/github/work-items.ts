@@ -12,7 +12,9 @@ export async function listGitHubWorkItems(
   search?: string,
 ): Promise<GitHubWorkItem[]> {
   const common = ['--state', 'open', '--limit', String(LIST_LIMIT)];
-  const query = search ? scopeToRepo(search) : '';
+  // GitHub's search does not match an item's URL, but it does match its number.
+  const ref = search ? parseWorkItemRef(search) : null;
+  const query = ref ? String(ref.number) : search ? scopeToRepo(search) : '';
   if (query) common.push('--search', query);
   const [issues, prs] = await Promise.all([
     runGhJson(
@@ -30,9 +32,44 @@ export async function listGitHubWorkItems(
       projectRoot,
     ),
   ]);
-  return [...parseWorkItems(issues, 'issue'), ...parseWorkItems(prs, 'pr')].sort((a, b) =>
+  const items = [...parseWorkItems(issues, 'issue'), ...parseWorkItems(prs, 'pr')].sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
+  // The number also matches text; keep only the pasted item, and nothing when
+  // the URL names another repository.
+  return ref ? items.filter((item) => sameWorkItem(parseWorkItemRef(item.url), ref)) : items;
+}
+
+export interface WorkItemRef {
+  host: string;
+  repo: string;
+  number: number;
+}
+
+/** Reads an issue or PR URL (`…/owner/repo/issues/12`, `…/pull/12/files`, with or
+ *  without `https://`); null for anything else. */
+export function parseWorkItemRef(text: string): WorkItemRef | null {
+  const trimmed = text.trim();
+  if (/\s/.test(trimmed)) return null;
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  const match = /^\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/(\d+)(?:\/|$)/.exec(url.pathname);
+  if (!match) return null;
+  return {
+    host: url.host.toLowerCase().replace(/^www\./, ''),
+    repo: `${match[1]}/${match[2]}`.toLowerCase(),
+    number: Number(match[3]),
+  };
+}
+
+/** GitHub serves a PR under `/issues/N` too, so the kind in the path does not count. */
+function sameWorkItem(a: WorkItemRef | null, b: WorkItemRef): boolean {
+  return !!a && a.host === b.host && a.repo === b.repo && a.number === b.number;
 }
 
 /** Drops qualifiers that would list another repo's items: a picked PR is
