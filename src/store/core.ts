@@ -78,6 +78,7 @@ export const [store, setStore] = createStore<AppStore>({
   modelTaskNames: false,
   taskNameModel: DEFAULT_TASK_NAME_MODEL,
   taskBriefs: false,
+  taskSideCollapsed: false,
   briefBarFields: { ...DEFAULT_BRIEF_BAR_FIELDS },
   briefModel: DEFAULT_BRIEF_MODEL,
   reviewGuidance: '',

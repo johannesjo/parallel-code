@@ -187,6 +187,10 @@ export function setTaskBriefs(enabled: boolean): void {
   setStore('taskBriefs', enabled);
 }
 
+export function setTaskSideCollapsed(collapsed: boolean): void {
+  setStore('taskSideCollapsed', collapsed);
+}
+
 export function setBriefBarField(field: keyof BriefBarFields, shown: boolean): void {
   setStore('briefBarFields', field, shown);
 }

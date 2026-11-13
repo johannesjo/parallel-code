@@ -21,6 +21,7 @@ import {
   setTaskContext,
   setShowPromptInput,
   setActiveTask,
+  setTaskSideCollapsed,
 } from '../store/store';
 import { GIST_LABEL } from '../lib/understanding-tour';
 import type { Task } from '../store/types';
@@ -57,6 +58,7 @@ vi.mock('../store/store', () => {
     tasks: { parent: { id: 'parent', name: 'Parent task', collapsed: false } },
     focusMode: false,
     taskSplitMode: {} as Record<string, unknown>,
+    taskSideCollapsed: false,
     themePreset: 'obsidian',
     showPlans: true,
     focusedPanel: { task: 'prompt' },
@@ -91,6 +93,8 @@ vi.mock('../store/store', () => {
     deletePanelUserSize: vi.fn(),
     setPanelUserSize: vi.fn(),
     setTaskSplitMode: vi.fn(),
+    setTaskSideCollapsed: (on: boolean) => setStore('taskSideCollapsed', on),
+    isSideColumnPanel: (panel: string) => ['notes', 'changed-files'].includes(panel),
     registerFocusFn: vi.fn(),
     unregisterFocusFn: vi.fn(),
     setActiveAgent: vi.fn(),
@@ -306,6 +310,7 @@ afterEach(() => {
   dispose?.();
   toggleFocusMode(false);
   setTaskFocusedPanel('task', 'prompt');
+  setTaskSideCollapsed(false);
   document.body.replaceChildren();
   channels.length = 0;
   vi.mocked(showNotification).mockClear();
@@ -825,6 +830,38 @@ it('gives the focus support column height to changed files until a shell opens, 
     expect(container.querySelector('.test-terminal')).toBe(terminal);
     setTask('shellAgentIds', []);
     expect(filesCell.style.flex).toBe('1 1 0px');
+  } finally {
+    width.mockRestore();
+  }
+});
+
+it('hides the side column with its toggle and brings it back for focus, keeping the terminal', () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  try {
+    toggleFocusMode(true);
+    const { container } = mountEmptyTask();
+    const terminal = expectDefined(container.querySelector('.test-terminal'));
+    const toggle = expectDefined(container.querySelector<HTMLButtonElement>('.task-side-toggle'));
+    expect(toggle.getAttribute('aria-label')).toBe('Hide side panel');
+    expect(container.querySelector('.test-notes')).not.toBeNull();
+
+    setTaskFocusedPanel('task', 'notes');
+    toggle.click();
+    expect(container.querySelector('.test-notes')).toBeNull();
+    expect(container.querySelector('.test-files')).toBeNull();
+    expect(container.querySelector('.test-terminal')).toBe(terminal);
+    // Focus leaves the hidden notes instead of bringing them straight back.
+    expect(store.focusedPanel.task).toBe('ai-terminal');
+    expect(toggle.getAttribute('aria-label')).toBe('Show side panel');
+    expect(toggle.classList.contains('collapsed')).toBe(true);
+
+    toggle.click();
+    expect(container.querySelector('.test-notes')).not.toBeNull();
+    toggle.click();
+    // A keyboard jump into the hidden column shows it again.
+    setTaskFocusedPanel('task', 'changed-files');
+    expect(container.querySelector('.test-files')).not.toBeNull();
+    expect(container.querySelector('.test-terminal')).toBe(terminal);
   } finally {
     width.mockRestore();
   }

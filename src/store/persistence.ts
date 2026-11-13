@@ -578,6 +578,7 @@ export async function saveState(): Promise<void> {
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,
     taskBriefs: store.taskBriefs || undefined,
+    taskSideCollapsed: store.taskSideCollapsed || undefined,
     briefBarFields: { ...store.briefBarFields },
     briefModel: store.briefModel,
     reviewGuidance: store.reviewGuidance.trim() || undefined,
@@ -804,6 +805,7 @@ interface LegacyPersistedState {
   modelTaskNames?: unknown;
   taskNameModel?: unknown;
   taskBriefs?: unknown;
+  taskSideCollapsed?: unknown;
   briefBarFields?: unknown;
   briefModel?: unknown;
   reviewGuidance?: unknown;
@@ -1099,6 +1101,7 @@ export async function loadState(): Promise<void> {
         ? raw.taskNameModel
         : DEFAULT_TASK_NAME_MODEL;
       s.taskBriefs = raw.taskBriefs === true;
+      s.taskSideCollapsed = raw.taskSideCollapsed === true;
       s.briefBarFields = restoreBriefBarFields(raw.briefBarFields);
       // Briefs used to follow the naming model, with Claude upgraded to Sonnet.
       s.briefModel = isBriefModelId(raw.briefModel)

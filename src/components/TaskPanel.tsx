@@ -26,6 +26,8 @@ import {
   clearPendingAction,
   showNotification,
   setTaskSplitMode,
+  setTaskSideCollapsed,
+  isSideColumnPanel,
   isTaskCanvasVisible,
   referenceTourCard,
   openCanvasDocument,
@@ -72,6 +74,7 @@ import type { DocumentSnapshot } from '../documents/types';
 import { SubTaskStrip } from './SubTaskStrip';
 import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
+import { ChevronRightSmallIcon } from './icons';
 import type { Task } from '../store/types';
 import type { ChangedFile, CommitInfo } from '../ipc/types';
 import type { TranscriptMarks } from '../investigation/transcript';
@@ -447,8 +450,10 @@ export function TaskPanel(props: TaskPanelProps) {
   const SPLIT_EXIT_WIDTH = 1030;
   const [panelWidth, setPanelWidth] = createSignal(0);
   const [useSplit, setUseSplit] = createSignal(false);
+  // The user can hide the split layout's side column; the setting is global.
+  const sideShown = () => useSplit() && !store.taskSideCollapsed;
   // Split mode shows task context as a pane in the side column instead.
-  const showContextStrip = () => contextOn() && !useSplit();
+  const showContextStrip = () => contextOn() && !sideShown();
   createEffect(() => {
     const w = panelWidth();
     const focused = document.activeElement;
@@ -478,6 +483,29 @@ export function TaskPanel(props: TaskPanelProps) {
     setTaskSplitMode(props.task.id, useSplit());
   });
   onCleanup(() => setTaskSplitMode(props.task.id, false));
+
+  // Focus moving to a pane of the hidden side column, such as a new shell or
+  // a keyboard jump to the notes, brings the column back.
+  createEffect(
+    on(
+      () => store.focusedPanel[props.task.id],
+      (panel) => {
+        if (panel && useSplit() && store.taskSideCollapsed && isSideColumnPanel(panel)) {
+          setTaskSideCollapsed(false);
+        }
+      },
+      { defer: true },
+    ),
+  );
+  const toggleSideColumn = () => {
+    const collapsing = !store.taskSideCollapsed;
+    const panel = store.focusedPanel[props.task.id];
+    // Focus can't stay in a pane that leaves the layout.
+    if (collapsing && panel && isSideColumnPanel(panel)) {
+      setTaskFocusedPanel(props.task.id, 'ai-terminal');
+    }
+    setTaskSideCollapsed(collapsing);
+  };
 
   const editingProject = () => {
     const id = editingProjectId();
@@ -873,6 +901,58 @@ export function TaskPanel(props: TaskPanelProps) {
     ),
   };
 
+  // Split-mode columns, created once so hiding the side column keeps the
+  // terminal column mounted.
+  const leftColChild: PanelChild = {
+    id: 'left-col',
+    minSize: 420,
+    content: () => (
+      <ResizablePanel
+        direction="vertical"
+        persistKey={`task:${props.task.id}:split-left`}
+        absorberIds={['ai-terminal']}
+        children={[aiTerminalChild, ...(promptBoxShown() ? [promptInputChild] : [])]}
+      />
+    ),
+  };
+
+  const rightColChild: PanelChild = {
+    id: 'right-col',
+    resizeLabel: 'Resize side panel',
+    minSize: 360,
+    defaultSize: 420,
+    content: () => (
+      <ResizablePanel
+        direction="vertical"
+        class="task-side-stack"
+        persistKey={`task:${props.task.id}:split-right`}
+        // An empty shell is just its toolbar, so without shells the
+        // changed files (or notes, without git) take the free height
+        // instead of leaving it blank below a capped pane.
+        absorberIds={[
+          props.task.shellAgentIds.length > 0
+            ? 'shell-section'
+            : isGitUnavailable()
+              ? 'notes'
+              : 'changed-files',
+        ]}
+        // Vertical pins don't shrink, so pinned or dragged panels can
+        // outgrow the column; scroll keeps them and their handles reachable.
+        style={{
+          height: '100%',
+          'max-height': '100%',
+          overflow: 'auto',
+        }}
+        children={[
+          ...(contextOn() ? [contextChild] : []),
+          ...(isGitUnavailable() ? [] : [changedFilesChild]),
+          notesChild,
+          shellSectionChild,
+        ]}
+      />
+    ),
+  };
+
   // The task body left of the canvas. Created once so toggling the canvas
   // column reparents it instead of remounting the terminal.
   const mainEl = (
@@ -880,7 +960,7 @@ export function TaskPanel(props: TaskPanelProps) {
       ref={mainRef}
       style={{ height: '100%', 'min-height': '0', display: 'flex', 'flex-direction': 'column' }}
     >
-      <div style={{ flex: '1', 'min-height': '0' }}>
+      <div class="task-main-body" style={{ flex: '1', 'min-height': '0' }}>
         {/* Layout flips swap containers; the terminal, composer, notes, and canvas stay mounted. */}
         <Show
           when={useSplit()}
@@ -900,59 +980,27 @@ export function TaskPanel(props: TaskPanelProps) {
         >
           <ResizablePanel
             direction="horizontal"
+            class="task-split-cols"
             persistKey={`task:${props.task.id}:split-cols`}
             absorberIds={['left-col']}
-            children={[
-              {
-                id: 'left-col',
-                minSize: 420,
-                content: () => (
-                  <ResizablePanel
-                    direction="vertical"
-                    persistKey={`task:${props.task.id}:split-left`}
-                    absorberIds={['ai-terminal']}
-                    children={[aiTerminalChild, ...(promptBoxShown() ? [promptInputChild] : [])]}
-                  />
-                ),
-              },
-              {
-                id: 'right-col',
-                resizeLabel: 'Resize side panel',
-                minSize: 360,
-                defaultSize: 420,
-                content: () => (
-                  <ResizablePanel
-                    direction="vertical"
-                    class="task-side-stack"
-                    persistKey={`task:${props.task.id}:split-right`}
-                    // An empty shell is just its toolbar, so without shells the
-                    // changed files (or notes, without git) take the free height
-                    // instead of leaving it blank below a capped pane.
-                    absorberIds={[
-                      props.task.shellAgentIds.length > 0
-                        ? 'shell-section'
-                        : isGitUnavailable()
-                          ? 'notes'
-                          : 'changed-files',
-                    ]}
-                    // Vertical pins don't shrink, so pinned or dragged panels can
-                    // outgrow the column; scroll keeps them and their handles reachable.
-                    style={{
-                      height: '100%',
-                      'max-height': '100%',
-                      overflow: 'auto',
-                    }}
-                    children={[
-                      ...(contextOn() ? [contextChild] : []),
-                      ...(isGitUnavailable() ? [] : [changedFilesChild]),
-                      notesChild,
-                      shellSectionChild,
-                    ]}
-                  />
-                ),
-              },
-            ]}
+            children={[leftColChild, ...(store.taskSideCollapsed ? [] : [rightColChild])]}
           />
+          {/* On the boundary it moves, like the board side panel's tab. */}
+          <button
+            type="button"
+            class="edge-tab task-side-toggle"
+            classList={{ collapsed: store.taskSideCollapsed }}
+            title={store.taskSideCollapsed ? 'Show side panel' : 'Hide side panel'}
+            aria-label={store.taskSideCollapsed ? 'Show side panel' : 'Hide side panel'}
+            aria-expanded={!store.taskSideCollapsed}
+            onClick={toggleSideColumn}
+          >
+            {/* Points the way the column goes: out to the right, or back in. */}
+            <ChevronRightSmallIcon
+              size={10}
+              style={{ transform: store.taskSideCollapsed ? 'scaleX(-1)' : undefined }}
+            />
+          </button>
         </Show>
       </div>
     </div>

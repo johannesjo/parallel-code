@@ -2171,6 +2171,52 @@ html:not(
   color: var(--fg);
 }
 
+/* A pill on a boundary between two panes, which collapses or closes one of
+   them; the user of the class places it. */
+.edge-tab {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 44px;
+  padding: 0;
+  translate: 0 -50%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.edge-tab:hover {
+  border-color: var(--fg-muted);
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* The side column's toggle straddles the column boundary, anchored to its
+   resize handle so it follows a drag. The wrapper scopes the anchor name to
+   its own task. Hidden, the column leaves the toggle at the body's right edge. */
+.task-main-body {
+  position: relative;
+  anchor-scope: --task-side-edge;
+}
+.task-split-cols > .resize-handle-h {
+  anchor-name: --task-side-edge;
+}
+.task-main-body > .task-side-toggle {
+  left: anchor(--task-side-edge center);
+  translate: -50% -50%;
+}
+.task-main-body > .task-side-toggle.collapsed {
+  left: auto;
+  right: 2px;
+  translate: 0 -50%;
+}
+
 /* The focused pane's ring already marks the active task; a column glow too
    would double the signal. Shadowed looks keep their resting shadow. */
 html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
