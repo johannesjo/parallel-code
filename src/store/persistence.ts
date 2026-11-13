@@ -1334,6 +1334,9 @@ export async function loadState(): Promise<void> {
           prBabysit: restoredPrBabysit(pt.prBabysit),
           notes: pt.notes,
           promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
+          // An unsent draft stays visible even when the prompt box is turned off.
+          promptInputRevealed:
+            typeof pt.promptDraft === 'string' && pt.promptDraft.trim() !== '' ? true : undefined,
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
           lastPrompt: pt.lastPrompt,
           promptHistory: restoredPromptHistory(pt.promptHistory),
@@ -1490,6 +1493,9 @@ export async function loadState(): Promise<void> {
           shellAgentIds: [],
           notes: pt.notes,
           promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
+          // An unsent draft stays visible even when the prompt box is turned off.
+          promptInputRevealed:
+            typeof pt.promptDraft === 'string' && pt.promptDraft.trim() !== '' ? true : undefined,
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
           lastPrompt: pt.lastPrompt,
           promptHistory: restoredPromptHistory(pt.promptHistory),

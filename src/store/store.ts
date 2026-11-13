@@ -206,6 +206,7 @@ export {
   setReviewModel,
   setDefaultPropagateSkipPermissions,
 } from './ui';
+export { concealTaskPromptInput, isTaskPromptInputShown } from './prompt-input-visibility';
 export {
   getTaskDotStatus,
   getTaskAttentionState,

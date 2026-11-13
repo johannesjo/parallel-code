@@ -1,6 +1,7 @@
 import { isDocumentAgentTaskId } from '../documents/task-id';
 import { batch } from 'solid-js';
 import { store, setStore } from './core';
+import { isTaskPromptInputShown } from './prompt-input-visibility';
 import { openPanelOrder, setActiveTask } from './navigation';
 import { showNotification } from './notification';
 import { computeSidebarTaskOrder } from './sidebar-order';
@@ -148,7 +149,7 @@ function buildMainGrid(panelId: string): string[][] {
       // whatever's at the bottom-right, so → from prompt jumps into the shell
       // section instead of falling off to the next task. Left cells are padded
       // to the AI pane count so the right column keeps one column index.
-      const leftBottom = store.showPromptInput ? 'prompt' : aiCols[0];
+      const leftBottom = isTaskPromptInputShown(task) ? 'prompt' : aiCols[0];
       const bottomCols = aiCols.map(() => leftBottom);
       const rows = shellRows(panelId, task.shellAgentIds.length);
       if (rows.length > 0) {
@@ -167,7 +168,7 @@ function buildMainGrid(panelId: string): string[][] {
     grid.push(toolbarCols);
     grid.push(...shellRows(panelId, task.shellAgentIds.length));
     grid.push(aiCols);
-    if (store.showPromptInput) {
+    if (isTaskPromptInputShown(task)) {
       grid.push(['prompt']);
     }
     return grid;
@@ -372,7 +373,7 @@ export function navigateRow(direction: 'up' | 'down'): void {
   }
 
   if (store.taskSplitMode[taskId]) {
-    if (direction === 'down' && isAiTerminalPanel(current) && store.showPromptInput) {
+    if (direction === 'down' && isAiTerminalPanel(current) && isTaskPromptInputShown(task)) {
       setTaskFocusedPanel(taskId, 'prompt');
       return;
     }

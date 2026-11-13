@@ -1261,6 +1261,8 @@ describe('prompt draft persistence', () => {
     await loadState();
 
     expect(store.tasks['task-1'].promptDraft).toBe('remember to check the migration');
+    // Visible even when the user keeps the prompt box turned off.
+    expect(store.tasks['task-1'].promptInputRevealed).toBe(true);
   });
 
   it('restores an unsent prompt draft on a collapsed task', async () => {
