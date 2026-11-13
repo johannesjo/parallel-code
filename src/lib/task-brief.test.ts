@@ -58,11 +58,22 @@ describe('buildTaskBriefPrompt', () => {
       agentMessage: 'Done.',
       rawDiff: DIFF,
     });
-    expect(prompt).toContain('{"goal":string,"now":string,"needsYou":string}');
+    expect(prompt).toContain('{"goal":string,"now":string,"needsYou":string,"changes":string}');
     expect(prompt).toContain('at most 15 words');
     expect(prompt).toContain('High level only');
     // A routine ending must not tint every finished task's bar.
     expect(prompt).toContain('finished work waiting for review or merge is not a blocker');
+  });
+
+  it('asks what the branch changes, for the Finish dialog', () => {
+    const prompt = buildTaskBriefPrompt({
+      taskName: 'Fix login',
+      prompts: [],
+      agentMessage: 'Done.',
+      rawDiff: DIFF,
+    });
+    expect(prompt).toContain('- changes: what the branch diff changes');
+    expect(prompt).toContain('at most 25 words');
   });
 
   it('keeps the newest prompts and closes every fence when they are too long', () => {
@@ -159,6 +170,18 @@ describe('parseTaskBriefResponse', () => {
     expect(brief).toEqual({ goal: 'g', now: 'n' });
   });
 
+  it('reads what the branch changes and leaves it out when empty', () => {
+    const { brief } = parseTaskBriefResponse(
+      JSON.stringify({ goal: 'g', now: 'n', changes: ' Adds retry backoff\n to webhooks. ' }),
+    );
+    expect(brief).toEqual({ goal: 'g', now: 'n', changes: 'Adds retry backoff to webhooks.' });
+    const long = parseTaskBriefResponse(JSON.stringify({ now: 'n', changes: 'x'.repeat(1000) }));
+    expect(long.brief.changes).toHaveLength(300);
+    expect(
+      parseTaskBriefResponse(JSON.stringify({ goal: 'g', now: 'n', changes: '' })).brief,
+    ).toEqual({ goal: 'g', now: 'n' });
+  });
+
   it('returns the title apart from the brief, which does not keep it', () => {
     const parsed = parseTaskBriefResponse(
       JSON.stringify({ title: ' Pick the next marketing step ', goal: 'g', now: 'n' }),
@@ -190,6 +213,11 @@ describe('restoreTaskBriefRecord', () => {
       unread: 'yes',
     });
     expect(record).toEqual({ brief: { goal: 'g', now: 'n' }, generatedAt: 5, fingerprint: 'abc' });
+  });
+
+  it('restores what the branch changes', () => {
+    const record = restoreTaskBriefRecord({ brief: { goal: 'g', now: 'n', changes: 'Adds X.' } });
+    expect(record?.brief).toEqual({ goal: 'g', now: 'n', changes: 'Adds X.' });
   });
 
   it('keeps the goal of a brief saved in the old format', () => {

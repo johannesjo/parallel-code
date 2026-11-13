@@ -819,6 +819,65 @@ describe('FinishDialog readiness tip', () => {
   });
 });
 
+describe('FinishDialog changes summary', () => {
+  const brief = (changes?: string) => ({
+    brief: { goal: 'g', now: 'n', ...(changes && { changes }) },
+    generatedAt: 100,
+    fingerprint: 'a',
+  });
+  const summary = () => document.querySelector('[data-testid="changes-summary"]');
+
+  it("says in a sentence what the branch changes, from the task's brief", async () => {
+    mount({ task: task({ brief: brief('Adds retry backoff to the webhook queue.') }) });
+    await flush();
+    expect(summary()?.textContent).toBe('Adds retry backoff to the webhook queue.');
+    // The code may have moved on since the brief; reading it tells.
+    expect(refreshCodeFingerprint).toHaveBeenCalledWith('parent');
+  });
+
+  it('marks a summary of code that changed since', async () => {
+    mount({
+      task: task({
+        brief: brief('Adds retry backoff.'),
+        codeFingerprint: { fingerprint: 'b', at: 200 },
+      }),
+    });
+    await flush();
+    expect(summary()?.textContent).toBe('Adds retry backoff. (written before the latest changes)');
+  });
+
+  it('notes that the summary may cover uncommitted changes the merge leaves out', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 0 };
+      return {
+        current_branch: 'task/parent',
+        has_committed_changes: true,
+        has_uncommitted_changes: true,
+      };
+    });
+    mount({ task: task({ brief: brief('Adds retry backoff.') }) });
+    await flush();
+    expect(summary()?.textContent).toBe('Adds retry backoff. (may include uncommitted changes)');
+  });
+
+  it('shows nothing without a summary or anything to merge', async () => {
+    mount({ task: task({ brief: brief() }) });
+    await flush();
+    expect(summary()).toBeNull();
+    dispose?.();
+    document.body.replaceChildren();
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 0 };
+      return { current_branch: 'task/parent', has_committed_changes: false };
+    });
+    mount({ task: task({ brief: brief('Adds retry backoff.') }) });
+    await flush();
+    expect(summary()).toBeNull();
+  });
+});
+
 describe('FinishDialog tour', () => {
   it('offers to regenerate a ready tour', async () => {
     expect(mount().onRegenerateTour).not.toHaveBeenCalled();

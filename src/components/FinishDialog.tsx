@@ -91,10 +91,11 @@ export function FinishDialog(props: FinishDialogProps) {
   createEffect(() => {
     if (!props.open) setReviewLocation(undefined);
   });
-  // A tour is judged against the code as it is now, edits since the last turn included.
+  // A tour or the brief's changes summary is judged against the code as it is
+  // now, edits since the last turn included.
   createEffect(
     on(
-      () => props.open && !!props.tour.basis(),
+      () => props.open && (!!props.tour.basis() || !!props.task.brief?.brief.changes),
       (check) => {
         if (!check) return;
         refreshCodeFingerprint(props.task.id).catch((error: unknown) =>
