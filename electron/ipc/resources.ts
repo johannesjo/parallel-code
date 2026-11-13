@@ -15,13 +15,15 @@ let last: ResourceSnapshot | null = null;
 async function takeSnapshot(): Promise<ResourceSnapshot> {
   const sampledAt = Date.now();
   const rows = await readProcessTable();
+  const { cpu, exitedCpu } = sampleCpu(rows, sampledAt);
   const appProcesses = new Map(
     app.getAppMetrics().map((metric) => [metric.pid, metric.name ?? metric.type] as const),
   );
   return {
     groups: groupProcesses({
       rows,
-      cpu: sampleCpu(rows, sampledAt),
+      cpu,
+      exitedCpu,
       ptys: getPtyProcessRoots(),
       appProcesses,
       mainPid: process.pid,
