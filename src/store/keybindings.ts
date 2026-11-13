@@ -36,7 +36,7 @@ export function resolvedBindings(): KeyBinding[] {
   return resolveBindings(DEFAULT_BINDINGS, activeConfig());
 }
 
-/** " (⌘⇧R)" for a bound action, to append to a tooltip; empty when unbound. */
+/** " (⌘⇧H)" for a bound action, to append to a tooltip; empty when unbound. */
 export function shortcutHint(bindingId: string): string {
   const binding = resolvedBindings().find((b) => b.id === bindingId);
   return binding ? ` (${formatKeyCombo(binding)})` : '';
