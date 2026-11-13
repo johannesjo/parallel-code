@@ -2,6 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { App } from './App';
 import { reconnect } from './ws';
+import type { RemoteAgent } from '../../electron/remote/protocol';
+
+// The task screen's terminal is beside the point here: only how it was asked to open.
+vi.mock('./ChatDetail', () => ({ ChatDetail: () => <p class="stub-chat">chat</p> }));
+vi.mock('./AgentDetail', () => ({
+  AgentDetail: (props: { takeStartOnFinish: () => string | undefined; onBack: () => void }) => {
+    // eslint-disable-next-line solid/reactivity -- taken once on mount, as AgentDetail does
+    const step = props.takeStartOnFinish() ?? 'plain';
+    return (
+      <button class="stub-detail" onClick={() => props.onBack()}>
+        {step}
+      </button>
+    );
+  },
+}));
 
 class Socket {
   static OPEN = 1;
@@ -120,5 +135,61 @@ describe('automatic pairing on mobile', () => {
     dispose();
     mount();
     expect(isPairing()).toBe(true);
+  });
+});
+
+describe('Finish from a board card', () => {
+  it('opens the task on Finish once, and plainly when opened again', () => {
+    localStorage.setItem('parallel-code-paired-token', 'remembered');
+    mount();
+    const agent: RemoteAgent = {
+      agentId: 'a1',
+      taskId: 't1',
+      taskName: 'Reviewed',
+      status: 'running',
+      exitCode: null,
+      lastLine: '',
+      attention: 'idle',
+      lane: 'ready',
+    };
+    Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list: [agent] }) });
+    const button = (text: string) =>
+      [...host.querySelectorAll('button')].find((b) => b.textContent === text);
+    button('Merge')?.click();
+    expect(host.querySelector('.stub-detail')?.textContent).toBe('finish');
+    // The desktop switching the task to chat and back remounts the screen without Finish.
+    const send = (kind?: 'chat') =>
+      Socket.current.onmessage?.({
+        data: JSON.stringify({ type: 'agents', list: [{ ...agent, kind }] }),
+      });
+    send('chat');
+    send();
+    expect(host.querySelector('.stub-detail')?.textContent).toBe('plain');
+    host.querySelector<HTMLButtonElement>('.stub-detail')?.click();
+    // Returning through history remounts the task screen; Finish was a one-time ask.
+    window.history.pushState({}, '', '/#task=t1');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(host.querySelector('.stub-detail')?.textContent).toBe('plain');
+    host.querySelector<HTMLButtonElement>('.stub-detail')?.click();
+    host.querySelector<HTMLButtonElement>('.agent-card-title')?.click();
+    expect(host.querySelector('.stub-detail')?.textContent).toBe('plain');
+  });
+
+  it("opens a Done card's Close on the close step", () => {
+    localStorage.setItem('parallel-code-paired-token', 'remembered');
+    mount();
+    const agent: RemoteAgent = {
+      agentId: 'a1',
+      taskId: 't1',
+      taskName: 'Merged',
+      status: 'running',
+      exitCode: null,
+      lastLine: '',
+      attention: 'idle',
+      lane: 'done',
+    };
+    Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list: [agent] }) });
+    [...host.querySelectorAll('button')].find((b) => b.textContent === 'Close')?.click();
+    expect(host.querySelector('.stub-detail')?.textContent).toBe('close');
   });
 });

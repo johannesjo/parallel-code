@@ -6,11 +6,14 @@ import { NotificationSettings } from './NotificationSettings';
 import { readLocal, writeLocal } from './storage';
 import { TaskCard } from './TaskCard';
 import type { RemoteAgent, RemoteBoardLane } from '../../electron/remote/protocol';
+import type { FinishStep } from './TaskActionsDialog';
 
 const ANDROID_APP_GUIDE = 'https://github.com/johannesjo/parallel-code#android-app';
 
 interface AgentListProps {
   onSelect: (taskId: string) => void;
+  /** Opens the task with Finish showing, for a card's Merge or Close. */
+  onFinish: (taskId: string, step: FinishStep) => void;
   onNewTask: () => void;
   onPair: () => void;
 }
@@ -238,7 +241,9 @@ export function AgentList(props: AgentListProps) {
                           <TaskCard
                             agent={agent}
                             asking={needsAttention(agent)}
+                            lane={group.id}
                             onOpen={() => props.onSelect(agent.taskId)}
+                            onFinish={(step) => props.onFinish(agent.taskId, step)}
                           />
                         )}
                       </For>

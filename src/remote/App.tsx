@@ -12,6 +12,7 @@ import { initAuth, getPairedToken } from './auth';
 import { connect, reconnect, agents, status, needsConnection, canControl } from './ws';
 import { AgentList } from './AgentList';
 import { AgentDetail } from './AgentDetail';
+import type { FinishStep } from './TaskActionsDialog';
 import { ConnectScreen } from './ConnectScreen';
 import { PairScreen } from './PairScreen';
 import { NewTaskScreen } from './NewTaskScreen';
@@ -28,6 +29,14 @@ export function App() {
   const [ready, setReady] = createSignal(false);
   const [createdTaskId, setCreatedTaskId] = createSignal('');
   const [createdName, setCreatedName] = createSignal('');
+  // The task a board card's Merge or Close opened, so its screen starts on Finish.
+  // Taken once by that screen, so a later remount does not reopen the dialog.
+  const [finishOnOpen, setFinishOnOpen] = createSignal<{ id: string; step: FinishStep }>();
+  function takeFinishOnOpen(): FinishStep | undefined {
+    const pending = finishOnOpen();
+    setFinishOnOpen();
+    return pending?.id === taskId() ? pending.step : undefined;
+  }
   const taskId = () => new URLSearchParams(route()).get('task');
   const agent = () => agents().find((a) => a.taskId === taskId());
   const waitingForCreated = () => taskId() === createdTaskId();
@@ -43,7 +52,8 @@ export function App() {
     );
     setRoute(next);
   }
-  function openTask(id: string) {
+  function openTask(id: string, finish?: FinishStep) {
+    setFinishOnOpen(finish ? { id, step: finish } : undefined);
     navigate(new URLSearchParams({ task: id }).toString());
   }
   function onConnected() {
@@ -70,6 +80,8 @@ export function App() {
   onMount(() => {
     if (initAuth()) onConnected();
     const onHashChange = () => {
+      // History moves are not a card's Merge or Close.
+      setFinishOnOpen();
       setRoute(window.location.hash.slice(1));
       setPairing(false);
       setReady(false);
@@ -209,6 +221,7 @@ export function App() {
                     onBack={() => navigate('')}
                     onNeedsPairing={pairForTask}
                     onNextTask={openTask}
+                    takeStartOnFinish={takeFinishOnOpen}
                   />
                 }
               >
@@ -223,7 +236,12 @@ export function App() {
           </Show>
         </Match>
         <Match when={true}>
-          <AgentList onSelect={openTask} onNewTask={startNewTask} onPair={pairForTask} />
+          <AgentList
+            onSelect={openTask}
+            onFinish={openTask}
+            onNewTask={startNewTask}
+            onPair={pairForTask}
+          />
         </Match>
       </Switch>
     </Show>

@@ -561,6 +561,11 @@ textarea.mobile-input {
 .agent-ask.review .agent-ask-label {
   color: var(--fg);
 }
+/* A routine next step, not a request: no colour. */
+.agent-ask.quiet .agent-ask-label {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
 /* Primary by full-strength text, not colour; above the stretched title button. */
 .agent-ask-act {
   position: relative;
@@ -1017,6 +1022,13 @@ textarea.mobile-input {
   padding: 10px 0;
   font-size: 14px;
 }
+.mobile-finish-merge h3 {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
 .mobile-dialog-actions {
   display: flex;
   gap: 10px;
@@ -1024,6 +1036,12 @@ textarea.mobile-input {
 }
 .mobile-dialog-actions button {
   flex: 1;
+}
+/* Finish has three actions: each takes its label's width so all stay on one line. */
+.mobile-finish-actions button {
+  flex: 1 1 auto;
+  padding-inline: 8px;
+  white-space: nowrap;
 }
 .mobile-readiness {
   border: 1px solid var(--border);

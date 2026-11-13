@@ -52,7 +52,9 @@ it('keeps a focused task card mounted when live preview text and project color c
     Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   publish([agent]);
   dispose = render(
-    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    () => (
+      <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+    ),
     host,
   );
   const card = host.querySelector<HTMLLIElement>('.agent-card');
@@ -112,7 +114,9 @@ it('combines search with status filters and restores them when returning from a 
     Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   const mount = () => {
     dispose = render(
-      () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+      () => (
+        <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+      ),
       host,
     );
   };
@@ -157,7 +161,9 @@ it('points Android browsers to the app and leaves other phones alone', () => {
   const userAgent = vi.spyOn(navigator, 'userAgent', 'get');
   userAgent.mockReturnValue('Mozilla/5.0 (Linux; Android 15; Pixel 9)');
   dispose = render(
-    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    () => (
+      <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+    ),
     host,
   );
   const link = host.querySelector<HTMLAnchorElement>('.mobile-notifications a');
@@ -166,7 +172,9 @@ it('points Android browsers to the app and leaves other phones alone', () => {
 
   userAgent.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)');
   dispose = render(
-    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    () => (
+      <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+    ),
     host,
   );
   expect(host.textContent).not.toContain('Android app');
@@ -215,7 +223,9 @@ it('groups tasks under the desktop board lanes and names a ready task by its che
   ];
   Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   dispose = render(
-    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    () => (
+      <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+    ),
     host,
   );
   const group = (name: string) => host.querySelector(`section[aria-label="${name}"]`);
@@ -257,7 +267,9 @@ it("shows a task's PR row like the board card, without repeating its checks in t
   ];
   Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   dispose = render(
-    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    () => (
+      <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+    ),
     host,
   );
   const [red, plain] = host.querySelectorAll('.agent-card');
@@ -296,7 +308,9 @@ it('keeps the main lanes in place when empty and folds snoozed work like the des
   Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   const mount = () => {
     dispose = render(
-      () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+      () => (
+        <AgentList onSelect={() => {}} onFinish={() => {}} onNewTask={() => {}} onPair={() => {}} />
+      ),
       host,
     );
   };
@@ -347,7 +361,14 @@ it("offers a waiting task the desktop card's ask action, which opens it", () => 
   Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   const opened: string[] = [];
   dispose = render(
-    () => <AgentList onSelect={(id) => opened.push(id)} onNewTask={() => {}} onPair={() => {}} />,
+    () => (
+      <AgentList
+        onSelect={(id) => opened.push(id)}
+        onFinish={() => {}}
+        onNewTask={() => {}}
+        onPair={() => {}}
+      />
+    ),
     host,
   );
   const card = (name: string) =>
@@ -361,4 +382,51 @@ it("offers a waiting task the desktop card's ask action, which opens it", () => 
   ask('Question')?.querySelector('button')?.click();
   card('Busy')?.querySelector<HTMLButtonElement>('.agent-card-title')?.click();
   expect(opened).toEqual(['t1', 't3']);
+});
+
+it("offers the desktop card's Merge on Ready to merge and Close on Done, which open Finish", () => {
+  const base = { status: 'running', exitCode: null, lastLine: '', attention: 'idle' } as const;
+  const list: RemoteAgent[] = [
+    { ...base, agentId: 'a1', taskId: 't1', taskName: 'Reviewed', lane: 'ready' },
+    { ...base, agentId: 'a2', taskId: 't2', taskName: 'Merged', lane: 'done' },
+    {
+      ...base,
+      agentId: 'a3',
+      taskId: 't3',
+      taskName: 'Approved PR',
+      lane: 'ready',
+      pr: { url: 'https://example.test/pr/7', label: 'Approved' },
+    },
+    { ...base, agentId: 'a4', taskId: 't4', taskName: 'Chat done', lane: 'done', kind: 'chat' },
+  ];
+  Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
+  const finished: [string, string][] = [];
+  const opened: string[] = [];
+  dispose = render(
+    () => (
+      <AgentList
+        onSelect={(id) => opened.push(id)}
+        onFinish={(id, step) => finished.push([id, step])}
+        onNewTask={() => {}}
+        onPair={() => {}}
+      />
+    ),
+    host,
+  );
+  const ask = (name: string) =>
+    [...host.querySelectorAll('.agent-card')]
+      .find((c) => c.textContent?.includes(name))
+      ?.querySelector('.agent-ask');
+  expect(ask('Reviewed')?.textContent).toBe('Review passedMerge');
+  expect(ask('Merged')?.textContent).toBe('Merged, nothing leftClose');
+  // A PR merges on its host, and a chat has no worktree to finish.
+  expect(ask('Approved PR')).toBeNull();
+  expect(ask('Chat done')).toBeNull();
+  ask('Reviewed')?.querySelector('button')?.click();
+  ask('Merged')?.querySelector('button')?.click();
+  expect(finished).toEqual([
+    ['t1', 'finish'],
+    ['t2', 'close'],
+  ]);
+  expect(opened).toEqual([]);
 });

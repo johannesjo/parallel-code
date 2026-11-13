@@ -17,9 +17,12 @@ interface TaskActionsDialogProps {
   onNeedsPairing: () => void;
   /** Fired after a successful merge or close so the list can drop the task. */
   onDone: () => void;
+  /** Open on the close confirmation, as a Done card's Close does on the desktop. */
+  startOnClose?: boolean;
 }
 
-type Mode = 'actions' | 'merge' | 'close' | null;
+/** Where Finish opens: its main screen, or straight on the close confirmation. */
+export type FinishStep = 'finish' | 'close';
 
 const OVERALL_COPY: Record<string, { title: string; detail: string }> = {
   ready: { title: 'Ready to merge', detail: 'Known checks passed.' },
@@ -48,8 +51,8 @@ function statusClass(status: ReadinessCheck['status'] | string): string {
 }
 
 /**
- * Phone-side task lifecycle: merge and close, with the desktop's readiness
- * checks shown read-only.
+ * The phone's Finish: the desktop's readiness checks shown read-only, then how
+ * to merge, with Merge and Close in the footer as in desktop Finish.
  *
  * The checks are advisory here exactly as on the desktop — the panel never runs
  * verification or tests, it only reports what was already known. A blocked
@@ -57,7 +60,11 @@ function statusClass(status: ReadinessCheck['status'] | string): string {
  * from their desk still has to be able to merge with eyes open.
  */
 export function TaskActionsDialog(props: TaskActionsDialogProps) {
-  const [mode, setMode] = createSignal<Mode>(null);
+  // Finish itself, or the close confirmation that replaces it.
+  // Read once, where the dialog opens. A view-only phone cannot close, so it
+  // opens on Finish's pairing hint instead.
+  // eslint-disable-next-line solid/reactivity
+  const [closing, setClosing] = createSignal(!!props.startOnClose && props.canAct);
   const [squash, setSquash] = createSignal(false);
   const [cleanup, setCleanup] = createSignal(false);
   // What the desktop says closing would lose; non-empty only after it refused.
@@ -86,11 +93,11 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
     return 'This stops the agent and removes its worktree.';
   };
 
-  function start(next: Exclude<Mode, null>) {
+  function startClose() {
     setError('');
     setCloseWarnings([]);
     setCloseForce(false);
-    setMode(next);
+    setClosing(true);
   }
 
   /**
@@ -104,7 +111,7 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
     setError('');
     try {
       if ((await action()) === false) return;
-      setMode(null);
+      setClosing(false);
       props.onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -145,9 +152,9 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
 
   return (
     <div class="mobile-dialog-backdrop" role="presentation">
-      <div class="mobile-dialog" role="dialog" aria-modal="true" aria-label="Task actions">
-        <Show when={mode() === null}>
-          <h2 class="mobile-dialog-title">{props.taskName}</h2>
+      <div class="mobile-dialog" role="dialog" aria-modal="true" aria-label="Finish task">
+        <Show when={!closing()}>
+          <h2 class="mobile-dialog-title">Finish {props.taskName}</h2>
 
           <Show when={readiness.loading}>
             <p class="muted">Checking merge readiness…</p>
@@ -186,72 +193,57 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
             )}
           </Show>
 
-          <Show when={!props.canAct}>
-            <p class="muted">Pair this phone to merge or close tasks.</p>
+          <Show
+            when={props.canAct}
+            fallback={<p class="muted">Pair this phone to merge or close tasks.</p>}
+          >
+            <section class="mobile-finish-merge" aria-label="Merge options">
+              <h3>Merge into {baseBranch()}</h3>
+              <label class="mobile-dialog-option">
+                <input
+                  type="checkbox"
+                  checked={squash()}
+                  onChange={(e) => setSquash(e.currentTarget.checked)}
+                />
+                Squash into one commit
+              </label>
+              <label class="mobile-dialog-option">
+                <input
+                  type="checkbox"
+                  checked={cleanup()}
+                  onChange={(e) => setCleanup(e.currentTarget.checked)}
+                />
+                Close the task and delete its worktree afterwards
+              </label>
+            </section>
           </Show>
-
-          <div class="mobile-dialog-actions">
-            <button class="mobile-button primary" onClick={() => props.onClose()}>
-              Done
-            </button>
-            <Show when={props.canAct}>
-              <button
-                class="mobile-button"
-                disabled={!canMerge() || readiness.loading}
-                onClick={() => start('merge')}
-              >
-                Merge
-              </button>
-              <button class="mobile-button" onClick={() => start('close')}>
-                Close
-              </button>
-            </Show>
-          </div>
-        </Show>
-
-        <Show when={mode() === 'merge'}>
-          <h2 class="mobile-dialog-title">Merge into {baseBranch()}</h2>
-          <Show when={!canMerge()}>
-            <p class="mobile-error" role="alert">
-              A merge blocker must be resolved first.
-            </p>
-          </Show>
-          <label class="mobile-dialog-option">
-            <input
-              type="checkbox"
-              checked={squash()}
-              onChange={(e) => setSquash(e.currentTarget.checked)}
-            />
-            Squash into one commit
-          </label>
-          <label class="mobile-dialog-option">
-            <input
-              type="checkbox"
-              checked={cleanup()}
-              onChange={(e) => setCleanup(e.currentTarget.checked)}
-            />
-            Close the task and delete its worktree afterwards
-          </label>
           <Show when={error()}>
             <p class="mobile-error" role="alert">
               {error()}
             </p>
           </Show>
-          <div class="mobile-dialog-actions">
-            <button class="mobile-button" disabled={busy()} onClick={() => setMode(null)}>
-              Cancel
+
+          <div class="mobile-dialog-actions mobile-finish-actions">
+            <button class="mobile-button" disabled={busy()} onClick={() => props.onClose()}>
+              {props.canAct ? 'Cancel' : 'Done'}
             </button>
-            <button
-              class="mobile-button primary"
-              disabled={busy() || !canMerge()}
-              onClick={confirmMerge}
-            >
-              {busy() ? 'Merging…' : 'Merge'}
-            </button>
+            <Show when={props.canAct}>
+              <button class="mobile-button" disabled={busy()} onClick={startClose}>
+                Close task…
+              </button>
+              {/* A blocker disables it; the checks above say which. */}
+              <button
+                class="mobile-button primary"
+                disabled={busy() || !canMerge() || readiness.loading}
+                onClick={confirmMerge}
+              >
+                {busy() ? 'Merging…' : 'Merge'}
+              </button>
+            </Show>
           </div>
         </Show>
 
-        <Show when={mode() === 'close'}>
+        <Show when={closing()}>
           <h2 class="mobile-dialog-title">Close {props.taskName}?</h2>
           <p class="muted">{closeCopy()}</p>
           <Show when={error()}>
@@ -276,19 +268,21 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
             </label>
           </Show>
           <div class="mobile-dialog-actions">
-            <button class="mobile-button" disabled={busy()} onClick={() => setMode(null)}>
+            {/* Back to Finish; a failed close's error belongs to this step only. */}
+            <button
+              class="mobile-button"
+              disabled={busy()}
+              onClick={() => {
+                setError('');
+                setClosing(false);
+              }}
+            >
               Cancel
             </button>
             <button class="mobile-button primary" disabled={busy()} onClick={confirmClose}>
               {busy() ? 'Closing…' : 'Close task'}
             </button>
           </div>
-        </Show>
-
-        <Show when={error() && mode() === null}>
-          <p class="mobile-error" role="alert">
-            {error()}
-          </p>
         </Show>
       </div>
     </div>

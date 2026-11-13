@@ -1,9 +1,14 @@
 import { Show } from 'solid-js';
 import { agentStatusDisplay } from './attention';
 import { TaskPr } from './TaskPr';
+import type { FinishStep } from './TaskActionsDialog';
 import { ProjectSwatch } from '../components/ProjectSwatch';
 import { sanitizeProjectIcon } from '../lib/project-icon';
-import type { RemoteAgent, RemoteAttentionState } from '../../electron/remote/protocol';
+import type {
+  RemoteAgent,
+  RemoteAttentionState,
+  RemoteBoardLane,
+} from '../../electron/remote/protocol';
 
 /** The button a waiting task's ask row offers, as on the desktop board card (ASK_ACTION). */
 const ASK_ACTION: Partial<Record<RemoteAttentionState, string>> = {
@@ -16,7 +21,10 @@ interface TaskCardProps {
   agent: RemoteAgent;
   /** Filed under Needs you: the card says what it waits for and offers the way there. */
   asking: boolean;
+  lane: RemoteBoardLane;
   onOpen: () => void;
+  /** Opens the task with Finish showing, or its close confirmation. */
+  onFinish: (step: FinishStep) => void;
 }
 
 /**
@@ -31,6 +39,16 @@ export function TaskCard(props: TaskCardProps) {
   const failed = () => props.agent.attention === 'error' || props.agent.pr?.kind === 'failed';
   // Failed CI has no ask row, as on the desktop: its PR row or status already says so.
   const action = () => (props.asking ? ASK_ACTION[props.agent.attention] : undefined);
+  // The desktop card's quiet rows: without a PR, Ready to merge means the app's
+  // review vouches for the work; Done has nothing left but closing. Finish confirms either.
+  const finishStep = () => {
+    if (action() || props.agent.kind === 'chat') return undefined;
+    if (props.lane === 'ready' && !props.agent.pr)
+      return { label: 'Review passed', act: 'Merge', step: 'finish' as const };
+    if (props.lane === 'done')
+      return { label: 'Merged, nothing left', act: 'Close', step: 'close' as const };
+    return undefined;
+  };
   return (
     <li class="agent-card" classList={{ failed: failed() }}>
       <button type="button" class="agent-card-title" onClick={() => props.onOpen()}>
@@ -70,6 +88,21 @@ export function TaskCard(props: TaskCardProps) {
         {props.agent.lastLine || ' '}
       </p>
       <Show when={props.agent.pr}>{(pr) => <TaskPr pr={pr()} />}</Show>
+      <Show when={finishStep()}>
+        {(step) => (
+          <div class="agent-ask quiet">
+            <span class="agent-ask-label">{step().label}</span>
+            <button
+              type="button"
+              class="agent-ask-act"
+              aria-label={`${step().act}: ${props.agent.taskName}`}
+              onClick={() => props.onFinish(step().step)}
+            >
+              {step().act}
+            </button>
+          </div>
+        )}
+      </Show>
       <Show when={action()}>
         {(label) => (
           <div class={`agent-ask ${props.agent.attention}`}>

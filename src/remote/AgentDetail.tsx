@@ -6,7 +6,7 @@ import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
 import { PARALLEL_CODE_TERMINAL_THEME } from '../lib/parallelCodeTerminalTheme';
 import { fetchNotes, saveNotes, ApiError } from './api';
 import { TaskDiffView } from './TaskDiffView';
-import { TaskActionsDialog } from './TaskActionsDialog';
+import { TaskActionsDialog, type FinishStep } from './TaskActionsDialog';
 import { clearPairedToken } from './auth';
 import { readLocal, writeLocal } from './storage';
 import { messageForTerminal, terminalBufferText } from './terminalText';
@@ -32,6 +32,11 @@ interface AgentDetailProps {
   onBack: () => void;
   onNeedsPairing: () => void;
   onNextTask: (taskId: string) => void;
+  /**
+   * Takes the step a board card's Merge or Close asked for, if any. Called once
+   * per mount, so a remount for the same task does not reopen the dialog.
+   */
+  takeStartOnFinish: () => FinishStep | undefined;
 }
 
 // Rows of swipe per wheel notch in a full-screen agent UI. Agents scroll about
@@ -69,7 +74,9 @@ export function AgentDetail(props: AgentDetailProps) {
   const [view, setView] = createSignal<'terminal' | 'notes' | 'diff'>('terminal');
   // Bumped to force the diff tab to refetch; the resource keys on it.
   const [diffToken, setDiffToken] = createSignal(0);
-  const [showActions, setShowActions] = createSignal(false);
+  // Which step the Finish dialog shows, or undefined while it is closed.
+  // eslint-disable-next-line solid/reactivity -- taken once on mount, by design
+  const [finishStep, setFinishStep] = createSignal(props.takeStartOnFinish());
   const [multilinePaste, setMultilinePaste] = createSignal(false);
   const [terminalBottom, setTerminalBottom] = createSignal(true);
   const [zoom, setZoom] = createSignal(1);
@@ -603,6 +610,11 @@ export function AgentDetail(props: AgentDetailProps) {
         onBack={props.onBack}
         onNeedsPairing={props.onNeedsPairing}
       >
+        <Show when={taskId()}>
+          <button class="mobile-button" onClick={() => setFinishStep('finish')}>
+            Finish
+          </button>
+        </Show>
         <Show when={!nextAttentionTask() && nextTask()}>
           {(next) => (
             <button
@@ -720,9 +732,9 @@ export function AgentDetail(props: AgentDetailProps) {
             <Show when={taskId()}>
               <button
                 class="mobile-button mobile-diff-actions"
-                onClick={() => setShowActions(true)}
+                onClick={() => setFinishStep('finish')}
               >
-                Review &amp; merge
+                Finish
               </button>
             </Show>
           </div>
@@ -885,17 +897,18 @@ export function AgentDetail(props: AgentDetailProps) {
           </button>
         </footer>
       </Show>
-      <Show when={showActions()}>
+      <Show when={finishStep()}>
         <TaskActionsDialog
           taskId={taskId()}
           taskName={props.taskName}
           canAct={canControl()}
-          onClose={() => setShowActions(false)}
+          onClose={() => setFinishStep()}
           onNeedsPairing={props.onNeedsPairing}
+          startOnClose={finishStep() === 'close'}
           // Merging with cleanup, or closing, removes the task. Returning to the
           // list avoids leaving the user on a screen for an agent that is gone.
           onDone={() => {
-            setShowActions(false);
+            setFinishStep();
             props.onBack();
           }}
         />

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { AgentDetail } from './AgentDetail';
+import type { FinishStep } from './TaskActionsDialog';
 import { fetchMergeReadiness, fetchNotes, fetchTaskDiff, mergeTask, closeTask } from './api';
 import { agents, scrollAgent, sendInput } from './ws';
 import type { RemoteAgent } from '../../electron/remote/protocol';
@@ -187,7 +188,7 @@ afterEach(() => {
   host.remove();
   vi.restoreAllMocks();
 });
-function mount(agentId = 'a1', onBack: () => void = () => {}) {
+function mount(agentId = 'a1', onBack: () => void = () => {}, startOnFinish?: FinishStep) {
   dispose = render(
     () => (
       <AgentDetail
@@ -196,6 +197,7 @@ function mount(agentId = 'a1', onBack: () => void = () => {}) {
         onBack={onBack}
         onNeedsPairing={() => {}}
         onNextTask={onNextTask}
+        takeStartOnFinish={() => startOnFinish}
       />
     ),
     host,
@@ -224,6 +226,11 @@ function dialogButton(label: string) {
   ].find((b) => b.textContent === label);
   if (!button) throw new Error(`Missing dialog button: ${label}`);
   return button;
+}
+function headerFinish() {
+  return [...host.querySelectorAll<HTMLButtonElement>('.mobile-task-header button')].find(
+    (b) => b.textContent?.trim() === 'Finish',
+  );
 }
 async function openMergeDialog() {
   host.querySelector<HTMLButtonElement>('.mobile-diff-actions')?.click();
@@ -722,11 +729,9 @@ describe('phone terminal viewport', () => {
     mount('a1', back);
     await openTab('Diff');
     await openMergeDialog();
-    // First tap opens the confirm step; the option checkboxes live there.
-    dialogButton('Merge').click();
-    await vi.waitFor(() =>
-      expect(host.querySelectorAll('.mobile-dialog-option input').length).toBe(2),
-    );
+    // The options sit beside Merge, so one tap merges with them.
+    await vi.waitFor(() => expect(dialogButton('Merge').disabled).toBe(false));
+    expect(mergeTask).not.toHaveBeenCalled();
     for (const box of host.querySelectorAll<HTMLInputElement>('.mobile-dialog-option input')) {
       box.checked = true;
       box.dispatchEvent(new Event('change', { bubbles: true }));
@@ -744,7 +749,7 @@ describe('phone terminal viewport', () => {
     mount();
     await openTab('Diff');
     await openMergeDialog();
-    dialogButton('Merge').click();
+    await vi.waitFor(() => expect(dialogButton('Merge').disabled).toBe(false));
     dialogButton('Merge').click();
     await vi.waitFor(() => expect(host.textContent).toContain('Only worktree tasks can be merged'));
     expect(host.querySelector('.mobile-dialog')).not.toBeNull();
@@ -754,7 +759,7 @@ describe('phone terminal viewport', () => {
     mount();
     await openTab('Diff');
     await openMergeDialog();
-    dialogButton('Close').click();
+    dialogButton('Close task…').click();
     await vi.waitFor(() => expect(host.textContent).toContain('Close task'));
     // The first Close only opens the confirmation; nothing is destroyed yet.
     expect(closeTask).not.toHaveBeenCalled();
@@ -769,7 +774,7 @@ describe('phone terminal viewport', () => {
     mount();
     await openTab('Diff');
     await openMergeDialog();
-    dialogButton('Close').click();
+    dialogButton('Close task…').click();
     await vi.waitFor(() => expect(host.textContent).toContain('Close task'));
     dialogButton('Close task').click();
     // The desktop refused; each reason is listed above the force option.
@@ -793,7 +798,7 @@ describe('phone terminal viewport', () => {
     mount();
     await openTab('Diff');
     await openMergeDialog();
-    dialogButton('Close').click();
+    dialogButton('Close task…').click();
     await vi.waitFor(() => expect(host.textContent).toContain(copy));
     expect(host.textContent).not.toContain('stays on the branch');
   });
@@ -805,7 +810,7 @@ describe('phone terminal viewport', () => {
     mount();
     await openTab('Diff');
     await openMergeDialog();
-    dialogButton('Close').click();
+    dialogButton('Close task…').click();
     await vi.waitFor(() => expect(host.textContent).toContain('Close task'));
     dialogButton('Close task').click();
     await vi.waitFor(() => expect(host.textContent).toContain('uncommitted changes'));
@@ -819,6 +824,32 @@ describe('phone terminal viewport', () => {
     await vi.waitFor(() => expect(closeTask).toHaveBeenLastCalledWith('t1', true));
   });
 
+  it('opens Finish from the task header on any tab', async () => {
+    mount();
+    expect(host.querySelector('.mobile-dialog')).toBeNull();
+    headerFinish()?.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector('.mobile-dialog')?.getAttribute('aria-label')).toBe('Finish task'),
+    );
+  });
+
+  it('starts on Finish when a board card asked for it', async () => {
+    mount('a1', () => {}, 'finish');
+    await vi.waitFor(() => expect(host.textContent).toContain('Finish First task'));
+  });
+
+  it("starts on the close confirmation for a Done card's Close, but only once", async () => {
+    mount('a1', () => {}, 'close');
+    await vi.waitFor(() => expect(host.textContent).toContain('Close First task?'));
+    dialogButton('Cancel').click();
+    await vi.waitFor(() => expect(host.textContent).toContain('Finish First task'));
+    dialogButton('Cancel').click();
+    await vi.waitFor(() => expect(host.querySelector('.mobile-dialog')).toBeNull());
+    headerFinish()?.click();
+    await vi.waitFor(() => expect(host.textContent).toContain('Finish First task'));
+    expect(closeTask).not.toHaveBeenCalled();
+  });
+
   it('hides merge and close for a view-only device', async () => {
     wsMocks.canControl = false;
     mount();
@@ -829,7 +860,7 @@ describe('phone terminal viewport', () => {
       (b) => b.textContent,
     );
     expect(labels).not.toContain('Merge');
-    expect(labels).not.toContain('Close');
+    expect(labels).not.toContain('Close task…');
   });
 
   it('scrolls the desktop grid before history and shields gestures from xterm', () => {
