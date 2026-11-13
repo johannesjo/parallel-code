@@ -34,11 +34,13 @@ vi.mock('../ipc/pty.js', () => ({
   }),
 }));
 
-// A desktop on home Wi-Fi with Tailscale up, so the phone learns both addresses.
+// A desktop on home Wi-Fi and Ethernet with Tailscale up, so the phone learns every address.
 vi.mock('os', async (importOriginal) => ({
   ...(await importOriginal<typeof import('os')>()),
   networkInterfaces: () => ({
     wlan0: [{ family: 'IPv4', address: '192.168.1.20', internal: false }],
+    eth0: [{ family: 'IPv4', address: '192.168.1.21', internal: false }],
+    docker0: [{ family: 'IPv4', address: '172.17.0.1', internal: false }],
     tailscale0: [{ family: 'IPv4', address: '100.101.102.103', internal: false }],
   }),
 }));
@@ -127,7 +129,7 @@ describe('coordinator agent token over WebSocket', () => {
 });
 
 describe('mobile token over WebSocket', () => {
-  it('tells the phone both network addresses so it can switch to Tailscale', async () => {
+  it('tells the phone every network address so it can switch networks', async () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const messages: unknown[] = [];
     ws.on('message', (raw) => messages.push(JSON.parse(String(raw))));
@@ -137,6 +139,7 @@ describe('mobile token over WebSocket', () => {
         type: 'addresses',
         wifi: `http://192.168.1.20:${port}`,
         tailscale: `http://100.101.102.103:${port}`,
+        lan: [`http://192.168.1.20:${port}`, `http://192.168.1.21:${port}`],
       });
     });
     ws.close();

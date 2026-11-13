@@ -911,7 +911,7 @@ class RemoteClient(
             }
             is ServerMessage.Chat -> chats[msg.agentId]?.value = msg.state
             is ServerMessage.Addresses -> {
-                credentials.saveAddresses(msg.wifi, msg.tailscale)
+                credentials.saveAddresses(msg.wifi, msg.tailscale, msg.lan)
                 _computers.value = credentials.computers
             }
             is ServerMessage.InputResult -> {
@@ -926,6 +926,7 @@ class RemoteClient(
     }
 
     private fun onDisconnect(code: Int) {
+        val failedToConnect = _state.value.status == ConnectionStatus.CONNECTING
         closeSocket()
         // 4001: the desktop rejected the token. A stale paired token falls back to view-only; a
         // stale QR-code token needs a fresh scan. 4003: this phone lost its typing rights.
@@ -950,6 +951,12 @@ class RemoteClient(
         if (mustWaitForVpn()) {
             _state.update { it.copy(status = ConnectionStatus.WAITING_FOR_VPN, canControl = false) }
             return
+        }
+        // A desktop on Wi-Fi and Ethernet loses one address when that interface goes away; retry
+        // through its next one. A drop after connecting retries the same address first.
+        if (failedToConnect && code == CLOSE_ABNORMAL && credentials.switchLanAddress()) {
+            _computers.value = credentials.computers
+            _state.update { it.copy(link = credentials.link) }
         }
         reconnectJob = scope.launch {
             delay(RECONNECT_DELAY_MS)

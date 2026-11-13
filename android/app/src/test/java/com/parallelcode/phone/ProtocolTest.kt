@@ -9,14 +9,29 @@ class ProtocolTest {
     @Test
     fun parsesTheDesktopAddresses() {
         assertEquals(
-            ServerMessage.Addresses("http://192.168.1.20:7777", "http://100.101.102.103:7777"),
+            ServerMessage.Addresses("http://192.168.1.20:7777", "http://100.101.102.103:7777", emptyList()),
             parseServerMessage(
                 """{"type":"addresses","wifi":"http://192.168.1.20:7777","tailscale":"http://100.101.102.103:7777"}""",
             ),
         )
         assertEquals(
-            ServerMessage.Addresses(null, null),
+            ServerMessage.Addresses(null, null, emptyList()),
             parseServerMessage("""{"type":"addresses","wifi":null,"tailscale":null}"""),
+        )
+    }
+
+    @Test
+    fun parsesEveryLocalAddressOfADesktopOnWifiAndEthernet() {
+        assertEquals(
+            ServerMessage.Addresses(
+                "http://192.168.178.37:7777",
+                null,
+                listOf("http://192.168.178.37:7777", "http://192.168.178.29:7777"),
+            ),
+            parseServerMessage(
+                """{"type":"addresses","wifi":"http://192.168.178.37:7777","tailscale":null,""" +
+                    """"lan":["http://192.168.178.37:7777","http://192.168.178.29:7777"]}""",
+            ),
         )
     }
 

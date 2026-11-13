@@ -15,6 +15,8 @@ data class SavedComputer(
     /** The desktop's own Wi-Fi and Tailscale addresses, as it last reported them. */
     val wifiUrl: String? = null,
     val tailscaleUrl: String? = null,
+    /** Every local-network address it last reported: one per interface when on Wi-Fi and Ethernet. */
+    val lanUrls: List<String> = emptyList(),
 ) {
     /** What the phone shows for this computer: its name, or "192.168.1.20:7777". */
     val label: String get() = alias?.takeIf { it.isNotBlank() } ?: baseUrl.substringAfter("://")
@@ -27,9 +29,21 @@ data class SavedComputer(
      */
     val otherNetworkUrl: String?
         get() = when (baseUrl) {
-            wifiUrl -> tailscaleUrl
+            // Any local address counts as the Wi-Fi side, not only the first one the desktop reported.
+            wifiUrl, in lanUrls -> tailscaleUrl
             tailscaleUrl -> wifiUrl
             else -> null
+        }
+
+    /**
+     * The next of the desktop's local addresses after the one in use, wrapping around; null when it
+     * reported no other. Like [otherNetworkUrl], only offered while on a reported address.
+     */
+    val nextLanUrl: String?
+        get() {
+            val index = lanUrls.indexOf(baseUrl)
+            if (index < 0 || lanUrls.size < 2) return null
+            return lanUrls[(index + 1) % lanUrls.size]
         }
 }
 
@@ -77,11 +91,13 @@ class CredentialStore(private val prefs: SharedPreferences) {
      * Remember the desktop's reported addresses. A missing one keeps the last known value: Tailscale
      * being down on the desktop at connect time must not take away the switch for the walk later.
      */
-    fun saveAddresses(wifiUrl: String?, tailscaleUrl: String?) {
+    fun saveAddresses(wifiUrl: String?, tailscaleUrl: String?, lanUrls: List<String>) {
         val current = active ?: return
         val updated = current.copy(
             wifiUrl = asBaseUrl(wifiUrl) ?: current.wifiUrl,
             tailscaleUrl = asBaseUrl(tailscaleUrl) ?: current.tailscaleUrl,
+            // Distinct: a repeated address would make the computer "move" onto itself and drop it.
+            lanUrls = lanUrls.mapNotNull(::asBaseUrl).distinct().ifEmpty { current.lanUrls },
         )
         // Sent on every connect; skip the write when nothing changed.
         if (updated != current) updateActive { updated }
@@ -96,16 +112,26 @@ class CredentialStore(private val prefs: SharedPreferences) {
      * Another saved entry at that address is the same desktop, so it is merged in: its pairing and
      * name fill in what the computer in use lacks. False when there is no other network to switch to.
      */
-    fun switchNetwork(): Boolean {
+    fun switchNetwork(): Boolean = moveActive { it.otherNetworkUrl }
+
+    /**
+     * Move the computer in use to its next local address, the same way as [switchNetwork]: a desktop
+     * on Wi-Fi and Ethernet stays reachable through one when the other goes away.
+     */
+    fun switchLanAddress(): Boolean = moveActive { it.nextLanUrl }
+
+    private fun moveActive(targetOf: (SavedComputer) -> String?): Boolean {
         val current = active ?: return false
-        val target = current.otherNetworkUrl ?: return false
+        val target = targetOf(current) ?: return false
         val existing = computers.firstOrNull { it.baseUrl == target }
         val moved = current.copy(
             baseUrl = target,
             pairedToken = current.pairedToken ?: existing?.pairedToken,
             alias = current.alias ?: existing?.alias,
         )
-        write(computers.filter { it.baseUrl != current.baseUrl && it.baseUrl != target } + moved, active = target)
+        // In place: a retry loop through the addresses must not reshuffle the saved computers.
+        val list = computers.filter { it.baseUrl != target }.map { if (it.baseUrl == current.baseUrl) moved else it }
+        write(list, active = target)
         return true
     }
 
@@ -175,7 +201,8 @@ class CredentialStore(private val prefs: SharedPreferences) {
                         .put("pairedToken", it.pairedToken ?: JSONObject.NULL)
                         .put("alias", it.alias ?: JSONObject.NULL)
                         .put("wifiUrl", it.wifiUrl ?: JSONObject.NULL)
-                        .put("tailscaleUrl", it.tailscaleUrl ?: JSONObject.NULL),
+                        .put("tailscaleUrl", it.tailscaleUrl ?: JSONObject.NULL)
+                        .put("lanUrls", JSONArray(it.lanUrls)),
                 )
             }
             return array.toString()
@@ -203,6 +230,7 @@ class CredentialStore(private val prefs: SharedPreferences) {
                     if (c.isNull("alias")) null else c.optString("alias").ifEmpty { null },
                     if (c.isNull("wifiUrl")) null else c.optString("wifiUrl").ifEmpty { null },
                     if (c.isNull("tailscaleUrl")) null else c.optString("tailscaleUrl").ifEmpty { null },
+                    c.optJSONArray("lanUrls")?.let { lan -> List(lan.length()) { lan.optString(it) } }.orEmpty(),
                 )
             }
         }

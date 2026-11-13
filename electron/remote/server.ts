@@ -27,6 +27,7 @@ import {
 } from '../ipc/pty.js';
 import {
   parseClientMessage,
+  type AddressesMessage,
   type ServerMessage,
   type RemoteAgent,
   type RemoteAgentChoice,
@@ -284,11 +285,15 @@ export type MobileTaskRequest = {
   model?: string;
 };
 
-/** Detect available network IPs (WiFi and Tailscale). */
-function getNetworkIps(): { wifi: string | null; tailscale: string | null } {
+/**
+ * Detect available network IPs (WiFi and Tailscale). `lan` lists every local
+ * address: a desktop on Wi-Fi and Ethernet has one per interface, and the phone
+ * needs the others when the one it saved goes away.
+ */
+function getNetworkIps(): { wifi: string | null; tailscale: string | null; lan: string[] } {
   const nets = networkInterfaces();
-  let wifi: string | null = null;
   let tailscale: string | null = null;
+  const lan: string[] = [];
 
   for (const addrs of Object.values(nets)) {
     for (const addr of addrs ?? []) {
@@ -296,12 +301,12 @@ function getNetworkIps(): { wifi: string | null; tailscale: string | null } {
       if (addr.address.startsWith('100.')) {
         tailscale ??= addr.address;
       } else if (!addr.address.startsWith('172.')) {
-        wifi ??= addr.address;
+        lan.push(addr.address);
       }
     }
   }
 
-  return { wifi, tailscale };
+  return { wifi: lan[0] ?? null, tailscale, lan };
 }
 
 /** Build the agent list, deduplicated by taskId (keeps main agent per task). */
@@ -2505,11 +2510,15 @@ export function startRemoteServer(opts: {
   // Coordinator token never leaves the main process.
   const url = `http://${primaryIp}:${opts.port}?token=${mobileToken}`;
   /** Re-detects IPs each call so newly connected interfaces (e.g. Tailscale) are picked up. */
-  function networkBaseUrls(): { wifi: string | null; tailscale: string | null } {
+  function networkBaseUrls(): Omit<AddressesMessage, 'type'> {
     const cur = getNetworkIps();
     // result.port, not opts.port: it holds the bound port when opts.port is 0.
-    const base = (ip: string | null) => (ip ? `http://${ip}:${result.port}` : null);
-    return { wifi: base(cur.wifi), tailscale: base(cur.tailscale) };
+    const base = (ip: string) => `http://${ip}:${result.port}`;
+    return {
+      wifi: cur.wifi && base(cur.wifi),
+      tailscale: cur.tailscale && base(cur.tailscale),
+      lan: cur.lan.map(base),
+    };
   }
 
   const result: RemoteServer = {

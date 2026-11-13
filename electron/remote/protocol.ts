@@ -197,8 +197,11 @@ export interface InputResultMessage {
  */
 export interface AddressesMessage {
   type: 'addresses';
+  /** The first of `lan`, kept for phone builds that predate `lan`. */
   wifi: string | null;
   tailscale: string | null;
+  /** Every local-network address, such as Wi-Fi and Ethernet on one desktop. */
+  lan: string[];
 }
 
 export type ServerMessage =
