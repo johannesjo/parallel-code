@@ -335,69 +335,167 @@ textarea.mobile-input {
   font-family: var(--font-mono);
   font-size: 13px;
 }
+/* The desktop board's lanes folded to one column (src/components/task-board.css). */
 .mobile-group {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 .mobile-group h2 {
   display: flex;
-  gap: 8px;
-  font-size: 13px;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
   letter-spacing: 0;
-  color: var(--fg-muted);
+  color: var(--fg);
   margin: 0 2px 8px;
 }
 .mobile-group h2 span {
   color: var(--fg-subtle);
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
-.agent-card {
+/* Empty lanes step back so the ones with work read first. */
+.mobile-group.empty h2 {
+  color: var(--fg-muted);
+  margin-bottom: 0;
+}
+/* The one lane allowed colour: it holds only work blocked on you, and only while something is. */
+.lane-needs h2::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-subtle);
+}
+.lane-needs:not(.empty) h2::before {
+  background: var(--warning);
+}
+.lane-needs:not(.empty) h2 span {
+  color: var(--warning);
+}
+/* The whole title row folds the snoozed lane, with the chevron at its end. */
+.mobile-lane-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  margin: -10px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  text-align: left;
+}
+/* Held open by a search: inert, but not dimmed like a disabled control. */
+.mobile-lane-toggle:disabled {
+  opacity: 1;
+}
+.mobile-lane-chevron {
+  margin-left: auto;
+  padding-right: 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--fg-subtle);
+}
+.mobile-lane-toggle[aria-expanded='true'] .mobile-lane-chevron {
+  transform: rotate(90deg);
+}
+.agent-cards {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  text-align: left;
-  margin-bottom: 8px;
-  border: 1px solid var(--border);
-  background: var(--island-bg);
-  border-radius: var(--radius-lg);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* The title button stretches over the card, so a tap anywhere opens the task;
+   the ask button sits above it. Flat fill, no border, as on the desktop board. */
+.agent-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-radius: var(--radius-md);
   padding: 12px 14px;
+  background: color-mix(in srgb, var(--fg) 4.5%, transparent);
   color: var(--fg);
 }
 .agent-card:active {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
-.agent-card.attention {
-  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
-  background: color-mix(in srgb, var(--warning) 6%, var(--island-bg));
+.agent-card:has(.agent-card-title:focus-visible) {
+  box-shadow: 0 0 0 1px var(--border-focus);
+}
+/* Failure keeps one signal: a faint red surface. */
+.agent-card.failed {
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+}
+.agent-card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+.agent-card-title:focus-visible {
+  outline: none;
+}
+.agent-card-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 .agent-card strong {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.4;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 21px;
   overflow-wrap: anywhere;
   min-width: 0;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
+}
+/* Rows start under the name: the dot's 8px and the title's 8px gap. */
+.agent-card-meta,
+.agent-preview,
+.agent-card .agent-pr,
+.agent-ask {
+  margin: 0;
+  padding-left: 16px;
+  min-width: 0;
 }
 .agent-card-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-subtle);
 }
-.agent-card-meta .muted {
+.agent-card-project {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  color: var(--fg-muted);
 }
 .agent-card-meta .project-swatch {
   margin-right: 6px;
   vertical-align: middle;
 }
+/* The task header's status: its dot and label. */
 .agent-status {
   display: inline-flex;
   align-items: center;
@@ -415,13 +513,71 @@ textarea.mobile-input {
   background: currentColor;
   flex-shrink: 0;
 }
+/* On a card the dot leads the title, as on the desktop board, and the
+   label sits quietly at the end of the meta row. */
+.agent-card .agent-status {
+  margin-left: auto;
+  font-size: inherit;
+  font-weight: 400;
+}
+.agent-card .status-dot {
+  width: 8px;
+  height: 8px;
+  /* Centred on the title's first 21px line. */
+  margin-top: 6.5px;
+}
+/* The desktop dot's halo for states that want attention or are working. */
+.agent-card .status-dot.glow {
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 22%, transparent);
+}
+/* One line tall even when empty, so cards never grow or shrink. */
 .agent-preview {
-  font-size: 14px;
+  height: 18px;
+  font: 12px/18px var(--font-mono);
   color: var(--fg-muted);
-  line-height: 1.5;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* What a waiting task needs, and the button that goes there. */
+.agent-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+  font-size: 13px;
+}
+.agent-ask-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--warning);
+}
+.agent-ask.error .agent-ask-label {
+  color: var(--error);
+}
+.agent-ask.review .agent-ask-label {
+  color: var(--fg);
+}
+/* Primary by full-strength text, not colour; above the stretched title button. */
+.agent-ask-act {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+.agent-ask-act:active {
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
 }
 .agent-pr {
   display: flex;

@@ -1,12 +1,10 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { agents, status, canControl } from './ws';
-import { agentStatusDisplay, isCiFailed } from './attention';
+import { isCiFailed } from './attention';
 import { ConnectionBanner } from './ConnectionBanner';
-import { TaskPr } from './TaskPr';
 import { NotificationSettings } from './NotificationSettings';
 import { readLocal, writeLocal } from './storage';
-import { ProjectSwatch } from '../components/ProjectSwatch';
-import { sanitizeProjectIcon } from '../lib/project-icon';
+import { TaskCard } from './TaskCard';
 import type { RemoteAgent, RemoteBoardLane } from '../../electron/remote/protocol';
 
 const ANDROID_APP_GUIDE = 'https://github.com/johannesjo/parallel-code#android-app';
@@ -28,6 +26,9 @@ const lanes: { id: RemoteBoardLane; name: string }[] = [
   { id: 'done', name: 'Done' },
   { id: 'snoozed', name: 'Snoozed & minimized' },
 ];
+
+/** The lanes the desktop board always shows; the others appear only with tasks. */
+const STANDING_LANES = new Set<RemoteBoardLane>(['needs', 'stopped', 'working', 'pr']);
 
 /** The desktop sends each task's lane; this only covers a task it has not described yet. */
 function laneOf(agent: RemoteAgent): RemoteBoardLane {
@@ -51,6 +52,9 @@ export function AgentList(props: AgentListProps) {
   );
   createEffect(() => writeLocal('task-search', search()));
   createEffect(() => writeLocal('task-filter', filter()));
+  // Folded by default, as the desktop board keeps set-aside work out of the way.
+  const [snoozedOpen, setSnoozedOpen] = createSignal(readLocal('snoozed-open') === 'true');
+  createEffect(() => writeLocal('snoozed-open', String(snoozedOpen())));
   const needsYou = createMemo(() => agents().filter(needsAttention).length);
   const matchingSearch = createMemo(() => {
     const query = search().trim().toLocaleLowerCase();
@@ -186,53 +190,60 @@ export function AgentList(props: AgentListProps) {
         <For each={lanes}>
           {(group) => {
             const items = () => filtered().filter((a) => laneOf(a) === group.id);
+            // As on the desktop board, the main lanes stay in place even when
+            // empty, so a task moving between them never reshuffles the page.
+            const shown = () =>
+              items().length > 0 ||
+              (STANDING_LANES.has(group.id) &&
+                filter() === 'all' &&
+                !search().trim() &&
+                filtered().length > 0);
+            // A search opens it, so a match is never hidden behind the fold.
+            const folded = () => group.id === 'snoozed' && !snoozedOpen() && !search().trim();
             return (
-              <Show when={items().length > 0}>
-                <section class="mobile-group" aria-label={group.name}>
-                  <h2>
-                    {group.name} <span>{items().length}</span>
-                  </h2>
-                  <For each={items()}>
-                    {(agent: RemoteAgent) => {
-                      // The PR row already spells out what the checks say, so the status does not repeat it.
-                      const display = () =>
-                        agentStatusDisplay(agent.pr?.label ? { ...agent, ci: undefined } : agent);
-                      return (
-                        <button
-                          class="agent-card"
-                          classList={{ attention: needsAttention(agent) }}
-                          onClick={() => props.onSelect(agent.taskId)}
-                        >
-                          <strong title={agent.taskName}>{agent.taskName}</strong>
-                          <div class="agent-card-meta">
-                            <p class="muted">
-                              <Show when={agent.projectColor}>
-                                {(color) => (
-                                  <ProjectSwatch
-                                    color={color()}
-                                    icon={sanitizeProjectIcon(agent.projectIcon)}
-                                    size={10}
-                                  />
-                                )}
-                              </Show>
-                              {[agent.projectName, agent.agentName].filter(Boolean).join(' · ') ||
-                                'Agent task'}
-                            </p>
-                            <span class="agent-status" style={{ color: display().color }}>
-                              <span class="status-dot" aria-hidden="true" />
-                              {display().label}
-                            </span>
-                          </div>
-                          <Show when={agent.lastLine}>
-                            <p class="agent-preview" title="Recent terminal output">
-                              {agent.lastLine}
-                            </p>
-                          </Show>
-                          <Show when={agent.pr}>{(pr) => <TaskPr pr={pr()} />}</Show>
-                        </button>
-                      );
-                    }}
-                  </For>
+              <Show when={shown()}>
+                <section
+                  class={`mobile-group lane-${group.id}`}
+                  classList={{ empty: items().length === 0 }}
+                  aria-label={group.name}
+                >
+                  <Show
+                    when={group.id === 'snoozed'}
+                    fallback={
+                      <h2>
+                        {group.name} <span>{items().length}</span>
+                      </h2>
+                    }
+                  >
+                    <h2>
+                      <button
+                        type="button"
+                        class="mobile-lane-toggle"
+                        aria-expanded={!folded()}
+                        // A search holds it open; folding then would only change the saved choice.
+                        disabled={!!search().trim()}
+                        onClick={() => setSnoozedOpen(folded())}
+                      >
+                        {group.name} <span>{items().length}</span>
+                        <span class="mobile-lane-chevron" aria-hidden="true">
+                          ›
+                        </span>
+                      </button>
+                    </h2>
+                  </Show>
+                  <Show when={!folded()}>
+                    <ul class="agent-cards">
+                      <For each={items()}>
+                        {(agent: RemoteAgent) => (
+                          <TaskCard
+                            agent={agent}
+                            asking={needsAttention(agent)}
+                            onOpen={() => props.onSelect(agent.taskId)}
+                          />
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
                 </section>
               </Show>
             );

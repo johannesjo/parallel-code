@@ -9,7 +9,7 @@ function prNumber(url: string): string | null {
 /**
  * The board card's PR row: the pull request, what its checks say, and whether
  * the desktop is babysitting it. Babysitting is switched on the computer; the
- * phone only shows it. Plain text because it sits inside the card's button.
+ * phone only shows it. Plain text: a tap anywhere on the card opens the task.
  */
 export function TaskPr(props: { pr: RemoteTaskPr }) {
   const number = () => prNumber(props.pr.url);
