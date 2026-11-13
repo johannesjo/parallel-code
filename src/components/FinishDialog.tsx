@@ -129,9 +129,12 @@ export function FinishDialog(props: FinishDialogProps) {
     headSha: () => (merge.worktreeStatus.error ? null : merge.worktreeStatus()?.head_sha),
   });
   const prMerging = () => pr.busy() === 'merge';
-  // Merged on GitHub, or the commits reached the base another way, such as a
-  // cherry-pick: either way closing the task is all that is left.
-  const landed = () => pr.mode() === 'merged' || (pr.mode() === 'local' && merge.alreadyLanded());
+  // The commits reached the base another way, such as a cherry-pick, or the
+  // branch holds no work, such as when it went out on another branch.
+  const nothingLeft = () => merge.alreadyLanded() || merge.nothingToMerge();
+  // Merged on GitHub, or nothing left to merge locally: either way closing the
+  // task is all that is left.
+  const landed = () => pr.mode() === 'merged' || (pr.mode() === 'local' && nothingLeft());
   // A PR merges on GitHub, so a base that moved on locally matters only where
   // it conflicts or GitHub asks for the branch to be updated.
   const showBaseSync = () => {
@@ -175,7 +178,7 @@ export function FinishDialog(props: FinishDialogProps) {
   // A local merge uses local commits, so pushing is only on offer, never required.
   const offerPush = () =>
     pr.mode() === 'local' &&
-    !merge.alreadyLanded() &&
+    !nothingLeft() &&
     (remote() === 'unpushed' || remote() === 'differs');
   // Undefined while loading; a loaded status without a remote means there is no origin.
   const createPrRemote = () =>
@@ -441,11 +444,11 @@ export function FinishDialog(props: FinishDialogProps) {
               {retroBox()}
             </FollowUps>
             {/* Without a PR the section only offers one, where the PR shows once it exists;
-                without an origin, or with the work on the base already, it needs no word on PRs. */}
+                without an origin, or with nothing left to merge, it needs no word on PRs. */}
             <Show
               when={taskPrUrl(props.task)}
               fallback={
-                <Show when={remote() && !merge.alreadyLanded()}>
+                <Show when={remote() && !nothingLeft()}>
                   <CreatePrEntry
                     disabled={push.pushing() || merge.merging()}
                     onCreate={() => setCreatePrOpen(true)}
@@ -470,7 +473,7 @@ export function FinishDialog(props: FinishDialogProps) {
             <Show
               when={
                 pr.mode() === 'local' &&
-                !merge.alreadyLanded() &&
+                !nothingLeft() &&
                 !(merge.worktreeStatus() && !merge.hasCommittedChangesToMerge())
               }
             >
