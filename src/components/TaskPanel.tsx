@@ -761,6 +761,7 @@ export function TaskPanel(props: TaskPanelProps) {
         controlledBy={props.task.controlledBy}
         stagedNotification={props.task.stagedNotification}
         needsYou={needsYouNow(props.task)}
+        reserveNeedsYou={store.taskBriefs}
         nowMs={nowMs}
         initialPrompt={props.task.initialPrompt}
         prefillPrompt={props.task.prefillPrompt}

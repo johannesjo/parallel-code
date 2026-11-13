@@ -147,6 +147,66 @@ describe('PromptInput question from the brief', () => {
     setNeedsYou('');
     expect(label()).toBeUndefined();
   });
+
+  // happy-dom does no layout, so these pin the structure that keeps the line
+  // off the text: its own row before the textarea, never laid over it.
+  function mountWithQuestion(props: { reserveNeedsYou?: boolean }) {
+    storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'] } };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const [needsYou, setNeedsYou] = createSignal('');
+    disposers.push(
+      render(
+        () => (
+          <PromptInput
+            taskId="task-1"
+            taskName="Task"
+            agentId="agent-1"
+            needsYou={needsYou()}
+            reserveNeedsYou={props.reserveNeedsYou}
+          />
+        ),
+        container,
+      ),
+    );
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea.prompt-textarea');
+    if (!textarea) throw new Error('textarea not rendered');
+    const row = () => container.querySelector<HTMLElement>('.prompt-label-row');
+    return { textarea, row, setNeedsYou };
+  }
+
+  it('puts the line in a row above the textarea, not over the text', () => {
+    const { textarea, row, setNeedsYou } = mountWithQuestion({});
+    setNeedsYou('Keep the old route?');
+    const line = row()?.querySelector<HTMLElement>('.prompt-needs-you');
+    expect(line?.textContent).toBe('Needs youKeep the old route?');
+    expect(line?.style.position).not.toBe('absolute');
+    expect(row()?.style.position).not.toBe('absolute');
+    expect(row()?.nextElementSibling).toBe(textarea);
+  });
+
+  it('keeps the row while briefs may bring a question, so the text never moves', () => {
+    const { textarea, row, setNeedsYou } = mountWithQuestion({ reserveNeedsYou: true });
+    const reserved = row();
+    expect(reserved).not.toBeNull();
+    expect(reserved?.textContent).toBe('');
+    expect(textarea.classList.contains('prompt-textarea--labelled')).toBe(true);
+
+    setNeedsYou('Keep the old route?');
+    expect(row()).toBe(reserved);
+    expect(reserved?.textContent).toBe('Needs youKeep the old route?');
+
+    setNeedsYou('');
+    expect(row()).toBe(reserved);
+    expect(reserved?.textContent).toBe('');
+    expect(textarea.classList.contains('prompt-textarea--labelled')).toBe(true);
+  });
+
+  it('gives a prompt that never gets a question its whole height', () => {
+    const { textarea, row } = mountWithQuestion({});
+    expect(row()).toBeNull();
+    expect(textarea.classList.contains('prompt-textarea--labelled')).toBe(false);
+  });
 });
 
 describe('PromptInput draft persistence', () => {

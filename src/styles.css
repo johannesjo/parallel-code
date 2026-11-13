@@ -2208,26 +2208,29 @@ html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench
   padding: 10px 44px 10px 14px !important;
 }
 
-/* Clears the Needs you / staged label overlaid on the textarea's top edge.
-   html body outranks every look's !important padding above.
-   shortcut: the labels push the text down a line when they appear — reserve the line if that jars. */
+/* The Needs you / staged label row above the prompt textarea supplies the
+   top inset, so the text sits just under the label's rule.
+   html body outranks every look's !important padding above. */
 html body .prompt-textarea.prompt-textarea--labelled {
-  padding-top: 30px !important;
+  padding-top: 2px !important;
 }
 
-/* Start the Needs you line where the typed text starts, which each look sets
-   through the textarea's left border and padding. */
-.prompt-needs-you {
-  left: 11px;
+/* Start the label row where the typed text starts, which each look sets
+   through the textarea's left border and padding. The bottom gap keeps
+   scrolled text, clipped at the textarea's edge, off the rule. */
+.prompt-label-row {
+  padding: 4px 36px 2px 11px;
 }
 
 html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
-  .prompt-needs-you {
-  left: 14px;
+  .prompt-label-row {
+  padding-left: 14px;
 }
 
-html:is([data-look^='islands-'], [data-look='workbench']) .prompt-needs-you {
-  left: 8px;
+/* These looks fill the textarea; the row above it continues that surface. */
+html:is([data-look^='islands-'], [data-look='workbench']) .prompt-label-row {
+  padding-left: 8px;
+  background: var(--task-panel-bg);
 }
 
 /* The html prefix outranks the faint base placeholder further down. */
