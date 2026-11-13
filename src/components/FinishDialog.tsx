@@ -177,9 +177,7 @@ export function FinishDialog(props: FinishDialogProps) {
   const pushFirst = () => pr.mode() === 'pr' && pr.headDiffers();
   // A local merge uses local commits, so pushing is only on offer, never required.
   const offerPush = () =>
-    pr.mode() === 'local' &&
-    !nothingLeft() &&
-    (remote() === 'unpushed' || remote() === 'differs');
+    pr.mode() === 'local' && !nothingLeft() && (remote() === 'unpushed' || remote() === 'differs');
   // Undefined while loading; a loaded status without a remote means there is no origin.
   const createPrRemote = () =>
     merge.mergeStatus.loading || merge.mergeStatus.error || !merge.mergeStatus()
