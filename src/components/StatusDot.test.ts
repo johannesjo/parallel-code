@@ -104,6 +104,13 @@ describe('status glyph shapes', () => {
     );
   });
 
+  // A plain terminal must not borrow the agent's ring, or "busy" reads as "agent working".
+  it('spins a terminal bar, not the agent ring, while only a shell is busy', () => {
+    const html = renderToString(() => StatusDot({ status: 'busy', attention: 'shell_busy' }));
+    expect(html).toContain('status-glyph-shell');
+    expect(html).not.toContain('status-glyph-spinner');
+  });
+
   it('shows waiting as a hollow ring', () => {
     expect(renderToString(() => StatusDot({ status: 'waiting', attention: 'idle' }))).toContain(
       'status-glyph-waiting',
