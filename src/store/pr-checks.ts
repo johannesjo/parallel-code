@@ -220,7 +220,8 @@ export function startPrChecksSubscription(): () => void {
     const printed = printedPrByTaskId.get(taskId);
     const printedPrUrl = printed?.url;
     printedPrByTaskId.delete(taskId);
-    const baseBranch = printedPrUrl ? store.tasks[taskId]?.baseBranch : undefined;
+    // Its PRs are never the task's, though the task holds its commits and may track it.
+    const baseBranch = store.tasks[taskId]?.baseBranch;
     // A probe that could not check the link leaves it to the next one, unless a newer link came.
     // Capped: until the link is checked the task's PRs count as unknown, holding up Babysit.
     const keepPrintedPr = (): void => {

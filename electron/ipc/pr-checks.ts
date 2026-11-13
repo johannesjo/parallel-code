@@ -636,6 +636,41 @@ export async function listOpenPrUrlsForBranch(
   worktreePath: string,
   branchName: string,
 ): Promise<string[]> {
+  const prs = await listPrRecordsForHead(worktreePath, branchName, 'open', 'url');
+  return prs.map((pr) => pr['url'] as string);
+}
+
+/** A PR of a branch, with what deciding whether it is a task's own takes. */
+export interface PrHead {
+  url: string;
+  state: string;
+  headRefOid: string;
+  headRefName: string;
+  /** The commit a merge added to the base branch; empty unless merged. */
+  mergeCommitOid: string;
+}
+
+/** PRs in every state whose head is `branchName`, newest first. */
+export async function listPrsForHead(worktreePath: string, branchName: string): Promise<PrHead[]> {
+  const prs = await listPrRecordsForHead(
+    worktreePath,
+    branchName,
+    'all',
+    'url,state,headRefOid,mergeCommit',
+  );
+  return prs.map((pr) => toPrHead(pr));
+}
+
+/**
+ * `gh pr list --head` records of `branchName` in the repository's remotes'
+ * hands: the head name matches exactly and a fork PR's owner is one of theirs.
+ */
+async function listPrRecordsForHead(
+  worktreePath: string,
+  branchName: string,
+  state: 'open' | 'all',
+  fields: string,
+): Promise<Record<string, unknown>[]> {
   if (!(await isDirectory(worktreePath))) return [];
   const { stdout: remotes } = await exec('git', ['remote', '-v'], {
     cwd: worktreePath,
@@ -649,11 +684,11 @@ export async function listOpenPrUrlsForBranch(
       'pr',
       'list',
       '--state',
-      'open',
+      state,
       '--head',
       branchName,
       '--json',
-      'url,headRefName,isCrossRepository,headRepositoryOwner',
+      `${fields},headRefName,isCrossRepository,headRepositoryOwner`,
       '--limit',
       '20',
     ],
@@ -662,7 +697,7 @@ export async function listOpenPrUrlsForBranch(
   const parsed: unknown = JSON.parse(stdout);
   if (!Array.isArray(parsed)) return [];
   const owners = remoteOwners(remotes);
-  const urls: string[] = [];
+  const prs: Record<string, unknown>[] = [];
   for (const item of parsed) {
     if (!item || typeof item !== 'object') continue;
     const pr = item as Record<string, unknown>;
@@ -671,9 +706,20 @@ export async function listOpenPrUrlsForBranch(
     // `--head` matches any fork's branch of that name; shared names such as
     // `develop` would otherwise pick up strangers' PRs.
     if (pr['isCrossRepository'] === true && !owners.has(headOwnerOf(pr))) continue;
-    urls.push(url);
+    prs.push(pr);
   }
-  return urls;
+  return prs;
+}
+
+function toPrHead(r: Record<string, unknown>): PrHead {
+  const mergeCommit = r['mergeCommit'] as { oid?: unknown } | null | undefined;
+  return {
+    url: asString(r['url']) ?? '',
+    state: asString(r['state']) ?? 'UNKNOWN',
+    headRefOid: asString(r['headRefOid']) ?? '',
+    headRefName: asString(r['headRefName']) ?? '',
+    mergeCommitOid: asString(mergeCommit?.oid) ?? '',
+  };
 }
 
 /** Lower-cased owners of the remotes in `git remote -v` output. */
@@ -707,21 +753,14 @@ async function isDirectory(path: string): Promise<boolean> {
 }
 
 /** A PR's state and head, without the checks `fetchPrStatus` also loads. */
-export async function fetchPrHead(
-  prUrl: string,
-): Promise<{ state: string; headRefOid: string; headRefName: string }> {
+export async function fetchPrHead(prUrl: string): Promise<PrHead> {
   const { stdout } = await exec(
     'gh',
-    ['pr', 'view', prUrl, '--json', 'state,headRefOid,headRefName'],
+    ['pr', 'view', prUrl, '--json', 'url,state,headRefOid,headRefName,mergeCommit'],
     { timeout: GH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
   );
   const parsed: unknown = JSON.parse(stdout);
-  const r = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-  return {
-    state: asString(r['state']) ?? 'UNKNOWN',
-    headRefOid: asString(r['headRefOid']) ?? '',
-    headRefName: asString(r['headRefName']) ?? '',
-  };
+  return toPrHead(parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {});
 }
 
 /** Single gh call: combines PR state, review metadata, head SHA, and check runs in one fork.

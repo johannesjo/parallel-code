@@ -11,6 +11,7 @@ import {
   startPrDraft,
 } from '../store/pr-draft';
 import { setStore } from '../store/core';
+import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import type { BranchPrDetectionResult, CommitInfo } from '../ipc/types';
 import type { PushRun } from './push-run';
@@ -196,6 +197,17 @@ describe('CreatePrDialog', () => {
     expect(linkPullRequestToTask).toHaveBeenCalledWith('parent', 'https://github.com/o/r/pull/12');
     expect(createPullRequestForTask).not.toHaveBeenCalled();
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ existed: true }));
+  });
+
+  // A task may track its base branch, whose PRs would otherwise pass for the task's.
+  it('names the task’s base branch when looking for an existing PR', async () => {
+    await mount({ task: { ...task, baseBranch: 'origin/develop' } });
+
+    expect(invoke).toHaveBeenCalledWith(IPC.DetectPrForBranch, {
+      worktreePath: '/repo/.worktrees/parent',
+      branchName: 'task/parent',
+      baseBranch: 'origin/develop',
+    });
   });
 
   it('blocks creating while gh is logged out', async () => {
