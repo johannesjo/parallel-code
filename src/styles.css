@@ -935,11 +935,13 @@ html[data-look='parallel-code'] .settings-theme-card.active {
 }
 
 /* Color changes are enough feedback for compact controls; avoid lifting or glowing. */
-html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):hover:not(:disabled) {
+html[data-look='parallel-code']
+  :is(.btn-primary, .btn-danger):hover:not(:disabled, [aria-disabled='true']) {
   box-shadow: none;
 }
 
-html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):active:not(:disabled) {
+html[data-look='parallel-code']
+  :is(.btn-primary, .btn-danger):active:not(:disabled, [aria-disabled='true']) {
   transform: none;
 }
 
@@ -3182,8 +3184,8 @@ html:is(
   color: var(--fg) !important;
 }
 
-.btn-primary:hover:not(:disabled),
-.btn-secondary:hover:not(:disabled),
+.btn-primary:hover:not(:disabled, [aria-disabled='true']),
+.btn-secondary:hover:not(:disabled, [aria-disabled='true']),
 .sidebar-create-btn:hover:not(:disabled),
 .prompt-send-btn:hover:not(:disabled) {
   background: var(--bg-hover) !important;
@@ -3191,16 +3193,16 @@ html:is(
   color: var(--fg) !important;
 }
 
-.btn-primary:active:not(:disabled) {
+.btn-primary:active:not(:disabled, [aria-disabled='true']) {
   transform: scale(0.98);
 }
 
-.btn-danger:hover:not(:disabled) {
+.btn-danger:hover:not(:disabled, [aria-disabled='true']) {
   filter: brightness(1.12);
   box-shadow: 0 0 18px color-mix(in srgb, var(--error) 35%, transparent);
 }
 
-.btn-danger:active:not(:disabled) {
+.btn-danger:active:not(:disabled, [aria-disabled='true']) {
   transform: scale(0.98);
 }
 
@@ -3269,7 +3271,9 @@ html:is(
   color: #fff;
 }
 
-.dialog-footer :is(.btn-primary, .btn-secondary, .btn-danger):disabled {
+/* aria-disabled: still reachable by Tab, so a typed key sequence stays stable while a dialog loads. */
+.dialog-footer
+  :is(.btn-primary, .btn-secondary, .btn-danger):is(:disabled, [aria-disabled='true']) {
   opacity: 0.5;
   cursor: not-allowed;
 }

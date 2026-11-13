@@ -31,7 +31,7 @@ import { markFeatureHintSeen } from '../store/onboarding';
 import { showNotification } from '../store/notification';
 import { store } from '../store/core';
 import { canCaptureScreens, taskScreens } from '../store/task-screens';
-import { sectionLabelStyle } from '../lib/theme';
+import { linkButtonStyle, sectionLabelStyle } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { isVerificationStale, summarizeVerificationRun } from '../lib/verification-run';
 import { isTourOutdated } from '../lib/finish-reports';
@@ -70,8 +70,9 @@ const SHOWN_ELSEWHERE = new Set(['Merge safety', 'Verify command', 'PR checks'])
 /**
  * One place to wrap up a task. Reads top to bottom: what blocks the merge,
  * the changed files, then "Before you merge" (whether the checks back it,
- * then the optional tour and review), then how to merge. Merge and push are both footer actions, since pushing does not
- * exclude merging later.
+ * then the optional tour and review), then how to merge. The footer is always
+ * Cancel, Push, Merge (or Close task), so a typed Tab sequence lands on the same
+ * button however far loading has got; pushing does not exclude merging later.
  */
 export function FinishDialog(props: FinishDialogProps) {
   const merge = createMergeState(props);
@@ -207,8 +208,9 @@ export function FinishDialog(props: FinishDialogProps) {
     void pr.refetch();
   };
 
+  // Always a merge (or Close task once landed), never Push: the footer keeps one
+  // shape from the first frame so a typed Tab sequence always lands on the same action.
   const confirmLabel = () => {
-    if (pushFirst()) return push.pushing() ? 'Pushing…' : 'Push';
     if (landed()) return 'Close task';
     if (merge.merging() || prMerging()) return 'Merging...';
     const method = pr.method();
@@ -229,20 +231,31 @@ export function FinishDialog(props: FinishDialogProps) {
   const creatingPr = () => !!oneClickPrStep(props.task.id);
   const confirmDisabled = () => {
     if (push.pushing() || creatingPr()) return true;
-    if (pushFirst()) return pushDisabled() || !!pushBlocker();
     if (landed()) return false;
     if (pr.mode() === 'pr') return !!pr.busy() || !!pr.blocker();
     return !!pr.busy() || !merge.canMerge();
   };
   const footerNote = () => {
     if (merge.merging() || prMerging() || landed()) return undefined;
-    if (pushFirst()) return pushBlocker() ?? 'The PR is missing your latest commits.';
+    if (pushFirst()) return pushBlocker() ?? 'The PR is missing your latest commits. Push first.';
     if (pr.mode() !== 'pr') return merge.mergeBlocker();
     return (
       pr.blocker() ?? (pr.pr()?.isDraft ? 'Marks the draft ready for review first.' : undefined)
     );
   };
   const pushDisabled = () => push.pushing() || creatingPr() || merge.merging() || prMerging();
+  /** Why Push does nothing right now; it stays in the footer so the Tab order never shifts. */
+  const pushUnavailable = (): string | undefined => {
+    if (push.pushing()) return undefined;
+    const blocker = pushBlocker();
+    if (blocker) return blocker;
+    if (pushFirst() || offerPush()) return undefined;
+    if (landed()) return 'Already merged.';
+    if (pr.mode() === 'pr' && !pr.pr()) return 'Checking the pull request…';
+    // .error first: reading an errored resource throws.
+    if (!merge.mergeStatus.error && !merge.mergeStatus()) return 'Checking the branch…';
+    return remote() ? 'Already pushed.' : 'No origin to push to.';
+  };
   /**
    * Why pushing would send the wrong thing. Merge-only blockers such as
    * conflicts stay out: pushing is how a PR gets them resolved. An unreadable
@@ -287,8 +300,7 @@ export function FinishDialog(props: FinishDialogProps) {
     void pr.refetch();
   };
   const confirm = () => {
-    if (pushFirst()) void push.start();
-    else if (landed()) {
+    if (landed()) {
       props.onClose();
       props.onCloseTask();
     } else if (pr.mode() === 'pr') void mergePr();
@@ -478,6 +490,24 @@ export function FinishDialog(props: FinishDialogProps) {
                   props.onClose();
                 }}
               >
+                {/* Rare and leaves local commits behind, so it sits apart from the footer's Merge. */}
+                <Show when={pushFirst()}>
+                  <p style={{ 'font-size': '13px', margin: '0 0 8px' }}>
+                    Or merge PR #{pr.number()} without your unpushed commits; the task stays open
+                    for them.{' '}
+                    <button
+                      type="button"
+                      style={linkButtonStyle}
+                      disabled={pushDisabled() || !!pr.busy() || !!pr.blocker(true)}
+                      title={
+                        pr.pr()?.isDraft ? 'Marks the draft ready for review first.' : undefined
+                      }
+                      onClick={() => void mergePr(true)}
+                    >
+                      Merge as is
+                    </button>
+                  </p>
+                </Show>
                 <PrMergeRoute pr={pr} disabled={push.pushing() || merge.merging()} />
               </FinishPrSection>
             </Show>
@@ -513,38 +543,24 @@ export function FinishDialog(props: FinishDialogProps) {
           </div>
         }
         confirmDisabled={confirmDisabled()}
+        confirmFocusable
         footerNote={footerNote()}
-        confirmLoading={merge.merging() || prMerging() || (pushFirst() && push.pushing())}
+        confirmLoading={merge.merging() || prMerging()}
         confirmLabel={confirmLabel()}
-        confirmIcon={
-          pushFirst() ? <UploadIcon size={14} /> : landed() ? undefined : <GitMergeIcon size={14} />
-        }
+        confirmIcon={landed() ? undefined : <GitMergeIcon size={14} />}
         extraActions={
-          <>
-            <Show when={pushFirst()}>
-              <button
-                type="button"
-                class="btn-secondary"
-                disabled={pushDisabled() || !!pr.busy() || !!pr.blocker(true)}
-                title={`Merge PR #${pr.number()} as it is on GitHub; the task stays open for the rest${pr.pr()?.isDraft ? '. Marks the draft ready for review first.' : ''}`}
-                onClick={() => void mergePr(true)}
-              >
-                Merge as is
-              </button>
-            </Show>
-            <Show when={offerPush() || (pr.mode() === 'local' && push.pushing())}>
-              <button
-                type="button"
-                class="btn-secondary btn-with-icon"
-                disabled={pushDisabled() || !!pushBlocker()}
-                title={pushBlocker() ?? `Push ${props.task.branchName} to origin without merging`}
-                onClick={() => void push.start()}
-              >
-                <UploadIcon size={12} />
-                {push.pushing() ? 'Pushing…' : 'Push'}
-              </button>
-            </Show>
-          </>
+          <button
+            type="button"
+            class="btn-secondary btn-with-icon"
+            aria-disabled={pushDisabled() || !!pushUnavailable()}
+            title={pushUnavailable() ?? `Push ${props.task.branchName} to origin without merging`}
+            onClick={() => {
+              if (!pushDisabled() && !pushUnavailable()) void push.start();
+            }}
+          >
+            <UploadIcon size={12} />
+            {push.pushing() ? 'Pushing…' : 'Push'}
+          </button>
         }
         cancelLabel={push.pushing() ? 'Close' : 'Cancel'}
         onConfirm={confirm}

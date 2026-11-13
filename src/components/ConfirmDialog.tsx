@@ -16,6 +16,11 @@ interface ConfirmDialogProps {
   confirmLoading?: boolean;
   danger?: boolean;
   confirmDisabled?: boolean;
+  /**
+   * Keeps a disabled confirm in the Tab order (aria-disabled), so a typed key
+   * sequence lands on it whether or not the dialog has finished loading.
+   */
+  confirmFocusable?: boolean;
   autoFocusCancel?: boolean;
   width?: string;
   /** Short text at the start of the footer, e.g. why the confirm button is disabled. */
@@ -107,8 +112,11 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         <button
           type="button"
           class={props.danger ? 'btn-danger' : 'btn-primary'}
-          disabled={props.confirmDisabled}
-          onClick={() => props.onConfirm()}
+          disabled={!props.confirmFocusable && props.confirmDisabled}
+          aria-disabled={props.confirmFocusable ? !!props.confirmDisabled : undefined}
+          onClick={() => {
+            if (!props.confirmDisabled) props.onConfirm();
+          }}
           style={{ gap: '8px' }}
         >
           <Show when={props.confirmLoading} fallback={props.confirmIcon}>

@@ -61,6 +61,7 @@ vi.mock('./ConfirmDialog', () => ({
     message: JSX.Element;
     confirmLabel: string;
     confirmDisabled?: boolean;
+    confirmFocusable?: boolean;
     extraActions?: JSX.Element;
     footerNote?: string;
     onConfirm: () => void;
@@ -72,6 +73,7 @@ vi.mock('./ConfirmDialog', () => ({
       <button
         data-testid="confirm"
         disabled={props.confirmDisabled}
+        data-focusable={String(!!props.confirmFocusable)}
         onClick={() => props.onConfirm()}
       >
         {props.confirmLabel}
@@ -481,7 +483,7 @@ describe('FinishDialog opened for Create PR', () => {
 });
 
 describe('FinishDialog push', () => {
-  it('offers Push beside Merge only while origin lacks the branch head', async () => {
+  it('keeps Push beside Merge, usable only while origin lacks the branch head', async () => {
     let remote = 'pushed';
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';
@@ -491,7 +493,9 @@ describe('FinishDialog push', () => {
     });
     mount();
     await flush();
-    expect(button('Push')).toBeUndefined();
+    // Always in the footer, so the Tab count to Merge never changes.
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Push')?.title).toBe('Already pushed.');
     dispose?.();
     document.body.replaceChildren();
     remote = 'unpushed';
@@ -499,7 +503,20 @@ describe('FinishDialog push', () => {
     await flush();
     // A local merge needs no push, so Merge stays the main action.
     expect(button('Push')?.className).toContain('btn-secondary');
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('false');
     expect(confirmButton()?.textContent).toBe('Merge into local main');
+  });
+
+  it('shows the whole footer while the status is still loading', async () => {
+    mockInvoke(() => new Promise(() => {}));
+    mount();
+    await flush();
+    // Reachable by Tab though not ready, so Tab Tab Enter lands on Merge and does nothing yet.
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Push')?.disabled).toBe(false);
+    expect(confirmButton()?.textContent).toBe('Merge into local main');
+    expect(confirmButton()?.disabled).toBe(true);
+    expect(confirmButton()?.dataset.focusable).toBe('true');
   });
 
   it('keeps Push for conflicts, but not for a worktree on another branch or one still being read', async () => {
@@ -518,7 +535,7 @@ describe('FinishDialog push', () => {
     await flush();
     // Conflicts block the merge only; pushing is how a PR gets them resolved.
     expect(confirmButton()?.disabled).toBe(true);
-    expect(button('Push')?.disabled).toBe(false);
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('false');
 
     for (const [answer, reason] of [
       [
@@ -532,7 +549,7 @@ describe('FinishDialog push', () => {
       status = answer;
       mount();
       await flush();
-      expect(button('Push')?.disabled).toBe(true);
+      expect(button('Push')?.getAttribute('aria-disabled')).toBe('true');
       expect(button('Push')?.title).toContain(reason);
     }
   });
@@ -909,9 +926,9 @@ describe('FinishDialog with the branch already on the base', () => {
     expect(document.body.textContent).not.toContain('Squash commits');
     // Pushing or opening a PR for work already in the base achieves nothing.
     expect(document.querySelector('section[aria-label="Pull request"]')).toBeNull();
-    expect(
-      [...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Push'),
-    ).toBe(false);
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('true');
+    button('Push')?.click();
+    expect(pushTask).not.toHaveBeenCalled();
     expect(confirmButton()?.textContent).toBe('Close task');
     expect(confirmButton()?.disabled).toBe(false);
     confirmButton()?.click();
@@ -1379,15 +1396,17 @@ describe('FinishDialog with an open PR', () => {
     expect(handlers.onCloseTask).toHaveBeenCalled();
   });
 
-  it('makes Push the main action while the PR lacks the latest local commit', async () => {
+  it('keeps Merge the main action, waiting on Push, while the PR lacks the latest local commit', async () => {
     vi.mocked(getPullRequestDetails).mockResolvedValue(prDetails({ headRefOid: 'older' }));
     mount({ task: task({ prUrl: PR_URL }) });
     await flush();
-    expect(confirmButton()?.textContent).toBe('Push');
-    expect(confirmButton()?.disabled).toBe(false);
+    // A main button that turned into Push would push on a key meant to merge.
+    expect(confirmButton()?.textContent).toBe('Squash and merge on GitHub');
+    expect(confirmButton()?.disabled).toBe(true);
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('false');
     expect(button('Merge as is')?.disabled).toBe(false);
     expect(document.querySelector('[data-testid="footer-note"]')?.textContent).toBe(
-      'The PR is missing your latest commits.',
+      'The PR is missing your latest commits. Push first.',
     );
   });
 
@@ -1401,7 +1420,7 @@ describe('FinishDialog with an open PR', () => {
     });
     mount({ task: task({ prUrl: PR_URL }) });
     await flush();
-    expect(confirmButton()?.textContent).toBe('Push');
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('true');
     expect(confirmButton()?.disabled).toBe(true);
     expect(document.querySelector('[data-testid="footer-note"]')?.textContent).toContain(
       "not on this task's branch",
@@ -1676,8 +1695,7 @@ describe('FinishDialog with an open PR', () => {
     vi.mocked(getPullRequestDetails).mockResolvedValueOnce(prDetails());
     mount({ task: task({ prUrl: PR_URL }) });
     await flush();
-    expect(confirmButton()?.textContent).toBe('Push');
-    confirmButton()?.click();
+    button('Push')?.click();
     await flush();
     await flush();
     expect(confirmButton()?.disabled).toBe(false);
