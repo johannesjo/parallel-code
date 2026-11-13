@@ -161,7 +161,7 @@ it('stages a scoped branch request with saved context and preserves the existing
   expect(prompt).toContain('reasoning_update');
   expect(prompt).toContain('Otherwise, suggest additions in chat');
   expect(store.tasks['task-1'].promptDraftActive).toBe(true);
-  expect(store.showPromptInput).toBe(true);
+  expect(store.tasks['task-1'].promptInputRevealed).toBe(true);
   expect(vi.mocked(invoke).mock.calls.some(([channel]) => channel === IPC.WriteToAgent)).toBe(
     false,
   );
@@ -495,7 +495,9 @@ describe('browser canvas', () => {
       'Make this smaller\n\nSelected element #save\n\nSelected element #cancel',
     );
     expect(store.tasks['task-1'].promptDraftActive).toBe(true);
-    expect(store.showPromptInput).toBe(true);
+    // The draft shows for this task only; the setting the user turned off stays off.
+    expect(store.tasks['task-1'].promptInputRevealed).toBe(true);
+    expect(store.showPromptInput).toBe(false);
     expect(invoke).not.toHaveBeenCalledWith(IPC.WriteToAgent, expect.anything());
   });
 });

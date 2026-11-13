@@ -103,6 +103,8 @@ vi.mock('../store/store', () => {
     setShowCards: (on: boolean) => setStore('showCards', on),
     // One card stands in for all of them, so cards follow the master switch.
     enabledCards: () => (store.showCards ? [{ id: 'notes', slots: [] }] : []),
+    isTaskPromptInputShown: (task?: { promptInputRevealed?: boolean }) =>
+      store.showPromptInput || task?.promptInputRevealed === true,
     showCanvasContext: vi.fn(),
   };
 });

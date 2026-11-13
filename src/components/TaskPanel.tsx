@@ -30,6 +30,7 @@ import {
   referenceTourCard,
   openCanvasDocument,
   enabledCards,
+  isTaskPromptInputShown,
 } from '../store/store';
 import { markFeatureHintSeen } from '../store/onboarding';
 import { useFocusRegistration } from '../lib/focus-registration';
@@ -561,7 +562,7 @@ export function TaskPanel(props: TaskPanelProps) {
       autoFocusTimer = setTimeout(() => {
         autoFocusTimer = undefined;
         if (!store.focusedPanel[id] && !panelRef.contains(document.activeElement)) {
-          if (store.showPromptInput && !isAgentChat(props.task, firstAgentId())) {
+          if (isTaskPromptInputShown(props.task) && !isAgentChat(props.task, firstAgentId())) {
             promptRef?.focus();
           } else {
             setTaskFocusedPanel(id, 'ai-terminal');
@@ -784,7 +785,8 @@ export function TaskPanel(props: TaskPanelProps) {
   // Prompt wrapper carries its own intrinsic height so the flex-first panel
   // tree sizes it to 72 px by default and lets a user-drag pin override.
   const promptBoxShown = () =>
-    !isAgentChat(props.task, firstAgentId()) && (store.showPromptInput || autoSendChildUpdates());
+    !isAgentChat(props.task, firstAgentId()) &&
+    (isTaskPromptInputShown(props.task) || autoSendChildUpdates());
   const promptInputEl = (
     <div
       onClick={() => setTaskFocusedPanel(props.task.id, 'prompt')}
@@ -1206,7 +1208,7 @@ export function TaskPanel(props: TaskPanelProps) {
             props.task,
             message,
             promptHandle,
-            store.showPromptInput && !isAgentChat(props.task, firstAgentId()),
+            isTaskPromptInputShown(props.task) && !isAgentChat(props.task, firstAgentId()),
           )
         }
         onUseComposer={(message) =>
@@ -1214,7 +1216,7 @@ export function TaskPanel(props: TaskPanelProps) {
             props.task,
             message,
             promptHandle,
-            store.showPromptInput && !isAgentChat(props.task, firstAgentId()),
+            isTaskPromptInputShown(props.task) && !isAgentChat(props.task, firstAgentId()),
           )
         }
       />
