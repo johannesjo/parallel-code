@@ -45,6 +45,7 @@ import { isLandedTaskState } from '../store/landing';
 import { laterMenuItems } from './task-later-menu';
 import { taskPrs } from '../store/task-prs';
 import { shortcutHint } from '../store/keybindings';
+import { oneClickPrStep } from './one-click-pr';
 
 interface TaskTitleBarProps {
   task: Task;
@@ -52,7 +53,7 @@ interface TaskTitleBarProps {
   onClose: () => void;
   /** Opens the finish dialog: evidence, tour, then merge or push. */
   onFinish: () => void;
-  /** Opens Finish with Create pull request on top. */
+  /** Creates a draft PR in one click. */
   onCreatePr: () => void;
   pushing: boolean;
   pushSuccess: boolean;
@@ -74,8 +75,14 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
     canFinish() &&
     taskPrs(props.task).length === 0 &&
     !!store.taskGitStatus[props.task.id]?.has_committed_changes;
-  const createPrTitle = () =>
-    `Create a pull request into ${props.task.baseBranch ?? 'base'}${shortcutHint('app.task.createPr')}`;
+  const prStep = () => oneClickPrStep(props.task.id);
+  const createPrTitle = () => {
+    const step = prStep();
+    if (step === 'pushing') return 'Pushing the branch and drafting the description…';
+    if (step === 'creating') return 'Creating the pull request…';
+    if (step) return 'Checking GitHub…';
+    return `Push, draft a description and open a draft pull request into ${props.task.baseBranch ?? 'base'}${shortcutHint('app.task.createPr')}`;
+  };
   const titleLabel = () => {
     const initialPrompt = props.task.savedInitialPrompt?.trim();
     if (
@@ -189,12 +196,22 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
               title={createPrTitle()}
               // Narrow columns drop the visible label; the name stays.
               aria-label="Create PR"
+              aria-busy={!!prStep()}
+              // Not `disabled`: that would drop keyboard focus from the button just pressed.
+              aria-disabled={!!prStep()}
               onClick={(e) => {
                 e.stopPropagation();
-                props.onCreatePr();
+                if (!prStep()) props.onCreatePr();
               }}
             >
-              <GitPullRequestIcon size={14} />
+              {/* Sized like the icon, so the button keeps its width while it works. */}
+              <Show when={prStep()} fallback={<GitPullRequestIcon size={14} />}>
+                <span
+                  class="inline-spinner"
+                  aria-hidden="true"
+                  style={{ width: '14px', height: '14px' }}
+                />
+              </Show>
               <span class="task-create-pr-label">Create PR</span>
             </button>
           </Show>

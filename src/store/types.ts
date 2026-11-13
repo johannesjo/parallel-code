@@ -709,7 +709,8 @@ export interface UsageState {
 export type PanelId = string;
 
 export interface PendingAction {
-  type: 'close' | 'finish' | 'create-pr';
+  /** `create-pr` creates a draft PR in one click; `write-pr` opens Finish's form for it. */
+  type: 'close' | 'finish' | 'create-pr' | 'write-pr';
   taskId: string;
   /** Finish with "delete branch and worktree after merge" pre-checked. */
   closeAfter?: boolean;

@@ -41,18 +41,27 @@ function endMenuItems(task: Task, actions: TaskMenuActions): MoreMenuItem[] {
       setPendingAction({ type: 'finish', taskId: task.id, closeAfter });
     },
   };
-  // Opens Finish too, with Create pull request on top, so it lands back there.
-  const createPr = {
-    label: 'Create pull request…',
+  // The task's panel runs both, so it opens first; the form lands back in Finish.
+  const prItem = (type: 'create-pr' | 'write-pr', label: string, title: string) => ({
+    label,
+    title,
     icon: <GitPullRequestIcon size={14} />,
     run: () => {
       actions.open();
-      setPendingAction({ type: 'create-pr', taskId: task.id });
+      setPendingAction({ type, taskId: task.id });
     },
-  };
+  });
+  const createPr = [
+    prItem(
+      'create-pr',
+      'Create draft pull request',
+      'Pushes, drafts a description and opens a draft PR on GitHub.',
+    ),
+    prItem('write-pr', 'Write pull request…', 'Write or edit the title and description first.'),
+  ];
   return [
     ...(canFinish ? [finish] : []),
-    ...(canFinish && !taskPrUrl(task) ? [createPr] : []),
+    ...(canFinish && !taskPrUrl(task) ? createPr : []),
     { label: 'Close', icon: <CloseIcon size={14} />, run: actions.confirmClose },
   ];
 }

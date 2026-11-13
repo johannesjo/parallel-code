@@ -199,7 +199,7 @@ export const PR_DRAFT_TOOLS: ToolDef[] = [
   {
     name: 'pr_draft_publish',
     description:
-      "Publish a pull request title and description you drafted for your task's branch. The app fills its Create pull request dialog with them; the user reviews, edits and creates the PR there. This tool never pushes or creates anything, and you should not either. " +
+      "Publish a pull request title and description you drafted for your task's branch. The app uses them when the user creates the PR, in one click or after editing them in its Create pull request dialog. This tool never pushes or creates anything, and you should not either. " +
       'Use it when the app or the user asks you to draft the pull request. ' +
       `title is one line under 70 characters if you can, at most ${PR_DRAFT_LIMITS.title}; follow the style of the commit subjects. body is GitHub Markdown of at most ${PR_DRAFT_LIMITS.body} characters: why the change is needed, what changed, and how it was verified, claiming only checks you actually saw pass. If the repository has a pull request template, fill in its sections and keep its headings and checklists. No closing note about how the text was written.`,
     inputSchema: {

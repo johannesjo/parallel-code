@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js';
 import { reconcile } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { TaskTitleBar } from './TaskTitleBar';
+import { createPrInOneClick } from './one-click-pr';
 import { store, setStore } from '../store/core';
 import {
   bringTaskToFront,
@@ -107,12 +108,32 @@ it('offers Create PR once the branch has commits and no pull request', () => {
   expect(button('Create PR')).toBeUndefined();
   gitStatus(true);
   const create = button('Create PR');
-  expect(create?.title).toMatch(/^Create a pull request into main \(.+R\)$/);
+  expect(create?.title).toMatch(
+    /^Push, draft a description and open a draft pull request into main \(.+R\)$/,
+  );
   // Next to Finish, before it.
   expect(create?.nextElementSibling?.textContent).toContain('Finish');
   create?.click();
   expect(onCreatePr).toHaveBeenCalledOnce();
   expect(onFinish).not.toHaveBeenCalled();
+});
+
+it('shows a one-click create working and ignores clicks until it ends', async () => {
+  gitStatus(true);
+  let answer: (result: unknown) => void = () => {};
+  vi.mocked(invoke).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  const running = createPrInOneClick('one');
+  const create = button('Create PR');
+  expect(create?.getAttribute('aria-busy')).toBe('true');
+  expect(create?.querySelector('.inline-spinner')).not.toBeNull();
+  create?.click();
+  expect(onCreatePr).not.toHaveBeenCalled();
+  // gh is missing, so the create ends with a notice and the button is ready again.
+  answer({ url: null, unavailable: 'missing' });
+  await running;
+  expect(create?.getAttribute('aria-busy')).toBe('false');
+  create?.click();
+  expect(onCreatePr).toHaveBeenCalledOnce();
 });
 
 it('keeps Create PR in place while a push runs, so the header does not jump', () => {

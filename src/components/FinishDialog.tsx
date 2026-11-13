@@ -8,6 +8,7 @@ import { ChangeTourButton } from './ChangeTourButton';
 import { CompletionReport } from './CompletionReport';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CreatePrDialog } from './CreatePrDialog';
+import { createPrInOneClick, oneClickPrStep } from './one-click-pr';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { FeatureHint } from './FeatureHint';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
@@ -45,7 +46,7 @@ interface FinishDialogProps {
   open: boolean;
   task: Task;
   initialCleanup: boolean;
-  /** Opens Create pull request alone, as the shortcut and the task menu do; closing it closes both. */
+  /** Opens Create pull request alone, as Write pull request… in the task menu does; closing it closes both. */
   initialCreatePr: boolean;
   tour: ChangeTourController;
   /** Opens a ready tour, or starts generating one, like the Changed Files button. */
@@ -224,8 +225,10 @@ export function FinishDialog(props: FinishDialogProps) {
   // verify command by the readiness line, PR checks by the PR section.
   const readinessRows = () =>
     merge.mergeReadiness().checks.filter((check) => !SHOWN_ELSEWHERE.has(check.label));
+  // A one-click create pushes and opens the PR; a push or merge beside it would race it.
+  const creatingPr = () => !!oneClickPrStep(props.task.id);
   const confirmDisabled = () => {
-    if (push.pushing()) return true;
+    if (push.pushing() || creatingPr()) return true;
     if (pushFirst()) return pushDisabled() || !!pushBlocker();
     if (landed()) return false;
     if (pr.mode() === 'pr') return !!pr.busy() || !!pr.blocker();
@@ -239,7 +242,7 @@ export function FinishDialog(props: FinishDialogProps) {
       pr.blocker() ?? (pr.pr()?.isDraft ? 'Marks the draft ready for review first.' : undefined)
     );
   };
-  const pushDisabled = () => push.pushing() || merge.merging() || prMerging();
+  const pushDisabled = () => push.pushing() || creatingPr() || merge.merging() || prMerging();
   /**
    * Why pushing would send the wrong thing. Merge-only blockers such as
    * conflicts stay out: pushing is how a PR gets them resolved. An unreadable
@@ -458,7 +461,9 @@ export function FinishDialog(props: FinishDialogProps) {
                 <Show when={remote() && !merge.alreadyLanded()}>
                   <CreatePrEntry
                     disabled={push.pushing() || merge.merging()}
-                    onCreate={() => setCreatePrOpen(true)}
+                    creating={creatingPr()}
+                    onCreate={() => void createPrInOneClick(props.task.id)}
+                    onWrite={() => setCreatePrOpen(true)}
                   />
                 </Show>
               }

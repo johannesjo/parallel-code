@@ -93,6 +93,7 @@ import { parseAgentTour } from '../lib/understanding-tour';
 import { isTourFilePath, parseTourFile } from '../lib/tour-file';
 import { UnderstandingTourDialog } from './UnderstandingTourDialog';
 import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
+import { createPrInOneClick, oneClickPrStep } from './one-click-pr';
 
 // Lazy: d3 and the graph editors only load once a task opens one of these tabs.
 const TaskMindMap = lazy(() => import('./TaskMindMap').then((m) => ({ default: m.TaskMindMap })));
@@ -171,6 +172,13 @@ export function TaskPanel(props: TaskPanelProps) {
       setFinishCloses(closeAfter);
       setFinishAction(pushing() ? 'push' : action);
     });
+  };
+  // Not beside an open Finish, where the form may hold a PR being written, nor
+  // during its push, which would race; Finish then shows the push instead.
+  const createPr = () => {
+    if (canFinish() && finishAction() === null && !pushing()) {
+      void createPrInOneClick(props.task.id);
+    } else openFinish('create-pr');
   };
   let pushSuccessTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(pushSuccessTimer));
@@ -543,7 +551,12 @@ export function TaskPanel(props: TaskPanelProps) {
         openFinish('merge', action.closeAfter);
         break;
       case 'create-pr':
-        openFinish('create-pr');
+        createPr();
+        break;
+      case 'write-pr':
+        // A running one-click create would race the form's own push and create.
+        if (oneClickPrStep(props.task.id)) showNotification('A pull request is being created…');
+        else openFinish('create-pr');
         break;
     }
   });
@@ -1027,7 +1040,7 @@ export function TaskPanel(props: TaskPanelProps) {
             isActive={isTaskColumnHighlighted(props.task.id)}
             onClose={() => setShowCloseConfirm(true)}
             onFinish={() => openFinish('merge')}
-            onCreatePr={() => openFinish('create-pr')}
+            onCreatePr={createPr}
             pushing={pushing()}
             pushSuccess={pushSuccess()}
             tour={finishTour()}

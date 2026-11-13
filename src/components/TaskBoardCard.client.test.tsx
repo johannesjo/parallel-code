@@ -89,7 +89,8 @@ it('opens a context menu on right-click that snoozes the task', () => {
     'Snooze · stop agents',
     'Minimize (stop agents)',
     'Finish and close',
-    'Create pull request…',
+    'Create draft pull request',
+    'Write pull request…',
     'Close',
   ]);
   menuItem('Snooze until new activity')?.click();
@@ -110,7 +111,8 @@ it('offers only restore for a minimized task', () => {
     'Open on the left',
     'Restore (start agents)',
     'Finish and close',
-    'Create pull request…',
+    'Create draft pull request',
+    'Write pull request…',
     'Close',
   ]);
   menuItem('Restore (start agents)')?.click();
@@ -147,7 +149,8 @@ it('opens the pull request in the browser from its menu', () => {
   expect(invoke).toHaveBeenCalledWith(IPC.ShellOpenExternal, {
     url: 'https://github.com/o/r/pull/7',
   });
-  expect(labels()).not.toContain('Create pull request…');
+  expect(labels()).not.toContain('Create draft pull request');
+  expect(labels()).not.toContain('Write pull request…');
 });
 
 it('shows the PR row of a task whose only PR is in a nested repository', () => {
@@ -186,10 +189,13 @@ it('still links and opens its own PR once that closed unmerged', () => {
   expect(invoke).toHaveBeenCalledWith(IPC.ShellOpenExternal, { url });
 });
 
-it('opens Finish on Create pull request from its menu', () => {
+it('asks the task panel for a one-click PR, or for the form, from its menu', () => {
   rightClick();
-  menuItem('Create pull request…')?.click();
+  menuItem('Create draft pull request')?.click();
   expect(store.pendingAction).toEqual({ type: 'create-pr', taskId: 'one' });
+  rightClick();
+  menuItem('Write pull request…')?.click();
+  expect(store.pendingAction).toEqual({ type: 'write-pr', taskId: 'one' });
   setStore('pendingAction', null);
 });
 
