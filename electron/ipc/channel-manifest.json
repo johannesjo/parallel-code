@@ -101,6 +101,7 @@
   "MCP_PublishFinishItemsRequest": "mcp_publish_finish_items_request",
   "MCP_PublishGitHubListRequest": "mcp_publish_github_list_request",
   "MCP_CreateIndependentTaskRequest": "mcp_create_independent_task_request",
+  "MCP_ImportWorktreeRequest": "mcp_import_worktree_request",
   "Remote_GetNotesRequest": "remote_get_notes_request",
   "Remote_SetNotesRequest": "remote_set_notes_request",
   "Remote_CloseTaskRequest": "remote_close_task_request",

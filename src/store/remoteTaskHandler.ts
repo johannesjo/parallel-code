@@ -16,6 +16,7 @@ import { openCanvasViewFromAgent } from './canvas-agent';
 import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
 import { store } from './core';
 import { delegationRequest } from './delegation';
+import { importWorktreeForAgent } from './agent-import-worktree';
 import { codeProjects, getProject, getProjectPath } from './projects';
 import {
   closeTask,
@@ -45,6 +46,7 @@ import {
 import { reviewerWithModel } from '../lib/agent-handoff';
 import type { AgentDef, GitIgnoredEntry, MergeStatus, WorktreeStatus } from '../ipc/types';
 import type { Project, Task } from './types';
+import type { ImportWorktreeRequest as ImportWorktreeInput } from '../../electron/shared/delegation-types';
 import type {
   RemoteAgentChoice,
   RemoteCloseResult,
@@ -69,6 +71,8 @@ interface CreateIndependentTaskRequest extends RendererRequest {
   prompt: string;
   launchId: string;
 }
+
+interface ImportWorktreeRequest extends RendererRequest, ImportWorktreeInput {}
 
 interface GetNotesRequest extends RendererRequest {
   taskId: string;
@@ -263,6 +267,14 @@ async function handleCreateIndependentTask(req: CreateIndependentTaskRequest): P
     });
     void linkTaskToIssueReference(taskId, project.path, req.prompt);
     reply(req.reqId, true, { taskId });
+  } catch (err) {
+    reply(req.reqId, false, undefined, errMessage(err));
+  }
+}
+
+async function handleImportWorktree(req: ImportWorktreeRequest): Promise<void> {
+  try {
+    reply(req.reqId, true, await importWorktreeForAgent(req));
   } catch (err) {
     reply(req.reqId, false, undefined, errMessage(err));
   }
@@ -558,6 +570,13 @@ export function startRemoteTaskHandlers(): () => void {
         void handleCreateIndependentTask(data as CreateIndependentTaskRequest);
     },
   );
+  const offImportWorktree = window.electron.ipcRenderer.on(
+    IPC.MCP_ImportWorktreeRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object')
+        void handleImportWorktree(data as ImportWorktreeRequest);
+    },
+  );
   const offGetNotes = window.electron.ipcRenderer.on(
     IPC.Remote_GetNotesRequest,
     (data: unknown) => {
@@ -708,6 +727,7 @@ export function startRemoteTaskHandlers(): () => void {
     offProjects();
     offCreate();
     offCreateIndependent();
+    offImportWorktree();
     offAgents();
     offGetNotes();
     offSetNotes();

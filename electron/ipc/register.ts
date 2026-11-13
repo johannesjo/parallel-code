@@ -699,6 +699,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
     onCoordinatorLoaded: () => registerCoordinatorHandlers(),
     createIndependentTask: (request) =>
       callRenderer<{ taskId: string }>(IPC.MCP_CreateIndependentTaskRequest, { ...request }),
+    importWorktree: (request) =>
+      callRenderer<{ taskId: string; resumedSessionId: string | null }>(
+        IPC.MCP_ImportWorktreeRequest,
+        { ...request },
+      ),
   });
   const { transport, delegation, pendingSpawns, canvasOwners, wideBindAgents, needsWideBind } = mcp;
   const taskNames = new Map<string, string>();

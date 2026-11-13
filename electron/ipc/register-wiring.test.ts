@@ -77,6 +77,7 @@ const NOT_HANDLED_HERE: readonly string[] = [
   IPC.MCP_PublishPrDraftRequest,
   IPC.MCP_PublishFinishItemsRequest,
   IPC.MCP_CreateIndependentTaskRequest,
+  IPC.MCP_ImportWorktreeRequest,
   IPC.MCP_ReadMindMapRequest,
   IPC.MCP_ReadReasoningRequest,
   IPC.MCP_StaleUrlWarning,

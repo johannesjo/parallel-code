@@ -11,8 +11,19 @@ import {
   oneWayDiffRange,
   pinHead,
 } from './git-diff-base.js';
-import { parseWorktreeList, safeRealpath, splitContentLines } from './git-worktree.js';
-import type { ChangedFile, CommitInfo, FileDiffResult, WorktreeStatus } from './shared-types.js';
+import {
+  parseWorktreeList,
+  safeRealpath,
+  splitContentLines,
+  worktreePathFor,
+} from './git-worktree.js';
+import type {
+  ChangedFile,
+  CommitInfo,
+  FileDiffResult,
+  ImportableWorktree,
+  WorktreeStatus,
+} from './shared-types.js';
 
 export type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
 export {
@@ -772,14 +783,7 @@ async function countChangedLines(
   }
 }
 
-export async function listImportableWorktrees(projectRoot: string): Promise<
-  Array<{
-    path: string;
-    branch_name: string;
-    has_committed_changes: boolean;
-    has_uncommitted_changes: boolean;
-  }>
-> {
+export async function listImportableWorktrees(projectRoot: string): Promise<ImportableWorktree[]> {
   if (!(await isGitRepo(projectRoot))) return [];
 
   const projectRealPath = safeRealpath(projectRoot);
@@ -802,6 +806,9 @@ export async function listImportableWorktrees(projectRoot: string): Promise<
           branch_name: entry.branchName ?? '',
           has_committed_changes: status.has_committed_changes,
           has_uncommitted_changes: status.has_uncommitted_changes,
+          app_created:
+            safeRealpath(entry.path) ===
+            safeRealpath(worktreePathFor(projectRoot, entry.branchName ?? '')),
         };
       } catch {
         return null;
@@ -809,16 +816,7 @@ export async function listImportableWorktrees(projectRoot: string): Promise<
     }),
   );
 
-  const filtered = results.filter(
-    (
-      entry,
-    ): entry is {
-      path: string;
-      branch_name: string;
-      has_committed_changes: boolean;
-      has_uncommitted_changes: boolean;
-    } => entry !== null,
-  );
+  const filtered = results.filter((entry): entry is ImportableWorktree => entry !== null);
 
   filtered.sort(
     (a, b) => a.branch_name.localeCompare(b.branch_name) || a.path.localeCompare(b.path),

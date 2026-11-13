@@ -175,7 +175,7 @@ it('offers github_list_publish only to the GitHub page agent', () => {
   ]);
 });
 
-it('gives a page agent only independent task creation besides its page tools', () => {
+it('gives a page agent only independent task creation and worktree import besides its page tools', () => {
   const capabilities = { profile: 'page' as const, canCreate: true, peers: false };
   const tools = selectTools('gh-agent-p1', '', false, capabilities);
   const createTask = tools.find((tool) => tool.name === 'create_task');
@@ -194,6 +194,7 @@ it('gives a page agent only independent task creation besides its page tools', (
       ...GITHUB_LIST_TOOLS,
     ].map((tool) => tool.name),
     'create_task',
+    'import_worktree',
   ]);
   expect(sessionInstructions(capabilities)).toContain("relation 'independent'");
 });
@@ -302,7 +303,22 @@ describe('session capability tool sets', () => {
 
   it('exposes exact ordinary rights separately from agent creation consent', () => {
     expect(names('ordinary')).toEqual([...canvas, ...finish, ...supervision]);
-    expect(names('ordinary', true)).toEqual([...canvas, ...finish, 'create_task', ...supervision]);
+    expect(names('ordinary', true)).toEqual([
+      ...canvas,
+      ...finish,
+      'create_task',
+      ...supervision,
+      'import_worktree',
+    ]);
+  });
+
+  it('offers import_worktree to page agents only with creation consent', () => {
+    const page = (canCreate: boolean) =>
+      selectTools('project-page', '', false, { profile: 'page', canCreate, peers: false }).map(
+        (tool) => tool.name,
+      );
+    expect(page(true)).toContain('import_worktree');
+    expect(page(false)).not.toContain('import_worktree');
   });
 
   it('makes ordinary sessions choose between a child and an independent task', () => {

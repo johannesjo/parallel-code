@@ -186,8 +186,10 @@ function initTaskInStore(
       // Without this it launches with the positional default, and once a second
       // pane exists that default means "the newest session in this worktree" —
       // the second pane's — so pane one comes back with the wrong conversation.
-      // A teleported pane is the exception: `--teleport` picks the session.
-      if (!task.teleportSessionId) assignFreshSessionId(s, taskId, agent.id, agent.def.command);
+      // A teleported pane is the exception: `--teleport` picks the session; so is
+      // a resumed one, which already names the session it reopens.
+      if (!task.teleportSessionId && !agent.resumed)
+        assignFreshSessionId(s, taskId, agent.id, agent.def.command);
       s.taskOrder.push(taskId);
       if (opts.activate) {
         if (s.taskProjectFilter && s.taskProjectFilter !== task.projectId)
@@ -462,6 +464,14 @@ export interface CreateImportedTaskOptions {
   projectId: string;
   worktree: ImportableWorktree;
   agentDef: AgentDef;
+  /** A session recorded in this worktree; the first pane reopens it instead of
+   *  starting a new conversation. */
+  resumeSessionId?: string;
+  /** Close and merge remove the worktree and branch, as for tasks the app
+   *  created. Off by default: the worktree may belong to someone else. */
+  cleanupOnClose?: boolean;
+  /** Defaults to true; an import an agent asked for must not take focus. */
+  activate?: boolean;
 }
 
 function deriveImportedTaskName(branchName: string, worktreePath: string): string {
@@ -476,13 +486,28 @@ function hasTaskForWorktreePath(worktreePath: string): boolean {
   return allIds.some((id) => store.tasks[id]?.worktreePath === worktreePath);
 }
 
+/** Worktree paths whose import is between the duplicate check and the task
+ *  reaching the store; an agent retry or a dialog import racing an agent's
+ *  would otherwise start two agents in one worktree. */
+const importsInFlight = new Set<string>();
+
 export async function createImportedTask(opts: CreateImportedTaskOptions): Promise<string> {
-  const { projectId, worktree, agentDef } = opts;
-  if (!getProjectPath(projectId)) throw new Error('Project not found');
-  if (isProjectMissing(projectId)) throw new Error('Project folder not found');
-  if (hasTaskForWorktreePath(worktree.path)) {
+  const path = opts.worktree.path;
+  if (importsInFlight.has(path) || hasTaskForWorktreePath(path)) {
     throw new Error('Worktree is already tracked as a task');
   }
+  importsInFlight.add(path);
+  try {
+    return await addImportedTask(opts);
+  } finally {
+    importsInFlight.delete(path);
+  }
+}
+
+async function addImportedTask(opts: CreateImportedTaskOptions): Promise<string> {
+  const { projectId, worktree, agentDef, resumeSessionId } = opts;
+  if (!getProjectPath(projectId)) throw new Error('Project not found');
+  if (isProjectMissing(projectId)) throw new Error('Project folder not found');
 
   const id = crypto.randomUUID();
   const agentId = crypto.randomUUID();
@@ -500,17 +525,19 @@ export async function createImportedTask(opts: CreateImportedTaskOptions): Promi
       worktreePath: worktree.path,
       agentId,
     }),
-    externalWorktree: true,
+    externalWorktree: !opts.cleanupOnClose,
+    ...(resumeSessionId && { agentSessionIds: { [agentId]: resumeSessionId } }),
   };
 
   const agent = createAgentRecord({
     id: agentId,
     taskId: id,
     def: agentDef,
+    resumed: !!resumeSessionId,
   });
 
   await registerTaskAuthority(task, agentDef);
-  initTaskInStore(task, agent, { agentDef, activate: true });
+  initTaskInStore(task, agent, { agentDef, activate: opts.activate ?? true });
   saveState();
   return id;
 }

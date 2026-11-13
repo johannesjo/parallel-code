@@ -160,6 +160,7 @@ vi.stubGlobal('window', {
 
 import {
   createTask,
+  createImportedTask,
   initMCPListeners,
   setTaskControl,
   collapseTask,
@@ -1586,6 +1587,107 @@ describe('createTask initial agent state', () => {
   it('leaves a Codex pane without one', async () => {
     const task = await createWith('codex');
     expect(task?.agentSessionIds ?? {}).toEqual({});
+  });
+});
+
+// Bringing back a worktree whose task was lost: the pane must reopen the
+// conversation that was running there, not start an empty one.
+describe('createImportedTask', () => {
+  const claude = {
+    id: 'claude-code',
+    name: 'Claude',
+    command: 'claude',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: 'Claude',
+  };
+  const worktree = {
+    path: '/repo/.worktrees/task/old-work-123456',
+    branch_name: 'task/old-work-123456',
+    has_committed_changes: true,
+    has_uncommitted_changes: false,
+    app_created: true,
+  };
+  const sessionId = '240604e8-6d6c-43ce-9178-6d63236f39a9';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const harness = expectDefined(core.harness, 'mock store harness');
+    harness.reset(harness.state());
+    harness.store.preferUiMode = false;
+    mockTasks = {};
+    mockAgents = {};
+    mockTaskOrder = [];
+    vi.mocked(getProjectPath).mockReturnValue('/repo');
+    vi.mocked(isProjectMissing).mockReturnValue(false);
+    mockProjects = [{ id: 'proj-1', path: '/repo' }];
+    mockInvoke.mockResolvedValue(undefined);
+  });
+
+  it('resumes the chosen session in the first pane', async () => {
+    const taskId = await createImportedTask({
+      projectId: 'proj-1',
+      worktree,
+      agentDef: claude,
+      resumeSessionId: sessionId,
+    });
+    const task = mockTasks[taskId];
+    const agentId = expectDefined(task.agentIds[0], 'first pane id');
+    expect(task.agentSessionIds).toEqual({ [agentId]: sessionId });
+    expect(mockAgents[agentId]).toMatchObject({ resumed: true });
+  });
+
+  it('starts a fresh conversation without a session to resume', async () => {
+    const taskId = await createImportedTask({ projectId: 'proj-1', worktree, agentDef: claude });
+    const task = mockTasks[taskId];
+    const agentId = expectDefined(task.agentIds[0], 'first pane id');
+    expect(task.agentSessionIds?.[agentId]).toEqual(expect.any(String));
+    expect(task.agentSessionIds?.[agentId]).not.toBe(sessionId);
+    expect(mockAgents[agentId]).toMatchObject({ resumed: false });
+  });
+
+  it('leaves the worktree alone on close unless cleanup was chosen', async () => {
+    const kept = await createImportedTask({ projectId: 'proj-1', worktree, agentDef: claude });
+    expect(mockTasks[kept].externalWorktree).toBe(true);
+    mockTasks = {};
+    mockTaskOrder = [];
+    const owned = await createImportedTask({
+      projectId: 'proj-1',
+      worktree,
+      agentDef: claude,
+      cleanupOnClose: true,
+    });
+    expect(mockTasks[owned].externalWorktree).toBe(false);
+  });
+
+  it('takes focus unless told not to', async () => {
+    const state = expectDefined(core.harness, 'mock store harness').store as {
+      activeTaskId?: string;
+    };
+    const focused = await createImportedTask({ projectId: 'proj-1', worktree, agentDef: claude });
+    expect(state.activeTaskId).toBe(focused);
+    mockTasks = {};
+    mockTaskOrder = [];
+    const background = await createImportedTask({
+      projectId: 'proj-1',
+      worktree,
+      agentDef: claude,
+      activate: false,
+    });
+    expect(state.activeTaskId).toBe(focused);
+    expect(mockTasks[background]).toBeDefined();
+  });
+
+  it('creates one task when the same worktree is imported twice at once', async () => {
+    const opts = { projectId: 'proj-1', worktree, agentDef: claude };
+    const results = await Promise.allSettled([createImportedTask(opts), createImportedTask(opts)]);
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(Object.keys(mockTasks)).toHaveLength(1);
+    // The reservation ends with the import, so a later import after closing works.
+    mockTasks = {};
+    mockTaskOrder = [];
+    await expect(createImportedTask(opts)).resolves.toEqual(expect.any(String));
   });
 });
 

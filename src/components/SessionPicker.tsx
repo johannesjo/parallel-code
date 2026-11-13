@@ -24,7 +24,7 @@ export function relativeTime(epochMs: number, now = Date.now(), locale?: string)
 }
 
 /** What to call a session with no title of its own yet. */
-function sessionLabel(session: SessionRecord): string {
+export function sessionLabel(session: SessionRecord): string {
   return session.title ?? `Session ${session.id.slice(0, 8)}`;
 }
 
