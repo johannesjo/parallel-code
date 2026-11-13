@@ -246,3 +246,34 @@ it('leaves a ready card with a pull request to its PR row', () => {
   dispose = render(() => <TaskBoardCard task={store.tasks.one} lane="ready" />, container);
   expect(container.querySelector('.task-board-ask.quiet')).toBeNull();
 });
+
+const renderInLane = (lane: 'done' | 'stopped') => {
+  dispose();
+  dispose = render(() => <TaskBoardCard task={store.tasks.one} lane={lane} />, container);
+};
+
+const button = (label: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+    (b) => b.textContent?.trim() === label,
+  );
+
+it('offers Close on a Done card, which still asks to confirm', () => {
+  renderInLane('done');
+  expect(container.textContent).toContain('Merged, nothing left');
+  button('Close')?.click();
+  expect(store.pendingAction).toEqual({ type: 'close', taskId: 'one' });
+  setStore('pendingAction', null);
+});
+
+it('names the loose ends the agent recorded on a resting card', () => {
+  setStore('tasks', 'one', 'finishItems', {
+    items: ['Update the changelog', 'File a follow-up'],
+    publishedAt: 1,
+  });
+  renderInLane('stopped');
+  expect(container.textContent).toContain('Mostly done: 2 loose ends');
+  // The items themselves are a hover away.
+  expect(container.querySelector('[title*="Update the changelog"]')).not.toBeNull();
+  expect(button('Close')).toBeUndefined();
+  setStore('tasks', 'one', 'finishItems', undefined);
+});

@@ -203,6 +203,14 @@ it('groups tasks under the desktop board lanes and names a ready task by its che
       lane: 'stopped',
     },
     { ...base, agentId: 'a3', taskId: 't3', taskName: 'Question', attention: 'needs_input' },
+    {
+      ...base,
+      agentId: 'a5',
+      taskId: 't5',
+      taskName: 'Merged work',
+      attention: 'idle',
+      lane: 'done',
+    },
   ];
   Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   dispose = render(
@@ -215,6 +223,7 @@ it('groups tasks under the desktop board lanes and names a ready task by its che
   expect(group('In pull request')?.textContent).toContain('Babysat PR');
   expect(group('Stopped')?.textContent).toContain('Green work');
   expect(group('Stopped')?.textContent).toContain('Ready to merge');
+  expect(group('Done')?.textContent).toContain('Merged work');
   // Without a lane from the desktop, the phone still files a question under Needs you.
   expect(group('Needs you')?.textContent).toContain('Question');
   // The desktop leaves failed CI in its PR lane only while Babysit hands it to

@@ -153,6 +153,9 @@ describe('startPrChecksSubscription updates', () => {
     expect(getMergedTasksTodayCount()).toBe(1);
     expect(mockSaveState).toHaveBeenCalledTimes(1);
     expect(getPrChecks('task-1')).toMatchObject({ overall: 'none', merged: true });
+    // The board compares the merged head with the worktree's HEAD.
+    updateHandler?.({ ...merge, headSha: 'merged-sha' });
+    expect(getPrChecks('task-1')?.headSha).toBe('merged-sha');
 
     updateHandler?.({ ...cleared, merged: false });
     expect(getPrChecks('task-1')).toBeUndefined();

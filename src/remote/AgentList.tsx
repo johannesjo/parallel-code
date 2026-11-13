@@ -25,6 +25,7 @@ const lanes: { id: RemoteBoardLane; name: string }[] = [
   { id: 'working', name: 'Working' },
   { id: 'pr', name: 'In pull request' },
   { id: 'ready', name: 'Ready to merge' },
+  { id: 'done', name: 'Done' },
   { id: 'snoozed', name: 'Snoozed & minimized' },
 ];
 

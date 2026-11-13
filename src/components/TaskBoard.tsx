@@ -275,9 +275,11 @@ export function TaskBoard() {
             <Show
               when={lane().id === 'snoozed'}
               fallback={
-                // Ready to merge fills only once something has passed review or CI, so it
-                // appears with its first card instead of taking width from everyone.
-                <Show when={lane().id !== 'ready' || lane().tasks.length > 0}>
+                // Ready to merge and Done fill only once something has passed review or CI
+                // or merged, so they appear with their first card instead of taking width.
+                <Show
+                  when={(lane().id !== 'ready' && lane().id !== 'done') || lane().tasks.length > 0}
+                >
                   <Lane lane={lane()} />
                 </Show>
               }

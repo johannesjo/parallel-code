@@ -67,6 +67,7 @@ export const REMOTE_BOARD_LANES = [
   'working',
   'pr',
   'ready',
+  'done',
   'snoozed',
 ] as const;
 export type RemoteBoardLane = (typeof REMOTE_BOARD_LANES)[number];
