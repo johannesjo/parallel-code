@@ -2,7 +2,7 @@ import type { JSX } from 'solid-js';
 import { ModelMenu } from './ModelMenu';
 import {
   ASK_CODE_CLAUDE_MODELS,
-  ASK_CODE_MODELS,
+  ASK_CODE_MINIMAX_MODELS,
   askCodeEfforts,
   type AskCodeProvider,
 } from '../../electron/shared/ask-code-models';
@@ -16,8 +16,7 @@ import { defaultAskCodeModel } from '../../electron/shared/ask-code-models';
 
 interface ModelChoice {
   provider: AskCodeProvider;
-  /** Undefined for MiniMax, which offers a single model. */
-  model?: string;
+  model: string;
   label: string;
   /** Shown on hover where the label is a display name, not the slug sent to the CLI. */
   title?: string;
@@ -60,7 +59,11 @@ function groups(): ModelGroup[] {
     {
       provider: 'minimax',
       heading: 'MiniMax',
-      choices: [{ provider: 'minimax', label: ASK_CODE_MODELS.minimax }],
+      choices: ASK_CODE_MINIMAX_MODELS.map((model) => ({
+        provider: 'minimax' as const,
+        model,
+        label: model,
+      })),
     },
   ];
 }
@@ -138,7 +141,7 @@ export function AgentModelMenu(props: {
       label={props.label ?? 'Model'}
       text={props.showModel ? `${modelText()}${effortText()}` : undefined}
       title={`Model: ${askCodeLabel(provider(), model())}${effortText()}`}
-      value={`${provider()}:${provider() === 'minimax' ? '' : model()}`}
+      value={`${provider()}:${model()}`}
       groups={availableGroups().map((group) => ({
         ...group,
         choices: group.choices.map((choice) => ({ ...choice, value: key(choice) })),
