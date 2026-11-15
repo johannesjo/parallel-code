@@ -3,13 +3,12 @@ import {
   For,
   createSignal,
   createEffect,
-  createUniqueId,
   onCleanup,
   onMount,
   untrack,
   type JSX,
 } from 'solid-js';
-import { createStore, reconcile } from 'solid-js/store';
+import { createStore } from 'solid-js/store';
 import {
   store,
   getProject,
@@ -34,7 +33,7 @@ import { fileLinkMenu, type ChangesLink } from './file-link-menu';
 import { findBareFile } from '../lib/find-bare-file';
 import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { editAsDocument } from '../documents/store';
-import { ChevronRightIcon, CloseIcon, TerminalSmallIcon } from './icons';
+import { CloseIcon, TerminalSmallIcon } from './icons';
 import { AddCommandBookmark } from './AddCommandBookmark';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -75,17 +74,6 @@ const toolbarBtnStyle = (highlighted: boolean, iconOnly = false): JSX.CSSPropert
   gap: '5px',
 });
 
-// Shared by every task of a project and kept across remounts, so opening the bookmarks once
-// sticks. shortcut: in-memory only — persist per project if it should survive restarts.
-const [bookmarksExpandedByProject, setBookmarksExpandedByProject] = createStore<
-  Record<string, boolean>
->({});
-
-/** Collapse every project's bookmarks again; tests share this module-level state. */
-export function resetBookmarkExpansionForTest(): void {
-  setBookmarksExpandedByProject(reconcile({}));
-}
-
 interface TaskShellSectionProps {
   task: Task;
   isActive: boolean;
@@ -104,10 +92,6 @@ export function shellSectionMinHeight(task: Task): number {
 }
 
 export function TaskShellSection(props: TaskShellSectionProps) {
-  const bookmarksId = createUniqueId();
-  const bookmarksExpanded = () => bookmarksExpandedByProject[props.task.projectId] ?? false;
-  const setBookmarksExpanded = (expanded: boolean) =>
-    setBookmarksExpandedByProject(props.task.projectId, expanded);
   const [shellToolbarIdx, setShellToolbarIdx] = createSignal(0);
   const [shellToolbarFocused, setShellToolbarFocused] = createSignal(false);
   const [shellExits, setShellExits] = createStore<
@@ -125,20 +109,9 @@ export function TaskShellSection(props: TaskShellSectionProps) {
       branchName: props.task.branchName,
     });
 
-  // A collapsed bookmark can't stay the keyboard selection — also when another task of the
-  // project collapsed them. Only the task holding focus moves its focused panel; doing it for
-  // background tasks would steal focus from the sidebar.
-  createEffect(() => {
-    if (bookmarksExpanded() || untrack(shellToolbarIdx) === 0) return;
-    setShellToolbarIdx(0);
-    if (untrack(() => isPanelFocusedPrefix(props.task.id, 'shell-toolbar:')))
-      setTaskFocusedPanel(props.task.id, 'shell-toolbar:0');
-  });
-
   // Reactively register shell-toolbar:N focus fns
   createEffect(() => {
     const id = props.task.id;
-    const projectId = props.task.projectId;
     const count = 1 + projectBookmarks().length;
     if (shellToolbarIdx() >= count) {
       setShellToolbarIdx(count - 1);
@@ -146,7 +119,6 @@ export function TaskShellSection(props: TaskShellSectionProps) {
     for (let n = 0; n < count; n++) {
       const idx = n;
       registerFocusFn(`${id}:shell-toolbar:${idx}`, () => {
-        if (idx > 0) setBookmarksExpandedByProject(projectId, true);
         setShellToolbarIdx(idx);
         shellToolbarEl?.focus();
       });
@@ -238,7 +210,6 @@ export function TaskShellSection(props: TaskShellSectionProps) {
             if (e.key === 'ArrowRight') {
               e.preventDefault();
               const next = Math.min(itemCount - 1, shellToolbarIdx() + 1);
-              if (next > 0) setBookmarksExpanded(true);
               setShellToolbarIdx(next);
               setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
             } else if (e.key === 'ArrowLeft') {
@@ -288,58 +259,25 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           >
             <TerminalSmallIcon size={14} style={{ 'flex-shrink': '0' }} />
           </button>
-          <AddCommandBookmark
-            projectId={props.task.projectId}
-            onSaved={() => setBookmarksExpanded(true)}
-          />
-          <Show when={projectBookmarks().length > 0}>
-            <button
-              type="button"
-              class="shell-toolbar-button"
-              style={{ ...toolbarBtnStyle(false), border: 'none', color: theme.fgSubtle }}
-              aria-expanded={bookmarksExpanded()}
-              aria-controls={bookmarksId}
-              onClick={(event) => {
-                event.stopPropagation();
-                setBookmarksExpanded(!bookmarksExpanded());
-              }}
-            >
-              <ChevronRightIcon
-                size={12}
-                style={{ transform: bookmarksExpanded() ? 'rotate(90deg)' : undefined }}
-              />
-              Bookmarks ({projectBookmarks().length})
-            </button>
-            <div
-              id={bookmarksId}
-              role="group"
-              aria-label="Command bookmarks"
-              style={{
-                display: bookmarksExpanded() ? 'flex' : 'none',
-                'flex-shrink': '0',
-                gap: '4px',
-              }}
-            >
-              <For each={projectBookmarks()}>
-                {(bookmark, i) => (
-                  <button
-                    class="shell-toolbar-button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveTask(props.task.id);
-                      setTaskFocusedPanel(props.task.id, `shell-toolbar:${i() + 1}`);
-                      runBookmarkInTask(props.task.id, bookmark.command);
-                    }}
-                    tabIndex={-1}
-                    title={bookmark.command}
-                    style={toolbarBtnStyle(shellToolbarIdx() === i() + 1 && shellToolbarFocused())}
-                  >
-                    <span>{extractLabel(bookmark.command)}</span>
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
+          <For each={projectBookmarks()}>
+            {(bookmark, i) => (
+              <button
+                class="shell-toolbar-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTask(props.task.id);
+                  setTaskFocusedPanel(props.task.id, `shell-toolbar:${i() + 1}`);
+                  runBookmarkInTask(props.task.id, bookmark.command);
+                }}
+                tabIndex={-1}
+                title={bookmark.command}
+                style={toolbarBtnStyle(shellToolbarIdx() === i() + 1 && shellToolbarFocused())}
+              >
+                <span>{extractLabel(bookmark.command)}</span>
+              </button>
+            )}
+          </For>
+          <AddCommandBookmark projectId={props.task.projectId} />
         </div>
         <Show when={shellCount() >= 2}>
           <ShellLayoutMenu taskId={props.task.id} mode={layout()} />

@@ -7,7 +7,7 @@ import { ProjectField, projectButtonStyle, projectMonoInputStyle } from './Proje
 import { theme } from '../lib/theme';
 
 /** Add a project command bookmark straight from the shell toolbar, without opening project settings. */
-export function AddCommandBookmark(props: { projectId: string; onSaved: () => void }) {
+export function AddCommandBookmark(props: { projectId: string }) {
   const id = createUniqueId();
   const [open, setOpen] = createSignal(false);
   const [draft, setDraft] = createSignal('');
@@ -102,13 +102,12 @@ export function AddCommandBookmark(props: { projectId: string; onSaved: () => vo
               const project = getProject(props.projectId);
               if (!command || !project) return;
               const bookmarks = project.terminalBookmarks ?? [];
-              // A repeat would add a second identical button; reveal the existing one instead.
+              // A repeat would only add a second identical button.
               if (!bookmarks.some((bookmark) => bookmark.command === command)) {
                 updateProject(props.projectId, {
                   terminalBookmarks: [...bookmarks, { id: crypto.randomUUID(), command }],
                 });
               }
-              props.onSaved();
               close(true);
             }}
             style={{
