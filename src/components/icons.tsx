@@ -304,6 +304,17 @@ export function BookmarkIcon(props: IconProps): JSX.Element {
   );
 }
 
+export function BookmarkPlusIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        fill-rule="evenodd"
+        d="M3 2.5A1.5 1.5 0 0 1 4.5 1h7A1.5 1.5 0 0 1 13 2.5V15l-5-3-5 3V2.5ZM7.25 4h1.5v2h2v1.5h-2v2h-1.5v-2h-2V6h2V4Z"
+      />
+    </SvgIcon>
+  );
+}
+
 export function SaveIcon(props: IconProps): JSX.Element {
   return (
     <SvgIcon {...props}>

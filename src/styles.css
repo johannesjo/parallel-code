@@ -3599,6 +3599,37 @@ html:is(
   color: var(--fg) !important;
 }
 
+.shell-bookmark-button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Keep its space and keyboard access; touch devices have no hover to reveal it. */
+@media (hover: hover) {
+  .shell-bookmark-button {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .shell-toolbar-panel:is(:hover, :focus-within) .shell-bookmark-button,
+  .shell-bookmark-button[aria-expanded='true'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* A setting, not a launcher: no outline, unlike the toolbar's terminal buttons.
    The right margin mirrors the toolbar's padding. */
 .shell-layout-button {

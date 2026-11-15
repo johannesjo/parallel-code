@@ -1,9 +1,15 @@
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../store/types';
-import { TaskShellSection } from './TaskShellSection';
+import { TaskShellSection, resetBookmarkExpansionForTest } from './TaskShellSection';
 import { editAsDocument } from '../documents/store';
-import { store } from '../store/store';
+import {
+  store,
+  updateProject,
+  runBookmarkInTask,
+  spawnShellForTask,
+  registerFocusFn,
+} from '../store/store';
 import { IPC } from '../../electron/ipc/channels';
 import type { FileLinkMenu } from './file-link-menu';
 
@@ -29,6 +35,7 @@ vi.mock('../store/store', () => ({
   }),
   spawnShellForTask: vi.fn(),
   runBookmarkInTask: vi.fn(),
+  updateProject: vi.fn(),
   closeShell: vi.fn(),
   markAgentOutput: vi.fn(),
   clearAgentActivity: vi.fn(),
@@ -62,6 +69,8 @@ afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
   document.body.replaceChildren();
   terminalProps.length = 0;
+  vi.clearAllMocks();
+  resetBookmarkExpansionForTest();
 });
 
 function makeTask(shellAgentIds: string[] = []): Task {
@@ -79,7 +88,95 @@ function makeTask(shellAgentIds: string[] = []): Task {
   };
 }
 
+function bookmarksToggle(): HTMLButtonElement | undefined {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>('.shell-toolbar-panel button[aria-controls]'),
+  ).find((button) => button.textContent?.startsWith('Bookmarks'));
+}
+
 describe('TaskShellSection', () => {
+  function openCommandForm() {
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(render(() => <TaskShellSection task={makeTask()} isActive />, container));
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Add command bookmark"]',
+    );
+    trigger?.click();
+    const form = document.querySelector<HTMLFormElement>('form[aria-label="Add command bookmark"]');
+    const input = form?.querySelector('input');
+    if (!trigger || !form || !input) throw new Error('Command form did not open');
+    return { trigger, form, input };
+  }
+
+  it('saves a project command without running it and preserves existing bookmarks', async () => {
+    const { trigger, form, input } = openCommandForm();
+    await vi.waitFor(() => expect(document.activeElement).toBe(input));
+    expect(form.textContent).toContain('Saved for all tasks in this project.');
+    input.value = '  npm run dev  ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(false);
+    // Enter in the single text input submits the form in the browser.
+    form.requestSubmit();
+
+    expect(updateProject).toHaveBeenCalledExactlyOnceWith('project-1', {
+      terminalBookmarks: [
+        { id: 'test', command: 'npm test' },
+        { id: 'typecheck', command: 'npm run typecheck' },
+        { id: expect.any(String), command: 'npm run dev' },
+      ],
+    });
+    expect(runBookmarkInTask).not.toHaveBeenCalled();
+    expect(spawnShellForTask).not.toHaveBeenCalled();
+    expect(form.isConnected).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    expect(bookmarksToggle()?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('does not save a duplicate of an existing command', () => {
+    const { form, input } = openCommandForm();
+    input.value = 'npm test';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    form.requestSubmit();
+
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(form.isConnected).toBe(false);
+    expect(bookmarksToggle()?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('keeps the draft open when the window loses focus', async () => {
+    const { form, input } = openCommandForm();
+    await vi.waitFor(() => expect(document.activeElement).toBe(input));
+    input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    expect(form.isConnected).toBe(true);
+
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+    expect(form.isConnected).toBe(false);
+  });
+
+  it('rejects blank commands and dismisses with Escape or an outside click', async () => {
+    const { trigger, form, input } = openCommandForm();
+    await vi.waitFor(() => expect(document.activeElement).toBe(input));
+    input.value = '   ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(form.querySelector<HTMLButtonElement>('[type="submit"]')?.disabled).toBe(true);
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(updateProject).not.toHaveBeenCalled();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(form.isConnected).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+
+    trigger.click();
+    expect(document.querySelector('form[aria-label="Add command bookmark"]')).not.toBeNull();
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    expect(document.querySelector('form[aria-label="Add command bookmark"]')).toBeNull();
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
   it('lets a Markdown path printed in a shell be edited as a document', () => {
     const container = document.createElement('div');
     document.body.append(container);
@@ -132,11 +229,83 @@ describe('TaskShellSection', () => {
     disposers.push(render(() => <TaskShellSection task={task} isActive />, container));
 
     const toolbar = container.querySelector<HTMLElement>('.shell-toolbar-panel');
-    const buttons = container.querySelectorAll<HTMLElement>('.shell-toolbar-panel > button');
+    const buttons = container.querySelectorAll<HTMLElement>(
+      '.shell-toolbar-panel > button:not([aria-expanded]), .shell-toolbar-panel [role="group"] > button',
+    );
 
     expect(toolbar?.style.overflowX).toBe('auto');
     expect(toolbar?.style.overflowY).toBe('hidden');
     expect(Array.from(buttons, (button) => button.style.flexShrink)).toEqual(['0', '0', '0']);
+    expect(buttons[0]?.getAttribute('aria-label')).toBe('Open terminal');
+    expect(buttons[0]?.nextElementSibling?.getAttribute('aria-label')).toBe('Add command bookmark');
+  });
+
+  it('collapses saved commands by default and reveals them for keyboard navigation', () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(render(() => <TaskShellSection task={makeTask()} isActive />, container));
+    const toggle = bookmarksToggle();
+    const group = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="Command bookmarks"]',
+    );
+    const toolbar = container.querySelector<HTMLElement>('.shell-toolbar-panel');
+
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(group?.style.display).toBe('none');
+    toggle?.click();
+    expect(group?.style.display).toBe('flex');
+    group?.querySelector<HTMLButtonElement>('[title="npm test"]')?.click();
+    expect(runBookmarkInTask).toHaveBeenCalledExactlyOnceWith('task-1', 'npm test');
+    toggle?.click();
+    expect(group?.style.display).toBe('none');
+
+    toolbar?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    toggle?.click();
+    toolbar?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(spawnShellForTask).toHaveBeenCalledExactlyOnceWith('task-1');
+    expect(runBookmarkInTask).toHaveBeenCalledTimes(1);
+
+    const focusBookmark = vi
+      .mocked(registerFocusFn)
+      .mock.calls.find(([key]) => key === 'task-1:shell-toolbar:2')?.[1];
+    expect(focusBookmark).toBeDefined();
+    focusBookmark?.();
+    expect(group?.style.display).toBe('flex');
+  });
+
+  it('keeps bookmarks expanded for the project across remounts', () => {
+    const first = document.createElement('div');
+    document.body.append(first);
+    const disposeFirst = render(() => <TaskShellSection task={makeTask()} isActive />, first);
+    bookmarksToggle()?.click();
+    disposeFirst();
+    first.remove();
+
+    const second = document.createElement('div');
+    document.body.append(second);
+    disposers.push(render(() => <TaskShellSection task={makeTask()} isActive />, second));
+    expect(bookmarksToggle()?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('collapsing in one task deselects a hidden bookmark in another task of the project', () => {
+    const containers = ['task-1', 'task-2'].map((id) => {
+      const container = document.createElement('div');
+      document.body.append(container);
+      const task = { ...makeTask(), id };
+      disposers.push(render(() => <TaskShellSection task={task} isActive />, container));
+      return container;
+    });
+    const toolbarB = containers[1]?.querySelector<HTMLElement>('.shell-toolbar-panel');
+    const toggleA = containers[0]?.querySelector<HTMLButtonElement>('button[aria-controls]');
+
+    toolbarB?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(toggleA?.getAttribute('aria-expanded')).toBe('true');
+    toggleA?.click();
+    toolbarB?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(runBookmarkInTask).not.toHaveBeenCalled();
+    expect(spawnShellForTask).toHaveBeenCalledExactlyOnceWith('task-2');
   });
 
   it('lets a split-column shell fill its wrapper outside focus mode', () => {
