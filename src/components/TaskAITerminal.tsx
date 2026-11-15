@@ -749,11 +749,15 @@ function AgentTerminalPane(props: {
   // Only the lead agent's pane: Remote Control types into that agent, not the one clicked.
   const claudeAiPaneActions = () =>
     props.task.agentIds[0] === props.agentId
-      ? claudeAiActions(props.task, {
-          // The menu closes without refocusing; the CLI's confirmation needs the keyboard.
-          open: () => terminalFocus?.(),
-          confirmCloudHandoff: () => setConfirmingCloud(true),
-        })
+      ? claudeAiActions(
+          props.task,
+          {
+            // The menu closes without refocusing; the CLI's confirmation needs the keyboard.
+            open: () => terminalFocus?.(),
+            confirmCloudHandoff: () => setConfirmingCloud(true),
+          },
+          'terminal',
+        )
       : [];
   const [terminalOpened, setTerminalOpened] = createSignal(
     untrack(() => !isAgentChat(props.task, props.agentId)),

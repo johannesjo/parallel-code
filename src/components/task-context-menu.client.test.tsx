@@ -5,6 +5,8 @@ import { setStore, store } from '../store/core';
 import { isAgentAskingQuestion } from '../store/taskStatus';
 import type { Agent, Task } from '../store/types';
 import { createTaskContextMenu } from './task-context-menu';
+import { claudeAiActions } from './claude-ai-actions';
+import { TerminalSelectionMenu } from './TerminalSelectionMenu';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(async () => ({})), fireAndForget: vi.fn() }));
 vi.mock('../store/taskStatus', async (importOriginal) => ({
@@ -38,10 +40,27 @@ function setup(agent: Partial<Agent> & { command?: string }, task: Partial<Task>
   );
 }
 
-function openMenu(): void {
+function openMenu(surface: 'task' | 'terminal' = 'task'): void {
   const host = document.createElement('div');
   document.body.append(host);
   dispose = render(() => {
+    if (surface === 'terminal') {
+      return (
+        <TerminalSelectionMenu
+          x={10}
+          y={10}
+          text=""
+          recipients={[]}
+          onSend={vi.fn()}
+          onClose={vi.fn()}
+          paneActions={claudeAiActions(
+            store.tasks['t1'],
+            { open: vi.fn(), confirmCloudHandoff: vi.fn() },
+            'terminal',
+          )}
+        />
+      );
+    }
     const menu = createTaskContextMenu({ task: () => store.tasks['t1'], open: vi.fn() });
     return (
       <div class="row" onContextMenu={(e) => menu.onContextMenu(e)}>
@@ -66,10 +85,10 @@ afterEach(() => {
   vi.mocked(isAgentAskingQuestion).mockReturnValue(false);
 });
 
-it('offers Remote Control and the cloud handoff for a running Claude agent', () => {
+it('offers only the cloud handoff in the task menu for a running Claude agent', () => {
   setup({});
   openMenu();
-  expect(item('Enable Remote Control')?.disabled).toBe(false);
+  expect(item('Enable Claude Remote Control…')).toBeUndefined();
   expect(item('Continue in cloud…')).toBeDefined();
   expect(item('Continue in cloud…')?.querySelector('svg')).not.toBeNull();
 });
@@ -77,39 +96,53 @@ it('offers Remote Control and the cloud handoff for a running Claude agent', () 
 it('offers neither for another agent', () => {
   setup({ command: 'codex' });
   openMenu();
-  expect(item('Enable Remote Control')).toBeUndefined();
+  expect(item('Enable Claude Remote Control…')).toBeUndefined();
   expect(item('Continue in cloud…')).toBeUndefined();
 });
 
 it('keeps the cloud handoff but not Remote Control once the agent exited', () => {
   setup({ status: 'exited' });
   openMenu();
-  expect(item('Enable Remote Control')).toBeUndefined();
+  expect(item('Enable Claude Remote Control…')).toBeUndefined();
   expect(item('Continue in cloud…')).toBeDefined();
 });
 
 it('hides both for a Docker task, whose terminals have no claude.ai sign-in', () => {
   setup({}, { dockerMode: true });
   openMenu();
-  expect(item('Enable Remote Control')).toBeUndefined();
+  expect(item('Enable Claude Remote Control…')).toBeUndefined();
   expect(item('Continue in cloud…')).toBeUndefined();
+});
+
+it('offers Remote Control and the cloud handoff in the Claude terminal menu', () => {
+  setup({});
+  openMenu('terminal');
+  expect(item('Enable Claude Remote Control…')?.disabled).toBe(false);
+  expect(item('Continue in cloud…')).toBeDefined();
+});
+
+it('keeps Remote Control status out of the task menu', () => {
+  setup({ remoteControlGeneration: 1 });
+  openMenu();
+  expect(item('Remote Control status…')).toBeUndefined();
+  expect(item('Continue in cloud…')).toBeDefined();
 });
 
 it('disables Remote Control while a draft or a question is in the agent terminal', () => {
   setup({}, { terminalInputPending: true });
-  openMenu();
-  expect(item('Enable Remote Control')?.disabled).toBe(true);
+  openMenu('terminal');
+  expect(item('Enable Claude Remote Control…')?.disabled).toBe(true);
   dispose?.();
   document.body.replaceChildren();
 
   setup({});
   vi.mocked(isAgentAskingQuestion).mockReturnValue(true);
-  openMenu();
-  expect(item('Enable Remote Control')?.disabled).toBe(true);
+  openMenu('terminal');
+  expect(item('Enable Claude Remote Control…')?.disabled).toBe(true);
 });
 
 it('offers the status panel once Remote Control was sent in this session', () => {
   setup({ remoteControlGeneration: 1 });
-  openMenu();
+  openMenu('terminal');
   expect(item('Remote Control status…')).toBeDefined();
 });

@@ -100,7 +100,7 @@ function taskMenuItems(task: Task, actions: TaskMenuActions): MoreMenuItem[] {
     : laterMenuItems(task);
   return [
     ...opens,
-    ...claudeAiActions(task, actions).map((action) => ({ ...action, icon: action.icon() })),
+    ...claudeAiActions(task, actions, 'task').map((action) => ({ ...action, icon: action.icon() })),
     ...setAside,
     ...endMenuItems(task, actions),
   ];

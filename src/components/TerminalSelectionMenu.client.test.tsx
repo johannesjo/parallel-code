@@ -214,12 +214,12 @@ it('shows a blocked pane action without running it', () => {
         recipients={[]}
         onSend={vi.fn()}
         onClose={vi.fn()}
-        paneActions={[{ label: 'Enable Remote Control', disabled: true, run }]}
+        paneActions={[{ label: 'Enable Claude Remote Control…', disabled: true, run }]}
       />
     ),
     host,
   );
-  button('Enable Remote Control').click();
+  button('Enable Claude Remote Control…').click();
   expect(run).not.toHaveBeenCalled();
 });
 
@@ -237,7 +237,7 @@ it('steps over a blocked pane action with the arrow keys', () => {
         onClose={vi.fn()}
         paneActions={[
           { label: 'Continue in cloud…', run: vi.fn() },
-          { label: 'Enable Remote Control', disabled: true, run: vi.fn() },
+          { label: 'Enable Claude Remote Control…', disabled: true, run: vi.fn() },
           { label: 'Resume with flags…', run: vi.fn() },
         ]}
       />

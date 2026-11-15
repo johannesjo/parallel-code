@@ -21,17 +21,18 @@ export interface ClaudeAiAction {
 
 /**
  * Hands the task to claude.ai: Remote Control for its running Claude agent, or a
- * cloud session. Shared by the task's right-click menu and its agent terminal's.
+ * cloud session. Remote Control belongs only in the agent terminal's menu.
  */
 export function claudeAiActions(
   task: Task,
   actions: { open: () => void; confirmCloudHandoff: () => void },
+  surface: 'task' | 'terminal',
 ): ClaudeAiAction[] {
-  const agent = remoteControlAgent(task);
+  const agent = surface === 'terminal' ? remoteControlAgent(task) : null;
   const started = agent ? remoteControlStarted(agent) : false;
   const blocker = agent ? remoteControlBlocker(task, agent) : null;
   const remoteControl: ClaudeAiAction = {
-    label: started ? 'Remote Control status…' : 'Enable Remote Control',
+    label: started ? 'Remote Control status…' : 'Enable Claude Remote Control…',
     icon: () => <ClaudeIcon size={14} />,
     title:
       blocker ??
