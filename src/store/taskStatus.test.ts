@@ -1965,6 +1965,47 @@ describe('hook-reported agent status', () => {
     expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
   });
 
+  it('does not revive an old terminal question when a subtask finishes off screen', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'], coordinatedBy: 'parent' });
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    forgetAgentOutput('agent-1');
+
+    vi.advanceTimersByTime(1);
+    hook('agent-1', 'working');
+    expect(getTaskAttentionState('task-1')).toBe('active');
+    vi.advanceTimersByTime(1);
+    hook('agent-1', 'done', 'Stop');
+
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskOpenQuestions('task-1')).toEqual([]);
+    expect(getTaskActivityTooltip('task-1')).toContain('Turn finished');
+
+    // Cursor/focus housekeeping does not make the old dialog current again.
+    vi.advanceTimersByTime(1_200);
+    markAgentOutput('agent-1', new TextEncoder().encode('\x1b[?25h'), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskOpenQuestions('task-1')).toEqual([]);
+
+    // Fresh terminal evidence may still report a new, hookless question.
+    vi.advanceTimersByTime(1_200);
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('does not refresh an old question when delayed analysis runs after Stop', () => {
+    markAgentOutput('agent-1', new TextEncoder().encode('Starting...'), 'task-1');
+    vi.advanceTimersByTime(1);
+    markAgentOutput('agent-1', new TextEncoder().encode('\nContinue? [Y/n]'), 'task-1');
+    vi.advanceTimersByTime(1);
+    hook('agent-1', 'done', 'Stop');
+    vi.advanceTimersByTime(1_200);
+
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskOpenQuestions('task-1')).toEqual([]);
+  });
+
   it('reports a failed turn as an error until the next turn starts', () => {
     hook('agent-1', 'working');
     hook('agent-1', 'done', 'StopFailure');

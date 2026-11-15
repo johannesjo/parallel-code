@@ -110,6 +110,8 @@ interface AgentTrackingState {
   /** Set once a trust dialog was blocked; cleared when no dialog is in the tail. */
   autoTrustBlocked?: boolean;
   lastDataAt?: number;
+  /** Last meaningful output, excluding cursor/focus housekeeping. */
+  lastContentAt?: number;
   lastIdleResetAt?: number;
   idleTimer?: ReturnType<typeof setTimeout>;
   idleConfirmPending?: boolean;
@@ -571,8 +573,10 @@ function looksLikeTrustDialog(tail: string): boolean {
 }
 
 // --- Agent question tracking ---
-// Reactive set of agent IDs that currently have a question/dialog in their terminal.
-const [questionAgents, setQuestionAgents] = createSignal<Set<string>>(new Set());
+// When the output containing each terminal question was last observed. Keep
+// this reactive even when the question stays present: new output can establish
+// a hookless question after a hook superseded its previous terminal evidence.
+const [questionAgents, setQuestionAgents] = createSignal<ReadonlyMap<string, number>>(new Map());
 
 /** True when the agent's terminal is showing a question or confirmation dialog. */
 export function isAgentAskingQuestion(agentId: string): boolean {
@@ -593,12 +597,13 @@ const questionSinceByAgent = new Map<string, number>();
 
 function updateQuestionState(agentId: string, hasQuestion: boolean): void {
   const asking = untrack(questionAgents);
-  if (hasQuestion === asking.has(agentId)) return;
+  const observedAt = agentStates.get(agentId)?.lastContentAt ?? 0;
+  if (hasQuestion ? asking.get(agentId) === observedAt : !asking.has(agentId)) return;
 
-  const next = new Set(asking);
+  const next = new Map(asking);
   if (hasQuestion) {
-    next.add(agentId);
-    questionSinceByAgent.set(agentId, Date.now());
+    next.set(agentId, observedAt);
+    if (!asking.has(agentId)) questionSinceByAgent.set(agentId, Date.now());
   } else {
     next.delete(agentId);
     questionSinceByAgent.delete(agentId);
@@ -644,7 +649,10 @@ export function getTaskOpenQuestions(taskId: string): TaskOpenQuestion[] {
   return questions.sort((a, b) => b.since - a.since);
 }
 
-function agentQuestionSince(agentId: string, asking: ReadonlySet<string>): number | undefined {
+function agentQuestionSince(
+  agentId: string,
+  asking: ReadonlyMap<string, number>,
+): number | undefined {
   const agent = store.agents[agentId];
   if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
     return agent.chatState?.requests.at(-1)?.since;
@@ -652,7 +660,10 @@ function agentQuestionSince(agentId: string, asking: ReadonlySet<string>): numbe
   if (hook?.state === 'waiting') return hook.since;
   if ((hook && isHookWorking(agentId, hook, activeAgents())) || !asking.has(agentId))
     return undefined;
-  // The asking set and the onset map are separate structures kept in step by
+  // A newer hook supersedes old terminal evidence, including when the terminal
+  // unmounted or its throttled analysis ran after the hook arrived.
+  if (hook && (asking.get(agentId) ?? 0) < hook.updatedAt) return undefined;
+  // The observation and onset maps are separate structures kept in step by
   // `updateQuestionState`, their sole writer. This is the one place they meet,
   // so it is the one place that has to tolerate them drifting apart.
   return questionSinceByAgent.get(agentId);
@@ -924,6 +935,8 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   state.lastDataAt = now;
 
   const text = state.decoder.decode(data, { stream: true });
+  const hasContent = !!normalizeForComparison(text);
+  if (hasContent) state.lastContentAt = now;
   updateBracketedPasteMode(state, state.outputTailBuffer.slice(-16) + text);
   const combined = state.outputTailBuffer + text;
   state.outputTailBuffer =
@@ -962,7 +975,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
 
   // Focus, cursor and mode updates are terminal housekeeping, not agent work.
   // Keep tracking their raw bytes above, but do not change or extend activity.
-  if (!normalizeForComparison(text)) return;
+  if (!hasContent) return;
   // The tooltip shows seconds; writing per chunk re-runs it many times a second.
   if (now - (lastOutputAt[agentId] ?? 0) >= 1_000) setLastOutputAt(agentId, now);
 
@@ -1145,13 +1158,7 @@ function hasTaskAgentError(taskId: string): boolean {
  *  however much the screen looks like one. Only once the turn has ended do the
  *  heuristics get a say — login and trust prompts arrive with no hook at all. */
 function isAgentBlockedOnInput(agentId: string): boolean {
-  const agent = store.agents[agentId];
-  if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
-    return !!agent.chatState?.requests.length;
-  const hook = getAgentHookStatus(agentId);
-  if (hook?.state === 'waiting') return true;
-  if (hook && isHookWorking(agentId, hook, activeAgents())) return false;
-  return isAgentAskingQuestion(agentId);
+  return agentQuestionSince(agentId, questionAgents()) !== undefined;
 }
 
 /** Hooks run for Claude only when its command is `claude` (main's `isClaudeCommand`). */
