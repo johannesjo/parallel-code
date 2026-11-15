@@ -6,8 +6,8 @@ import { recordWorktreeIntent } from './worktree-intents.js';
 import { localBranchExists, resolvePrCheckout } from '../github/pr-checkout.js';
 import {
   buildWorktreeScriptEnv,
-  describeTeardownFailure,
-  runTeardownScript,
+  describeWorktreeScriptFailure,
+  runWorktreeScript,
 } from './worktree-scripts.js';
 import type { CreatePrTaskResult, DeleteTaskResult } from './shared-types.js';
 
@@ -145,7 +145,7 @@ export async function deleteTask(opts: DeleteTaskOpts): Promise<DeleteTaskResult
   let teardownWarning: string | undefined;
   if (opts.teardownScript) {
     const worktreePath = opts.worktreePath ?? worktreePathFor(opts.projectRoot, opts.branchName);
-    const result = await runTeardownScript({
+    const result = await runWorktreeScript({
       worktreePath,
       projectRoot: opts.projectRoot,
       script: opts.teardownScript,
@@ -158,7 +158,7 @@ export async function deleteTask(opts: DeleteTaskOpts): Promise<DeleteTaskResult
         }),
       },
     });
-    teardownWarning = describeTeardownFailure(result);
+    teardownWarning = describeWorktreeScriptFailure('Teardown', result);
   }
   await removeWorktree(opts.projectRoot, opts.branchName, opts.deleteBranch, opts.worktreePath);
   notifyAgentListChanged();

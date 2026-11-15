@@ -165,6 +165,12 @@ export interface Project {
   worktreeSetupScript?: string;
   /** Commands run in a task's worktree before the app removes it. */
   worktreeTeardownScript?: string;
+  /** Commands run headless in a task's worktree when the task is minimized
+   *  with its agents stopped, e.g. to stop services it started. */
+  worktreeSuspendScript?: string;
+  /** Commands run headless in the worktree when a task the suspend script
+   *  ran for is restored. */
+  worktreeResumeScript?: string;
   /** Saved choice of git-ignored root entries to bring into new worktrees.
    *  Unset keeps the per-task picker with its built-in defaults. */
   worktreeIncludes?: WorktreeInclude[];
@@ -374,6 +380,10 @@ export interface Task {
   archivedChildrenShown?: boolean;
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
+  /** The project's suspend script ran when this task was minimized, so
+   *  restoring it runs the resume script. Persisted, so a restore after a
+   *  restart resumes only the tasks that were suspended. */
+  worktreeSuspended?: boolean;
   planContent?: string;
   planFileName?: string;
   /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
@@ -535,6 +545,7 @@ export interface PersistedTask {
   savedAgentSessionIds?: (string | null)[];
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
+  worktreeSuspended?: boolean;
   planFileName?: string;
   /** Before tabs the canvas held one file; read for migration, no longer written. */
   canvasPath?: string;

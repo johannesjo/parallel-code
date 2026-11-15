@@ -84,9 +84,10 @@ import { CARD_ID_PATTERN, CARD_PUBLISH_MAX_BYTES } from '../shared/card-publish.
 import {
   buildScriptInvocation,
   buildWorktreeScriptEnv,
-  describeTeardownFailure,
+  describeWorktreeScriptFailure,
   optionalWorktreeScript,
-  runTeardownScript,
+  runWorktreeScript,
+  validateWorktreeScript,
 } from './worktree-scripts.js';
 import { scanChange } from './change-scan.js';
 import {
@@ -1247,7 +1248,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         }
       }
       const target = worktreePath ?? worktreePathFor(projectRoot, branchName);
-      const teardown = await runTeardownScript({
+      const teardown = await runWorktreeScript({
         worktreePath: target,
         projectRoot,
         script: teardownScript,
@@ -1257,7 +1258,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         },
       });
       await removeWorktreeLocked(projectRoot, branchName, true, worktreePath);
-      const teardownWarning = describeTeardownFailure(teardown);
+      const teardownWarning = describeWorktreeScriptFailure('Teardown', teardown);
       if (teardownWarning) {
         result = {
           ...result,
@@ -1652,6 +1653,33 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.SetProjectWorktreeSettings, (_e, args) => {
     assertString(args.projectId, 'projectId');
     setProjectWorktreeSettings(args.projectId, args);
+  });
+
+  // A project's suspend or resume script, run headless in the worktree of a
+  // task being minimized or restored. The renderer does not wait on it to
+  // change the layout; a failure comes back as a warning to show.
+  ipcMain.handle(IPC.RunWorktreeLifecycleScript, async (_e, args) => {
+    if (args.kind !== 'suspend' && args.kind !== 'resume')
+      throw new Error('kind must be "suspend" or "resume"');
+    const projectRoot = projectRootArg(args);
+    const worktreePath = worktreePathArg(args);
+    const branchName = args.branchName ? branchNameArg(args) : undefined;
+    assertOptionalString(args.projectId, 'projectId');
+    validateWorktreeScript(args.script, 'script');
+    const result = await runWorktreeScript({
+      worktreePath,
+      projectRoot,
+      script: args.script,
+      env: {
+        ...projectAgentEnv(args.projectId),
+        ...buildWorktreeScriptEnv({ projectRoot, worktreePath, branchName }),
+      },
+    });
+    const warning = describeWorktreeScriptFailure(
+      args.kind === 'suspend' ? 'Suspend' : 'Resume',
+      result,
+    );
+    return warning ? { warning } : {};
   });
 
   ipcMain.handle(IPC.SetMinimaxApiKey, (_e, args) => {

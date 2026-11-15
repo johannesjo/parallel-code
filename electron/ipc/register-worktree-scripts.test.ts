@@ -176,6 +176,81 @@ it('keeps the merge-time cleanup path unchanged without a teardown script', asyn
   expect(remove).not.toHaveBeenCalled();
 });
 
+it.skipIf(process.platform === 'win32')(
+  'runs suspend and then resume in the worktree with the script variables and project env',
+  async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-suspend-'));
+    tempDirs.push(projectRoot);
+    const worktreePath = path.join(projectRoot, '.worktrees', 'task', 'x');
+    const gitCmd = (args: string[]) =>
+      execFileSync('git', args, { cwd: projectRoot, stdio: 'ignore' });
+    gitCmd(['init', '--quiet', '--initial-branch=main']);
+    gitCmd(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
+    gitCmd(['worktree', 'add', '-b', 'task/x', worktreePath]);
+    await handlers.get(IPC.SetProjectAgentEnv)?.(undefined, {
+      projectId: 'p1',
+      env: { STACK: 'web' },
+    });
+    const run = (kind: string, script: string) =>
+      handlers.get(IPC.RunWorktreeLifecycleScript)?.(undefined, {
+        kind,
+        projectId: 'p1',
+        projectRoot,
+        worktreePath,
+        branchName: 'task/x',
+        script,
+      });
+    const log = 'echo "$0 $STACK $PARALLEL_CODE_BRANCH" >> lifecycle.log';
+
+    // Sent back to back, as a quick minimize and restore would: resume waits.
+    const [suspended, resumed] = await Promise.all([
+      run('suspend', `sleep 0.3\n${log.replace('$0', 'suspend')}`),
+      run('resume', log.replace('$0', 'resume')),
+    ]);
+
+    expect(suspended).toEqual({});
+    expect(resumed).toEqual({});
+    expect(fs.readFileSync(path.join(worktreePath, 'lifecycle.log'), 'utf8')).toBe(
+      'suspend web task/x\nresume web task/x\n',
+    );
+  },
+);
+
+it.skipIf(process.platform === 'win32')(
+  'reports a failed suspend as a warning instead of an error',
+  async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-suspend-'));
+    tempDirs.push(projectRoot);
+    const worktreePath = path.join(projectRoot, '.worktrees', 'task', 'x');
+    const gitCmd = (args: string[]) =>
+      execFileSync('git', args, { cwd: projectRoot, stdio: 'ignore' });
+    gitCmd(['init', '--quiet', '--initial-branch=main']);
+    gitCmd(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
+    gitCmd(['worktree', 'add', '-b', 'task/x', worktreePath]);
+
+    const result = await handlers.get(IPC.RunWorktreeLifecycleScript)?.(undefined, {
+      kind: 'suspend',
+      projectRoot,
+      worktreePath,
+      branchName: 'task/x',
+      script: 'echo no such service\nexit 2',
+    });
+
+    expect((result as { warning?: string }).warning).toMatch(
+      /^Suspend script exited with code 2\.\nno such service$/,
+    );
+  },
+);
+
+it('validates a suspend or resume request before running anything', async () => {
+  const base = { projectRoot: '/repo', worktreePath: '/repo/.worktrees/x', script: 'true' };
+  const run = (args: Record<string, unknown>) =>
+    handlers.get(IPC.RunWorktreeLifecycleScript)?.(undefined, { ...base, ...args });
+  await expect(run({ kind: 'teardown' })).rejects.toThrow('kind');
+  await expect(run({ kind: 'suspend', script: '  ' })).rejects.toThrow('script');
+  await expect(run({ kind: 'resume', worktreePath: 'relative' })).rejects.toThrow('worktreePath');
+});
+
 it('never takes the verbatim Windows command-line flag from the renderer', async () => {
   await handlers.get(IPC.SpawnAgent)?.(undefined, shellSpawn({ windowsVerbatimArgs: true }));
   const [, spawned] = spawnAgent.mock.lastCall as [unknown, { windowsVerbatimArgs?: boolean }];

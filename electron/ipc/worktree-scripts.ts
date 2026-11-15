@@ -6,17 +6,18 @@ import { resolveUserShell } from '../user-shell.js';
 import { stripAnsi } from '../shared/prompt-detect.js';
 
 /**
- * Per-project worktree setup and teardown scripts.
+ * Per-project worktree scripts: setup, teardown, suspend and resume.
  *
- * Both live in app state, never in a repo file, for the same reason as the
+ * All live in app state, never in a repo file, for the same reason as the
  * verify command: opening a hostile clone must not run commands on the host.
- * Setup runs in a visible task terminal (the PTY path in `pty.ts`); teardown
- * runs here, headless, while the task shows its closing state.
+ * Setup runs in a visible task terminal (the PTY path in `pty.ts`); the others
+ * run here, headless: teardown while the task shows its closing state, suspend
+ * and resume in the background when a task is minimized and restored.
  */
 
 export const WORKTREE_SCRIPT_MAX_LENGTH = 16 * 1024;
-export const TEARDOWN_TIMEOUT_MS = 2 * 60_000;
-export const TEARDOWN_OUTPUT_TAIL_CHARS = 8 * 1024;
+export const WORKTREE_SCRIPT_TIMEOUT_MS = 2 * 60_000;
+export const WORKTREE_SCRIPT_OUTPUT_TAIL_CHARS = 8 * 1024;
 /** Lines of output quoted in the failure notice; the rest is in the log tail. */
 const FAILURE_EXCERPT_LINES = 6;
 const KILL_GRACE_MS = 3_000;
@@ -117,7 +118,7 @@ export function buildScriptInvocation(
 }
 
 /**
- * Variables setup and teardown scripts can use, e.g. to copy from the main
+ * Variables worktree scripts can use, e.g. to copy from the main
  * checkout. No task id: `PARALLEL_CODE_TASK_ID` is the agent-hook identity,
  * which the PTY layer strips and child processes must not inherit.
  */
@@ -147,29 +148,31 @@ export async function listLinkedWorktrees(projectRoot: string): Promise<string[]
   return paths.slice(1);
 }
 
-export type TeardownStatus = 'passed' | 'failed' | 'timed_out' | 'error' | 'skipped';
+export type WorktreeScriptLabel = 'Teardown' | 'Suspend' | 'Resume';
 
-export interface TeardownResult {
-  status: TeardownStatus;
+export type WorktreeScriptStatus = 'passed' | 'failed' | 'timed_out' | 'error' | 'skipped';
+
+export interface WorktreeScriptResult {
+  status: WorktreeScriptStatus;
   exitCode: number | null;
   outputTail: string;
   message?: string;
 }
 
-export interface TeardownRequest {
+export interface WorktreeScriptRequest {
   worktreePath: string;
-  /** Main checkout. Teardown never runs there, even if a caller mixes them up. */
+  /** Main checkout. No script runs there, even if a caller mixes them up. */
   projectRoot: string;
   script: string;
   env?: Record<string, string>;
   timeoutMs?: number;
 }
 
-export interface TeardownDeps {
+export interface WorktreeScriptDeps {
   spawnImpl?: typeof spawn;
   platform?: NodeJS.Platform;
   shell?: string;
-  /** Defaults to `git worktree list`; teardown only runs in a listed worktree. */
+  /** Defaults to `git worktree list`; scripts only run in a listed worktree. */
   listWorktrees?: (projectRoot: string) => Promise<string[]>;
 }
 
@@ -190,15 +193,42 @@ function realpathOrResolve(p: string): string {
 
 function appendTail(tail: string, chunk: string): string {
   const next = tail + chunk;
-  return next.length > TEARDOWN_OUTPUT_TAIL_CHARS ? next.slice(-TEARDOWN_OUTPUT_TAIL_CHARS) : next;
+  return next.length > WORKTREE_SCRIPT_OUTPUT_TAIL_CHARS
+    ? next.slice(-WORKTREE_SCRIPT_OUTPUT_TAIL_CHARS)
+    : next;
 }
 
-/** Runs the teardown script in the worktree and reports how it ended. Never throws. */
-export async function runTeardownScript(
-  request: TeardownRequest,
-  deps: TeardownDeps = {},
-): Promise<TeardownResult> {
-  const skipped = (message: string): TeardownResult => ({
+// Scripts on one worktree run one at a time, in the order they were asked for:
+// a resume sent while the suspend is still stopping services waits for it, and
+// so does the teardown of a task closed right after it was minimized.
+const worktreeQueues = new Map<string, Promise<unknown>>();
+
+function inWorktreeQueue<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const next = (worktreeQueues.get(key) ?? Promise.resolve()).then(run, run);
+  const tail = next.catch(() => undefined);
+  worktreeQueues.set(key, tail);
+  void tail.then(() => {
+    if (worktreeQueues.get(key) === tail) worktreeQueues.delete(key);
+  });
+  return next;
+}
+
+/** Runs a worktree script (teardown, suspend or resume) in the worktree, after
+ *  any other script still running there, and reports how it ended. Never throws. */
+export function runWorktreeScript(
+  request: WorktreeScriptRequest,
+  deps: WorktreeScriptDeps = {},
+): Promise<WorktreeScriptResult> {
+  return inWorktreeQueue(realpathOrResolve(request.worktreePath), () =>
+    checkAndRunWorktreeScript(request, deps),
+  );
+}
+
+async function checkAndRunWorktreeScript(
+  request: WorktreeScriptRequest,
+  deps: WorktreeScriptDeps,
+): Promise<WorktreeScriptResult> {
+  const skipped = (message: string): WorktreeScriptResult => ({
     status: 'skipped',
     exitCode: null,
     outputTail: '',
@@ -207,7 +237,7 @@ export async function runTeardownScript(
   if (!fs.existsSync(request.worktreePath)) return skipped('The worktree no longer exists.');
   const target = realpathOrResolve(request.worktreePath);
   if (target === realpathOrResolve(request.projectRoot)) {
-    return skipped('Teardown never runs in the main checkout.');
+    return skipped('Worktree scripts never run in the main checkout.');
   }
   // A path the renderer sent is only trusted once git confirms it is one of
   // this repository's linked worktrees, so a stale or mistaken path can never
@@ -231,14 +261,17 @@ export async function runTeardownScript(
       message: `${request.worktreePath} is not a worktree of this repository, so it was not run`,
     };
   }
-  return spawnTeardown(request, deps);
+  return spawnWorktreeScript(request, deps);
 }
 
-function spawnTeardown(request: TeardownRequest, deps: TeardownDeps): Promise<TeardownResult> {
+function spawnWorktreeScript(
+  request: WorktreeScriptRequest,
+  deps: WorktreeScriptDeps,
+): Promise<WorktreeScriptResult> {
   const platform = deps.platform ?? process.platform;
   const invocation = buildScriptInvocation(request.script, { platform, shell: deps.shell });
   const spawnImpl = deps.spawnImpl ?? spawn;
-  const timeoutMs = request.timeoutMs ?? TEARDOWN_TIMEOUT_MS;
+  const timeoutMs = request.timeoutMs ?? WORKTREE_SCRIPT_TIMEOUT_MS;
 
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
@@ -284,7 +317,7 @@ function spawnTeardown(request: TeardownRequest, deps: TeardownDeps): Promise<Te
         /* already gone */
       }
     };
-    const finish = (result: TeardownResult) => {
+    const finish = (result: WorktreeScriptResult) => {
       if (settled) return;
       settled = true;
       for (const t of timers) clearTimeout(t);
@@ -293,7 +326,7 @@ function spawnTeardown(request: TeardownRequest, deps: TeardownDeps): Promise<Te
       child.stderr?.destroy();
       resolve(result);
     };
-    const outcome = (code: number | null, signal: NodeJS.Signals | null): TeardownResult => {
+    const outcome = (code: number | null, signal: NodeJS.Signals | null): WorktreeScriptResult => {
       if (timedOut)
         return {
           status: 'timed_out',
@@ -333,10 +366,13 @@ function spawnTeardown(request: TeardownRequest, deps: TeardownDeps): Promise<Te
 }
 
 /**
- * A one-paragraph notice for a teardown that did not pass, quoting the last
+ * A one-paragraph notice for a script that did not pass, quoting the last
  * lines of output, or undefined when there is nothing to report.
  */
-export function describeTeardownFailure(result: TeardownResult): string | undefined {
+export function describeWorktreeScriptFailure(
+  label: WorktreeScriptLabel,
+  result: WorktreeScriptResult,
+): string | undefined {
   if (result.status === 'passed' || result.status === 'skipped') return undefined;
   const how =
     result.status === 'timed_out'
@@ -352,5 +388,5 @@ export function describeTeardownFailure(result: TeardownResult): string | undefi
     .filter((line) => line.length > 0)
     .slice(-FAILURE_EXCERPT_LINES)
     .join('\n');
-  return `Teardown script ${how}.${excerpt ? `\n${excerpt}` : ''}`;
+  return `${label} script ${how}.${excerpt ? `\n${excerpt}` : ''}`;
 }
