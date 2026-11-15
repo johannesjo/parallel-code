@@ -1298,6 +1298,59 @@ describe('terminal redraw activity', () => {
   });
 
   describe('shell terminals are not agent composers', () => {
+    it.each([
+      'user@host:~/repo$ ',
+      'root@host:/repo# ',
+      '[user@host repo]$ ',
+      'PS C:\\repo> ',
+      '\x1b[32muser@host\x1b[0m:~/repo$ \x1b[?2004h',
+    ])('stops the task spinner when the shell returns to %s', (prompt) => {
+      setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+      markAgentOutput('shell-1', encode('Running tests...\r\n'), 'task-1');
+      expect(getTaskAttentionState('task-1')).toBe('shell_busy');
+
+      markAgentOutput('shell-1', encode('Done\r\n' + prompt), 'task-1');
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+    });
+
+    it('does not let agent-like command output hide a returned shell prompt', () => {
+      setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+      markAgentOutput('shell-1', encode('Working (1s)\r\nDone\r\nuser@host:~/repo$ '), 'task-1');
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+    });
+
+    // Claude run inside a shell draws `❯` while it works; only shell-only
+    // prompts may override its working indicator.
+    it('keeps an agent working inside a shell busy at its ❯ composer', () => {
+      setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+      markAgentOutput('shell-1', encode('✳ Working… (3s · esc to interrupt)\r\n❯ '), 'task-1');
+      expect(getTaskAttentionState('task-1')).toBe('shell_busy');
+    });
+
+    // `\bupdate\b.*\?` would read this prompt as a question.
+    it('does not read a question-like shell prompt as needing input', () => {
+      setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+      markAgentOutput('shell-1', encode('Done\r\nuser@host:~/update-tool (main?)$ '), 'task-1');
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+    });
+
+    it('recognizes a background standalone shell prompt split across chunks', () => {
+      mockTerminals['term-1'] = { id: 'term-1', name: 'Terminal 1', agentId: 'shell-1' };
+      markAgentOutput('shell-1', encode('Done\r\nuser@host:~/repo'), 'term-1');
+      expect(isAgentIdle('shell-1')).toBe(false);
+      markAgentOutput('shell-1', encode('$ '), 'term-1');
+      expect(isAgentIdle('shell-1')).toBe(true);
+    });
+
+    it.each(['Progress: 100%', 'Cost: 10$', 'user@host:~/repo$ npm test\r\nRunning tests...'])(
+      'keeps real output active: %s',
+      (output) => {
+        setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+        markAgentOutput('shell-1', encode(output), 'task-1');
+        expect(getTaskAttentionState('task-1')).toBe('shell_busy');
+      },
+    );
+
     // A shell running Vim or a Starship-themed prompt can show an
     // AGENT_READY_TAIL_PATTERNS match (e.g. "-- INSERT --") on a line that
     // isn't the terminal's last line. That must not arm the 2s agent-prompt

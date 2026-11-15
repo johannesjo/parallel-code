@@ -227,6 +227,21 @@ function looksLikeBareShellPrompt(line: string): boolean {
   return /(?:^|\s)[$%#]\s*$/.test(line.trimEnd());
 }
 
+/** Prompts only a shell draws. They need not put a space before `$`/`#`, and
+ *  PowerShell uses `>`. `❯`/`›` are excluded: agents run in a shell draw them too. */
+function looksLikeShellOnlyPrompt(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    looksLikeBareShellPrompt(trimmed) ||
+    /^(?:\S+@\S+:[^\r\n]*|\[[^\r\n]+\])[$%#]$/.test(trimmed) ||
+    /^PS [^\r\n]+>$/.test(trimmed)
+  );
+}
+
+function looksLikeShellPrompt(line: string): boolean {
+  return /[❯›]\s*$/.test(line.trim()) || looksLikeShellOnlyPrompt(line);
+}
+
 // --- Agent ready event callbacks ---
 // Fired from markAgentOutput when a main prompt is detected in a PTY chunk.
 const agentReadyCallbacks = new Map<string, () => void>();
@@ -859,7 +874,7 @@ function terminalAsks(agentId: string, tail: string, taskId: string | undefined)
     .findLast((line) => line.trim() !== '');
   if (lastLine === undefined) return false;
   // A prompt can carry question-like words: a branch `update-deps` and git's `?`.
-  const atPrompt = /[❯›]\s*$/.test(lastLine) || looksLikeBareShellPrompt(lastLine);
+  const atPrompt = looksLikeShellPrompt(lastLine);
   return !atPrompt && isQuestionLine(lastLine);
 }
 
@@ -953,6 +968,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
 
   const latestOutput = stripAnsi(text.slice(Math.max(0, findLastFrameStart(text))));
   const frame = stripAnsi(combined.slice(Math.max(0, findLastFrameStart(combined))));
+  const shell = isShellTerminal(agentId, state.taskId);
   const shortcutsFooter = CODEX_SHORTCUTS_FOOTER_PATTERN.test(latestOutput.trim());
   // The composer and footer may arrive in separate PTY chunks. In that case
   // keep startup/working indicators from the same frame in the readiness check.
@@ -979,7 +995,10 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   // known footer, never arbitrary output that followed an earlier prompt.
   if (CODEX_STATUS_FOOTER_PATTERN.test(lines.at(-1) ?? '')) lines.pop();
   const lastLine = lines.at(-1) ?? '';
-  if (canBeIdle && (looksLikePrompt(lastLine) || codexComposer)) {
+  // A finished command can print agent status phrases ("Working (1s)"). They
+  // must not outweigh a prompt that only a shell draws.
+  const shellPrompt = shell && looksLikeShellOnlyPrompt(lastLine);
+  if ((canBeIdle && (looksLikePrompt(lastLine) || codexComposer)) || shellPrompt) {
     // Prompt detected — agent is idle. Remove from active set immediately.
     //
     // NOTE: do NOT cancel pendingAnalysis here.  TUI agents (Copilot CLI,
@@ -1014,11 +1033,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   // Plain shells aren't agent composers — a Vim "-- INSERT --" status line or
   // a Starship "❯" prompt can match AGENT_READY_TAIL_PATTERNS without the
   // shell being between turns, so they keep the normal 15s idle timeout.
-  if (
-    readiness.ready &&
-    !isShellTerminal(agentId, taskId) &&
-    !WORKING_CANCEL_HINT_PATTERN.test(composerOutput)
-  ) {
+  if (readiness.ready && !shell && !WORKING_CANCEL_HINT_PATTERN.test(composerOutput)) {
     addToActive(agentId);
     resetIdleTimer(agentId, PROMPT_IDLE_CONFIRM_MS);
     return;
