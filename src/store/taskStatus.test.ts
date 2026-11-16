@@ -126,7 +126,7 @@ import {
   applyAgentHookEvent,
   getAgentHookStatus,
 } from './agentHookStatus';
-import { getTaskActivityTooltip, isTaskTerminalAsking } from './taskStatus';
+import { getTaskActivityTooltip, isTaskTerminalAsking, isTaskTerminalBusy } from './taskStatus';
 import { canvasActivationInput } from './canvas-activation';
 import { activationBlocker } from '../investigation/live-activation';
 import { activityLine } from '../components/board/task-state';
@@ -1397,6 +1397,34 @@ describe('task attention state', () => {
     expect(getTaskAttentionState('task-1')).toBe('ready');
     expect(getTaskDotStatus('task-1')).toBe('ready');
     expect(taskNeedsAttention('task-1')).toBe(false);
+  });
+
+  it('keeps a busy terminal visible on a ready or review task without ranking it higher', () => {
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+    mockTaskGitStatus['task-1'] = {
+      has_committed_changes: true,
+      has_uncommitted_changes: false,
+      current_branch: 'task/example',
+      refreshedAt: Date.now(),
+    };
+    expect(isTaskTerminalBusy('task-1')).toBe(false);
+
+    markAgentSpawned('shell-1');
+    expect(getTaskAttentionState('task-1')).toBe('ready');
+    expect(isTaskTerminalBusy('task-1')).toBe(true);
+
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'], needsReview: true });
+    expect(getTaskAttentionState('task-1')).toBe('review');
+    expect(isTaskTerminalBusy('task-1')).toBe(true);
+  });
+
+  it('leaves a working agent in charge of the activity when a shell is also busy', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'], shellAgentIds: ['shell-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+    markAgentSpawned('agent-1');
+    markAgentSpawned('shell-1');
+    expect(getTaskAttentionState('task-1')).toBe('active');
+    expect(isTaskTerminalBusy('task-1')).toBe(false);
   });
 
   it.each([

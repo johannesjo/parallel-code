@@ -1261,9 +1261,22 @@ export function getTaskAttentionState(taskId: string): TaskAttentionState {
   // A plain terminal producing output is not agent work, so it reports itself
   // separately and ranks below `ready` — otherwise a dev server or watcher
   // masks a task that is actually finished for as long as it keeps printing.
+  return hasBusyShell(taskId) ? 'shell_busy' : 'idle';
+}
+
+function hasBusyShell(taskId: string): boolean {
   const active = activeAgents(); // reactive read
-  if (hasShellActivity(taskId, (id) => active.has(id))) return 'shell_busy';
-  return 'idle';
+  return hasShellActivity(taskId, (id) => active.has(id));
+}
+
+/** A plain terminal is producing output. Ready and review outrank it in the
+ *  attention state, yet a finished task can still have a dev server running,
+ *  so this reports it under them too. Questions, errors and working agents
+ *  outside review keep the say. */
+export function isTaskTerminalBusy(taskId: string): boolean {
+  const attention = getTaskAttentionState(taskId);
+  if (attention === 'shell_busy') return true;
+  return (attention === 'ready' || attention === 'review') && hasBusyShell(taskId);
 }
 
 /** Attention is an aggregate; name the pane supplying its activity evidence. */

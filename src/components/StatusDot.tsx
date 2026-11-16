@@ -2,6 +2,7 @@ import {
   getReadyLabel,
   getTaskActivityTooltip,
   isTaskTerminalAsking,
+  isTaskTerminalBusy,
   type TaskAttentionState,
   type TaskDotStatus,
 } from '../store/taskStatus';
@@ -95,8 +96,11 @@ export function getDotTooltip(
   if (attention === 'error') return 'Error — an agent exited or its turn failed';
   // Without this, a review-flagged task whose agent is still active falls
   // through to the dot-status map and reads "Busy" under a purple dot.
-  if (attention === 'review') return 'Ready for review';
-  if (attention === 'ready') return readyLabel();
+  if (attention === 'review' || attention === 'ready') {
+    const label = attention === 'review' ? 'Ready for review' : readyLabel();
+    // Both outrank a busy terminal; name it so it doesn't go unseen.
+    return taskId && isTaskTerminalBusy(taskId) ? `${label} · terminal busy` : label;
+  }
   if (status === 'ready') return readyLabel();
   return {
     busy: 'Busy — agent recently active',
@@ -144,8 +148,17 @@ export function StatusDot(props: {
 }) {
   const size = () => props.size ?? 'sm';
   const ci = () => (props.taskId ? getCiGlyphState(taskLeadWatchId(props.taskId)) : undefined);
-  const glyph = (): StatusGlyph =>
-    props.checking ? 'spinner' : getStatusGlyph(props.status, props.attention, ci()?.state);
+  const glyph = (): StatusGlyph => {
+    if (props.checking) return 'spinner';
+    const resting = getStatusGlyph(props.status, props.attention, ci()?.state);
+    // A terminal still running under Ready or Review shows its glyph in their
+    // colour, so the task reads as finished and the terminal as busy.
+    const shell =
+      (resting === 'ready' || resting === 'review') &&
+      props.taskId &&
+      isTaskTerminalBusy(props.taskId);
+    return shell ? 'shell' : resting;
+  };
   const tooltip = () =>
     props.checking || getDotTooltip(props.status, props.attention, props.taskId);
   const color = () => {

@@ -55,6 +55,9 @@ vi.mock('../store/taskStatus', async (importOriginal) => {
     getTaskAttentionState: (id: string) =>
       (forced()[id] as ReturnType<typeof original.getTaskAttentionState> | undefined) ??
       original.getTaskAttentionState(id),
+    // Reads attention inside the module, past the override above.
+    isTaskTerminalBusy: (id: string) =>
+      forced()[id] === 'shell_busy' || original.isTaskTerminalBusy(id),
   };
 });
 

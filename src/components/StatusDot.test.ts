@@ -6,9 +6,11 @@ import { theme } from '../lib/theme';
 import { StatusDot, getDotTooltip, getStatusGlyph } from './StatusDot';
 
 const terminalAsking = vi.hoisted(() => ({ value: false }));
+const terminalBusy = vi.hoisted(() => ({ value: false }));
 vi.mock('../store/taskStatus', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../store/taskStatus')>()),
   isTaskTerminalAsking: () => terminalAsking.value,
+  isTaskTerminalBusy: () => terminalBusy.value,
 }));
 
 function prChecks(overall: 'pending' | 'success' | 'failure' | 'none') {
@@ -19,6 +21,13 @@ describe('getDotTooltip', () => {
   afterEach(() => {
     removePrChecks('t1');
     terminalAsking.value = false;
+    terminalBusy.value = false;
+  });
+
+  it('names a terminal still busy under a finished task', () => {
+    terminalBusy.value = true;
+    expect(getDotTooltip('ready', 'ready', 't1')).toBe('Ready · terminal busy');
+    expect(getDotTooltip('review', 'review', 't1')).toBe('Ready for review · terminal busy');
   });
 
   it('names the terminal when it, not an agent, waits for input', () => {
@@ -109,6 +118,25 @@ describe('status glyph shapes', () => {
     const html = renderToString(() => StatusDot({ status: 'busy', attention: 'shell_busy' }));
     expect(html).toContain('status-glyph-shell');
     expect(html).not.toContain('status-glyph-spinner');
+  });
+
+  // Ready or Review still rank first, so the bar takes their colour.
+  it('spins the terminal bar in the resting colour when a finished task has a busy terminal', () => {
+    terminalBusy.value = true;
+    const ready = renderToString(() =>
+      StatusDot({ status: 'ready', attention: 'ready', taskId: 't1' }),
+    );
+    expect(ready).toContain('status-glyph-shell');
+    expect(ready).toContain(`color:${theme.success}`);
+    const review = renderToString(() =>
+      StatusDot({ status: 'review', attention: 'review', taskId: 't1' }),
+    );
+    expect(review).toContain('status-glyph-shell');
+    expect(review).toContain(`color:${theme.review}`);
+    terminalBusy.value = false;
+    expect(
+      renderToString(() => StatusDot({ status: 'ready', attention: 'ready', taskId: 't1' })),
+    ).toContain('status-glyph-ready');
   });
 
   it('shows waiting as a hollow ring', () => {

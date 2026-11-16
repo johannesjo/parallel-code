@@ -10,7 +10,7 @@ import { taskWrapUp } from '../store/task-wrap-up';
 import { getProject } from '../store/projects';
 import { ClockIcon } from './icons';
 import { ProjectSwatch } from './ProjectSwatch';
-import { getTaskAttentionState, getTaskOpenQuestion } from '../store/taskStatus';
+import { getTaskOpenQuestion, isTaskTerminalBusy } from '../store/taskStatus';
 import { retryCloseTask } from '../store/tasks';
 import type { Task } from '../store/types';
 import { activityLine, agentName, boardNow, stateLabel } from './board/task-state';
@@ -118,8 +118,7 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
   const closeErrorText = () =>
     props.task.closingStatus === 'error' ? props.task.closingError : undefined;
   // Names the cause of a card's spinner where its activity goes, so no row reflows.
-  const busy = () =>
-    checking() || (getTaskAttentionState(props.task.id) === 'shell_busy' ? 'Terminal busy' : '');
+  const busy = () => checking() || (isTaskTerminalBusy(props.task.id) ? 'Terminal busy' : '');
   const activityText = () => {
     if (closing()) return 'Closing…';
     // Spelled out on the card, not only in a tooltip, so keyboard users see why.
