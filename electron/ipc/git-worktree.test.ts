@@ -804,6 +804,69 @@ describe('ensureSymlinkExcludes', () => {
   );
 });
 
+describe('claude settings placeholder excludes', () => {
+  const excludePath = (root: string) => path.join(root, '.git', 'info', 'exclude');
+
+  it('hides seeded settings placeholders from git status in a new worktree', async () => {
+    const root = initRepository();
+
+    const { path: worktreePath } = await createWorktree(root, 'task-claude-exclude', []);
+
+    expect(fs.readFileSync(path.join(worktreePath, '.claude', 'settings.json'), 'utf8')).toBe(
+      '{}\n',
+    );
+    expect(git(worktreePath, ['status', '--porcelain'])).toBe('');
+    const exclude = fs.readFileSync(excludePath(root), 'utf8');
+    expect(exclude).toContain('/.claude/settings.json');
+    expect(exclude).toContain('/.claude/settings.local.json');
+  });
+
+  it('hides placeholders seeded into the main checkout and un-hides real content', async () => {
+    const root = initRepository();
+
+    await ensureClaudeSandboxFiles(root, root);
+    expect(git(root, ['status', '--porcelain'])).toBe('');
+
+    // A settings file with real content must surface again — and only it.
+    fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{"permissions":{}}\n');
+    await ensureClaudeSandboxFiles(root, root);
+
+    const status = git(root, ['status', '--porcelain']);
+    expect(status).toContain('.claude');
+    const exclude = fs.readFileSync(excludePath(root), 'utf8');
+    expect(exclude).not.toContain('/.claude/settings.json');
+    expect(exclude).toContain('/.claude/settings.local.json');
+  });
+
+  it('keeps a real settings.json seeded from the source visible in the worktree', async () => {
+    const root = initRepository();
+    fs.mkdirSync(path.join(root, '.claude'));
+    fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{"permissions":{}}\n');
+
+    const { path: worktreePath } = await createWorktree(root, 'task-claude-real', []);
+
+    const status = git(worktreePath, ['status', '--porcelain']);
+    expect(status).toContain('.claude');
+    const exclude = fs.readFileSync(excludePath(root), 'utf8');
+    expect(exclude).not.toContain('/.claude/settings.json');
+    expect(exclude).toContain('/.claude/settings.local.json');
+  });
+
+  it('removes only its own managed entries, never identical user-written ones', async () => {
+    const root = initRepository();
+    fs.appendFileSync(excludePath(root), '/.claude/settings.json\n/custom-entry\n');
+
+    await ensureClaudeSandboxFiles(root, root);
+    fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{"a":1}\n');
+    await ensureClaudeSandboxFiles(root, root);
+
+    const exclude = fs.readFileSync(excludePath(root), 'utf8');
+    // The user's own identical line and unrelated entries survive the removal.
+    expect(exclude).toContain('/.claude/settings.json');
+    expect(exclude).toContain('/custom-entry');
+  });
+});
+
 describe('ensureClaudeSandboxFiles', () => {
   function makeWorktreeDir(): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-claude-worktree-'));

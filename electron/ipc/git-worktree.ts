@@ -12,6 +12,7 @@ import {
   gitInfoExcludePath,
   normalizeExcludeLine,
   resolveGitInfoExcludePath,
+  syncGitInfoExcludeEntriesAtPath,
 } from './git-exclude.js';
 import {
   findForeignOwnedEntries,
@@ -78,6 +79,12 @@ const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'steps.json', 'worktrees']);
  * exist at the worktree path or the sandbox fails before Claude launches.
  */
 const CLAUDE_REQUIRED_FILES = ['settings.json', 'settings.local.json'];
+
+/** Content written for a missing sandbox settings file — and the "still a placeholder" check. */
+const CLAUDE_SETTINGS_PLACEHOLDER = '{}\n';
+
+const CLAUDE_SETTINGS_EXCLUDE_MARKER = '# parallel-code: claude settings placeholders';
+const CLAUDE_SETTINGS_EXCLUDE_PATTERNS = CLAUDE_REQUIRED_FILES.map((file) => `/.claude/${file}`);
 
 /**
  * Worktree-root filenames bwrap leaves behind as character-device placeholders
@@ -508,11 +515,68 @@ async function seedClaudeSandboxFiles(
     const p = path.join(claudeDir, file);
     if (fs.existsSync(p)) continue;
     try {
-      fs.writeFileSync(p, '{}\n');
+      fs.writeFileSync(p, CLAUDE_SETTINGS_PLACEHOLDER);
     } catch (err) {
       console.warn(`Failed to create placeholder ${p}:`, err);
     }
   }
+
+  syncClaudeSettingsExcludes(worktreePath, claudeDir, root);
+}
+
+/**
+ * Keep the seeded `.claude/` settings placeholders out of `git status` and
+ * `git add -A`, but only while they still hold the placeholder `{}`. A
+ * settings file with real content — written by the user, the agent, or
+ * seeded from the source checkout — gets its exclude entry removed so it
+ * surfaces like any other change instead of needing `git add -f` for no
+ * visible reason. The exclude file is shared by every checkout of the repo,
+ * so each spawn reconciles against this worktree's own files. `repoRoot ===
+ * null` means the caller already determined the path is not in a repo.
+ */
+function syncClaudeSettingsExcludes(
+  worktreePath: string,
+  claudeDir: string,
+  repoRoot: string | null,
+): void {
+  const desired: string[] = [];
+  for (const [i, file] of CLAUDE_REQUIRED_FILES.entries()) {
+    let content: string | null = null;
+    try {
+      content = fs.readFileSync(path.join(claudeDir, file), 'utf8');
+    } catch {
+      // Absent or unreadable — nothing to hide.
+    }
+    if (content === CLAUDE_SETTINGS_PLACEHOLDER) {
+      desired.push(CLAUDE_SETTINGS_EXCLUDE_PATTERNS[i]);
+    }
+  }
+
+  // Not in a repo at all (caller already probed): no exclude file exists.
+  if (repoRoot === null) return;
+
+  // Resolve the shared exclude file without a subprocess when the main
+  // checkout root is known (`.git` is a real directory there); a linked
+  // worktree root holds a gitfile instead, so fall back to `git rev-parse`.
+  let excludePath: string | null = null;
+  if (repoRoot) {
+    try {
+      const gitDir = path.join(repoRoot, '.git');
+      if (fs.statSync(gitDir).isDirectory()) excludePath = gitInfoExcludePath(gitDir);
+    } catch {
+      /* fall through to rev-parse */
+    }
+  }
+  excludePath ??= resolveGitInfoExcludePath(worktreePath);
+  if (!excludePath) return;
+
+  syncGitInfoExcludeEntriesAtPath(
+    excludePath,
+    CLAUDE_SETTINGS_EXCLUDE_MARKER,
+    CLAUDE_SETTINGS_EXCLUDE_PATTERNS,
+    desired,
+    (err) => console.warn(`Failed to update ${excludePath}:`, err),
+  );
 }
 
 /**
