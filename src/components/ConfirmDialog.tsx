@@ -23,6 +23,8 @@ interface ConfirmDialogProps {
   confirmFocusable?: boolean;
   autoFocusCancel?: boolean;
   width?: string;
+  /** Above the default layer, for a confirmation opened from another dialog such as Settings. */
+  zIndex?: number;
   /** Short text at the start of the footer, e.g. why the confirm button is disabled. */
   footerNote?: string;
   /** Further buttons between Cancel and the confirm button, e.g. an alternative action. */
@@ -59,6 +61,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       open={props.open}
       onClose={props.onCancel}
       width={props.width}
+      zIndex={props.zIndex}
       labelledBy={props.labelledBy ?? generatedTitleId}
       describedBy={props.describedBy}
     >

@@ -15,7 +15,7 @@ function recordVisit(taskId: string | null): void {
   setStore('tasks', taskId, 'lastVisit', {
     at: Date.now(),
     headSha: currentHeadSha(taskId),
-    codeFingerprint: task.codeFingerprint?.fingerprint ?? task.brief?.fingerprint,
+    codeFingerprint: task.codeFingerprint?.fingerprint,
   });
 }
 
@@ -50,7 +50,6 @@ export function getTaskChangesSinceVisit(taskId: string): string[] {
     headSha: currentHeadSha(taskId),
     confidence: task.confidence,
     codeFingerprint: task.codeFingerprint,
-    brief: task.brief,
     verificationRun: task.verificationRun,
     checks: task.evidence?.checks,
   });

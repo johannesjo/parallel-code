@@ -869,8 +869,10 @@ html[data-look='parallel-code'] .settings-theme-desc {
   line-height: 1.6;
 }
 
-/* Let task names and the focused workspace lead, with quieter utility controls. */
-html[data-look='parallel-code'] .icon-btn:not(.sidebar-create-btn):not(:hover):not(:focus-visible) {
+/* Let task names and the focused workspace lead, with quieter utility controls.
+   A greyed one stays as quiet under the pointer, since it does nothing there. */
+html[data-look='parallel-code']
+  .icon-btn:not(.sidebar-create-btn):is(:not(:hover), :disabled):not(:focus-visible) {
   border-color: transparent !important;
 }
 
@@ -999,7 +1001,8 @@ html[data-look='noir'] .sidebar-panel {
   gap: 20px !important;
 }
 
-html[data-look='noir'] .icon-btn:not(.sidebar-create-btn):not(:hover):not(:focus-visible) {
+html[data-look='noir']
+  .icon-btn:not(.sidebar-create-btn):is(:not(:hover), :disabled):not(:focus-visible) {
   border-color: transparent !important;
 }
 
@@ -1201,7 +1204,7 @@ html[data-look^='obsidian'] .sidebar-panel {
 }
 
 /* Quiet utility controls let the primary action and task names lead. */
-html[data-look^='obsidian'] .icon-btn:not(.sidebar-create-btn):not(:hover) {
+html[data-look^='obsidian'] .icon-btn:not(.sidebar-create-btn):is(:not(:hover), :disabled) {
   border-color: transparent !important;
 }
 
@@ -1768,9 +1771,10 @@ html[data-look^='islands-'] .task-column.focus-mode .task-branch-info-bar {
   border-bottom: none;
 }
 
+/* The cards pane is an island like the notes and files below it. */
 html[data-look^='islands-']
   .task-column.focus-mode
-  .focusable-panel:not(.shell-terminal-container) {
+  :is(.focusable-panel:not(.shell-terminal-container), .cards-pane) {
   background: var(--task-panel-bg) !important;
   border: 1px solid var(--island-border);
   border-radius: 8px !important;
@@ -1785,7 +1789,9 @@ html[data-look^='islands-']
    shape on whatever portion of the panel is visible. The focus outline lifts
    onto the cell for the same reason — drawn inside the panel it would also
    get clipped at the bottom. */
-html[data-look^='islands-'] .task-column.focus-mode .rp-cell:has(> .focusable-panel) {
+html[data-look^='islands-']
+  .task-column.focus-mode
+  .rp-cell:has(> :is(.focusable-panel, .cards-pane)) {
   border-radius: var(--radius-md);
   position: relative;
 }
@@ -2654,6 +2660,13 @@ button {
   gap: 8px;
 }
 
+/* Cards marked for Finish: as wide as the other follow-ups, framed like the popover. */
+.finish-cards {
+  width: min(100%, 24rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
 .finish-followup {
   width: min(100%, 24rem);
   min-width: 0;
@@ -2838,33 +2851,6 @@ textarea::placeholder {
 .task-item-head > .status-glyph,
 .task-item-head > svg {
   height: 1.35em;
-}
-
-/* The brief line is routine: it shows its fill and chevron only when hovered or
-   open. The chevron fades rather than appearing, so the text never shifts. */
-.task-brief-bar {
-  background: transparent;
-}
-.task-brief-bar:hover,
-.task-brief-bar[aria-expanded='true'] {
-  background: var(--bg-elevated);
-}
-/* Tinted only when the agent waits on the user; hover still darkens it. */
-.task-brief-bar[data-urgent] {
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
-}
-.task-brief-bar[data-urgent]:hover,
-.task-brief-bar[data-urgent][aria-expanded='true'] {
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
-}
-.task-brief-chevron {
-  opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease-out);
-}
-.task-brief-bar:hover .task-brief-chevron,
-.task-brief-bar:focus-visible .task-brief-chevron,
-.task-brief-bar[aria-expanded='true'] .task-brief-chevron {
-  opacity: 1;
 }
 
 /* Task names wrap to two lines rather than being cut mid-word — at sidebar
@@ -6512,7 +6498,6 @@ button.tour-save-state:not(:disabled):hover {
 
 /* Keep reduced-motion overrides last so class-based rules win by source order. */
 @media (prefers-reduced-motion: reduce) {
-  .task-brief-chevron,
   .projects-collapser {
     transition: none;
   }

@@ -69,6 +69,12 @@ const updateReasoning = vi.fn(async (taskId: string, update: ReasoningUpdate) =>
 const openCanvas = vi.fn(async (_taskId: string, _request: CanvasRequest) => {});
 const publishTour = vi.fn(async (_taskId: string, _payload: AgentTourPayload) => ({ ok: true }));
 const publishConfidence = vi.fn(async (_taskId: string, _payload: unknown) => ({ ok: true }));
+const listCards = vi.fn(async (_taskId: string) => ({ cards: [{ card: 'confidence' }] }));
+const publishCard = vi.fn(async (_taskId: string, _request: unknown) => ({ ok: true }));
+const readCardConfig = vi.fn(async (_taskId: string) => ({ cards: [{ id: 'confidence' }] }));
+const changeCardConfig = vi.fn(async (_taskId: string, _change: unknown) => ({
+  status: 'saved',
+}));
 const publishPrDraft = vi.fn(async (_taskId: string, _draft: unknown) => ({ ok: true }));
 const publishFinishItems = vi.fn(async (_taskId: string, _items: string[]) => ({ ok: true }));
 const publishGitHubList = vi.fn(async (_taskId: string, _list: unknown) => ({ ok: true }));
@@ -108,6 +114,10 @@ beforeEach(async () => {
     openCanvas,
     publishTour,
     publishConfidence,
+    listCards,
+    publishCard,
+    readCardConfig,
+    changeCardConfig,
     publishPrDraft,
     publishFinishItems,
     publishGitHubList,
@@ -228,6 +238,42 @@ it('publishes a confidence rating for the owning task only and validates it', as
   });
   expect(malformed.status).toBe(400);
   expect(publishConfidence).toHaveBeenCalledTimes(1);
+});
+
+it('lists and publishes cards for the owning task only and rejects an oversized payload', async () => {
+  await expect(client.listCards('task-1')).resolves.toEqual({ cards: [{ card: 'confidence' }] });
+  expect(listCards).toHaveBeenCalledWith('task-1');
+  const notes = { card: 'notes', values: { note: 'Ready' } };
+  await expect(client.publishCard('task-1', notes)).resolves.toEqual({ ok: true, card: 'notes' });
+  expect(publishCard).toHaveBeenCalledWith('task-1', notes);
+  await expect(client.publishCard('task-2', notes)).rejects.toThrow('403');
+  const oversized = await fetch(`http://127.0.0.1:${server.port}/api/cards/task-1`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ card: 'notes', values: { note: 'x'.repeat(40 * 1024) } }),
+  });
+  expect(oversized.status).toBe(413);
+  expect(publishCard).toHaveBeenCalledTimes(1);
+});
+
+it('reads and changes card definitions for the owning task only and validates the change', async () => {
+  await expect(client.readCardConfig('task-1')).resolves.toEqual({ cards: [{ id: 'confidence' }] });
+  expect(readCardConfig).toHaveBeenCalledWith('task-1');
+  const save = { action: 'save' as const, card: { id: 'risks' }, position: 1 };
+  await expect(client.changeCardConfig('task-1', save)).resolves.toEqual({ status: 'saved' });
+  expect(changeCardConfig).toHaveBeenCalledWith('task-1', save);
+  await expect(client.changeCardConfig('task-2', save)).rejects.toThrow('403');
+  const post = (body: unknown) =>
+    fetch(`http://127.0.0.1:${server.port}/api/card-config/task-1`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  expect((await post({ action: 'rename', card: 'risks' })).status).toBe(400);
+  expect(
+    (await post({ ...save, card: { id: 'risks', prompt: 'x'.repeat(80 * 1024) } })).status,
+  ).toBe(413);
+  expect(changeCardConfig).toHaveBeenCalledTimes(1);
 });
 
 it('publishes a pull request draft for the owning task only and validates it', async () => {
@@ -400,6 +446,11 @@ it('serves discoverable tools over real MCP stdio and reflects subsequent manual
       'canvas_open',
       'tour_publish',
       'confidence_publish',
+      'card_list',
+      'card_publish',
+      'card_config_read',
+      'card_config_save',
+      'card_config_remove',
       'pr_draft_publish',
       'finish_items_publish',
     ]);

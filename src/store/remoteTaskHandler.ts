@@ -6,7 +6,9 @@
 
 import { resolveIncludeSelection, splitIncludeSelection } from '../lib/worktree-includes';
 import { publishAgentTour } from './agent-tour';
-import { publishTaskConfidence } from './task-brief';
+import { publishTaskConfidence } from './task-diff';
+import { changeCardConfig, readCardConfig } from './card-config';
+import { listAgentCards, publishCardValues } from './card-publish';
 import { publishAgentPrDraft } from './pr-draft';
 import { publishFinishItems } from './finish-items';
 import { publishGitHubList } from './github-lists';
@@ -673,6 +675,53 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offListCards = window.electron.ipcRenderer.on(IPC.MCP_ListCardsRequest, (data: unknown) => {
+    if (!data || typeof data !== 'object') return;
+    const req = data as GetNotesRequest;
+    try {
+      reply(req.reqId, true, listAgentCards(req.taskId));
+    } catch (error) {
+      reply(req.reqId, false, undefined, errMessage(error));
+    }
+  });
+  const offPublishCard = window.electron.ipcRenderer.on(
+    IPC.MCP_PublishCardRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { card: unknown; values: unknown };
+      try {
+        if (typeof req.card !== 'string') throw new Error('"card" must be a card id.');
+        publishCardValues(req.taskId, req.card, req.values);
+        reply(req.reqId, true, { ok: true });
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
+  const offReadCardConfig = window.electron.ipcRenderer.on(
+    IPC.MCP_ReadCardConfigRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest;
+      try {
+        reply(req.reqId, true, readCardConfig(req.taskId));
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
+  const offChangeCardConfig = window.electron.ipcRenderer.on(
+    IPC.MCP_ChangeCardConfigRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { change: unknown };
+      try {
+        reply(req.reqId, true, changeCardConfig(req.taskId, req.change));
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   const offPublishPrDraft = window.electron.ipcRenderer.on(
     IPC.MCP_PublishPrDraftRequest,
     (data: unknown) => {
@@ -719,6 +768,10 @@ export function startRemoteTaskHandlers(): () => void {
     offOpenCanvas();
     offPublishTour();
     offPublishConfidence();
+    offListCards();
+    offPublishCard();
+    offReadCardConfig();
+    offChangeCardConfig();
     offPublishPrDraft();
     offPublishFinishItems();
     offPublishGitHubList();

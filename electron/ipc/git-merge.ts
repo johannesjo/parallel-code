@@ -30,6 +30,7 @@ import type {
   MergeStatus,
   MergeTargetChanges,
   RemoteBranchState,
+  RemoteDivergence,
 } from './shared-types.js';
 
 const STDERR_CAP = 4096; // cap for stderr buffers in spawned git processes
@@ -347,7 +348,9 @@ async function setAsideLocalChanges(
  * remote-tracking ref without fetching, so it costs no network; pushes from
  * the app update that ref.
  */
-async function remoteBranchState(worktreePath: string): Promise<RemoteBranchState | undefined> {
+async function remoteBranchState(
+  worktreePath: string,
+): Promise<{ state: RemoteBranchState; divergence?: RemoteDivergence } | undefined> {
   const read = (args: string[]) =>
     exec('git', args, { cwd: worktreePath }).then(
       ({ stdout }) => stdout.trim(),
@@ -360,8 +363,12 @@ async function remoteBranchState(worktreePath: string): Promise<RemoteBranchStat
   ]);
   if (!origin || !branch || !head) return undefined;
   const remote = await read(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`]);
-  if (!remote) return 'unpushed';
-  return remote === head ? 'pushed' : 'differs';
+  if (!remote) return { state: 'unpushed' };
+  if (remote === head) return { state: 'pushed' };
+  const counts = await read(['rev-list', '--left-right', '--count', `${head}...${remote}`]);
+  const [ahead, behind] = (counts ?? '').split(/\s+/).map(Number);
+  const counted = Number.isInteger(ahead) && Number.isInteger(behind);
+  return { state: 'differs', ...(counted && { divergence: { ahead, behind } }) };
 }
 
 /**
@@ -386,7 +393,8 @@ export async function checkMergeStatus(
   const state = await remote;
   return {
     ...status,
-    ...(state && { remote: state }),
+    ...(state && { remote: state.state }),
+    ...(state?.divergence && { remote_divergence: state.divergence }),
     ...(target && { target_uncommitted: target }),
     ...(divergence && { base_upstream: divergence }),
   };

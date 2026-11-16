@@ -5,12 +5,12 @@ import { askCodeEnvFile } from '../../electron/shared/ask-code-models';
 import type { ServeCommands, TaskScreensResult } from '../../electron/shared/task-screens';
 import { areScreensOutdated } from '../lib/finish-reports';
 import { invoke } from '../lib/ipc';
-import { diffFingerprint } from '../lib/task-brief';
+import { diffFingerprint } from '../lib/diff-excerpt';
 import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { store } from './core';
 import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
-import { isLiveTask, noteCodeFingerprint, readTaskDiff } from './task-brief';
+import { isLiveTask, noteCodeFingerprint, readTaskDiff } from './task-diff';
 import { openTaskReview } from './task-review';
 
 /** A finished capture, with when it ran and the diff it saw then. */
@@ -54,7 +54,7 @@ export function areTaskScreensOutdated(taskId: string, headSha?: string | null):
   const status = screens[taskId];
   const task = store.tasks[taskId];
   if (status?.state !== 'done' || !task) return false;
-  const code = { codeFingerprint: task.codeFingerprint, brief: task.brief, headSha };
+  const code = { codeFingerprint: task.codeFingerprint, headSha };
   return areScreensOutdated(status, code);
 }
 

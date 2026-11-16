@@ -6,6 +6,7 @@ import { CONFIDENCE_LIMITS } from '../shared/task-confidence.js';
 import { GITHUB_LIST_LIMITS, isGitHubAgentTaskId } from '../shared/github-list.js';
 import { PR_DRAFT_LIMITS } from '../shared/pr-draft.js';
 import { FINISH_ITEMS_LIMITS } from '../shared/finish-items.js';
+import { BRIEF_MODELS } from '../shared/task-name-model.js';
 import { TOUR_CARD_LIMITS, TOUR_FORMS, TOUR_TONES } from '../shared/understanding-limits.js';
 import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -264,6 +265,71 @@ export const CONFIDENCE_TOOLS: ToolDef[] = [
         source: { type: 'string', maxLength: confidenceCaps.source },
       },
       required: ['scores'],
+    },
+  },
+];
+
+export const CARD_TOOLS: ToolDef[] = [
+  {
+    name: 'card_list',
+    description:
+      'List the cards you can fill on your task: Confidence, and the cards the user turned on that the agent fills. Each card has slots; each slot says the value it takes. Call it before card_publish.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'card_publish',
+    description:
+      'Publish values for one card on your task, from card_list. "values" is keyed by slot id; slots you leave out are empty. The new values replace the card\'s previous ones and show as out of date once the code changes. ' +
+      "A value of the wrong shape, or far over its slot's limits, rejects the whole payload with an error naming the slot, and the card keeps its previous values; text slightly over a limit is shortened. " +
+      'For card "confidence", send the confidence_publish payload as "values".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card: { type: 'string', maxLength: 40 },
+        values: { type: 'object' },
+      },
+      required: ['card', 'values'],
+    },
+  },
+  {
+    name: 'card_config_read',
+    description:
+      "Read the card definitions of the app: every card with its source, slots and switches, in display order. Also returns your task's project, the project checks a card can run, the default AI model, and the changes still waiting for the user. " +
+      'Cards are app settings shared by every task and project, not only yours. Call it before card_config_save or card_config_remove.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'card_config_save',
+    description:
+      'Add or change one card definition. Send the whole card as card_config_read returns it; an id no card has adds a new one. "position" moves it in the display order, counted from 0. ' +
+      `A card is {id: lower-case letters, digits and dashes; name; description; source; slots; enabled: its default in every project; projects?: {projectId: boolean} overrides; pinned?: slot ids shown in the bar below the task title; mini?: its summary in that bar; showAtFinish?}. ` +
+      `"source" is one of {kind: "model", model: "default" | ${Object.keys(BRIEF_MODELS)
+        .map((id) => `"${id}"`)
+        .join(
+          ' | ',
+        )}, prompt, inputs: any of "task-name", "prompts", "agent-message", "diff", checkId?: a check to run first, trigger: "after-turn" | "manual" | "finish"}, ` +
+      '{kind: "agent"} (the task\'s agent fills it with card_publish), {kind: "check", checkId, mode: "exit-code" | "json", trigger: "manual" | "finish" | "after-turn"}, or {kind: "app", fact: "plan" | "diff-size" | "branch-health" | "activity" | "commits" | "remote-branch" | "ci"}. ' +
+      '"slots" is 1 to 8 of {id, type: "line" | "text" | "score" | "stat" | "items" | "checklist" | "status", label, hint?: an instruction for the model, warnBelow?: for a score, limit?: for a stat, addUp?: for items}; app and exit-code check cards get their one fixed layout whatever you send. ' +
+      'For the built-in card "confidence" only enabled, projects and pinned change. ' +
+      'The change applies at once, and the reply holds the card as saved, with a note when that differs from what you sent. ' +
+      'Three kinds of change wait for one click from the user in the app instead, and the reply says so: one that switches on an AI card (model or agent source) where it was off or makes an agent card that is on a model card, one that gives a model card that is on another model or more inputs (a checkId counts), and one that drops slots holding values on tasks. A waiting change is applied whole, with its position, and only if the card is still as it was; sending the card again replaces it, and card_config_read lists what still waits. To save without waiting, send an AI card switched off and tell the user to switch it on.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card: { type: 'object' },
+        position: { type: 'integer', minimum: 0 },
+      },
+      required: ['card'],
+    },
+  },
+  {
+    name: 'card_config_remove',
+    description:
+      'Remove one card definition by id, for every task and project. A card that holds values on tasks is removed only after one click from the user in the app, and the reply says so. The built-in card "confidence" cannot be removed; switch it off with card_config_save.',
+    inputSchema: {
+      type: 'object',
+      properties: { card: { type: 'string', maxLength: 40 } },
+      required: ['card'],
     },
   },
 ];
@@ -779,6 +845,7 @@ export function selectTools(
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
+    ...CARD_TOOLS,
     // A branch PR needs a task; coordinators and the GitHub page's agent have none.
     ...(taskId && !isGitHubAgentTaskId(taskId) ? PR_DRAFT_TOOLS : []),
     // Items wait for the Finish dialog; self-landing children and page agents never reach it.

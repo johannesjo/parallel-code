@@ -52,6 +52,16 @@ import {
   type ConfidencePayload,
 } from '../shared/task-confidence.js';
 import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js';
+import {
+  CARD_PUBLISH_MAX_BYTES,
+  parseCardPublishRequest,
+  type CardPublishRequest,
+} from '../shared/card-publish.js';
+import {
+  CARD_CONFIG_MAX_BYTES,
+  parseCardConfigChange,
+  type CardConfigChange,
+} from '../shared/card-config.js';
 import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
 import { FINISH_ITEMS_LIMITS, parseFinishItems } from '../shared/finish-items.js';
 import type {
@@ -430,6 +440,10 @@ type CanvasOps = Pick<
   | 'openCanvas'
   | 'publishTour'
   | 'publishConfidence'
+  | 'listCards'
+  | 'publishCard'
+  | 'readCardConfig'
+  | 'changeCardConfig'
   | 'publishPrDraft'
   | 'publishFinishItems'
   | 'publishGitHubList'
@@ -440,6 +454,8 @@ type CanvasRoute =
   | 'canvas'
   | 'tours'
   | 'confidence'
+  | 'cards'
+  | 'card-config'
   | 'pr-drafts'
   | 'finish-items'
   | 'github-lists';
@@ -495,6 +511,25 @@ async function canvasRequest(
     const payload = parseConfidencePayload(await readJsonBody(req, CONFIDENCE_LIMITS.payloadBytes));
     await ops.publishConfidence(taskId, payload);
     return { ok: true, scores: payload.scores.length };
+  }
+  if (route === 'cards') {
+    if (req.method === 'GET') {
+      if (!ops.listCards) throw httpError(503, 'Cards unavailable');
+      return ops.listCards(taskId);
+    }
+    if (!ops.publishCard) throw httpError(503, 'Cards unavailable');
+    const request = parseCardPublishRequest(await readJsonBody(req, CARD_PUBLISH_MAX_BYTES));
+    await ops.publishCard(taskId, request);
+    return { ok: true, card: request.card };
+  }
+  if (route === 'card-config') {
+    if (req.method === 'GET') {
+      if (!ops.readCardConfig) throw httpError(503, 'Cards unavailable');
+      return ops.readCardConfig(taskId);
+    }
+    if (!ops.changeCardConfig) throw httpError(503, 'Cards unavailable');
+    const change = parseCardConfigChange(await readJsonBody(req, CARD_CONFIG_MAX_BYTES));
+    return ops.changeCardConfig(taskId, change);
   }
   if (route === 'pr-drafts') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
@@ -1051,6 +1086,14 @@ export function startRemoteServer(opts: {
   publishTour?: (taskId: string, payload: AgentTourPayload) => Promise<unknown>;
   /** Show a confidence rating the agent published for its own task (renderer-backed). */
   publishConfidence?: (taskId: string, payload: ConfidencePayload) => Promise<unknown>;
+  /** List the cards the agent may fill on its own task (renderer-backed). */
+  listCards?: (taskId: string) => Promise<unknown>;
+  /** Replace a card's values with what the agent published for its own task (renderer-backed). */
+  publishCard?: (taskId: string, request: CardPublishRequest) => Promise<unknown>;
+  /** Read every card definition for an agent that edits them (renderer-backed). */
+  readCardConfig?: (taskId: string) => Promise<unknown>;
+  /** Save or remove a card definition for an agent; some changes wait for the user (renderer-backed). */
+  changeCardConfig?: (taskId: string, change: CardConfigChange) => Promise<unknown>;
   /** Fill the Create pull request dialog with a draft the agent wrote for its own task (renderer-backed). */
   publishPrDraft?: (taskId: string, draft: PrDraft) => Promise<unknown>;
   /** Store the loose ends the agent recorded for its own task's Finish dialog (renderer-backed). */
@@ -1358,7 +1401,7 @@ export function startRemoteServer(opts: {
       };
 
       const mapMatch = url.pathname.match(
-        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|pr-drafts|finish-items|github-lists)\/([^/]+)$/,
+        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|cards|card-config|pr-drafts|finish-items|github-lists)\/([^/]+)$/,
       );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;

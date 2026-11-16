@@ -244,6 +244,7 @@ vi.mock('../ipc/verify.js', () => ({
   verificationRunner: {
     start: mocks.mockVerifyStart,
     cancel: mocks.mockVerifyCancel,
+    cancelPrefix: () => false,
     isRunning: () => false,
   },
   buildVerifyEnv: (args: { taskId: string; branchName?: string; worktreePath: string }) => ({

@@ -6,7 +6,7 @@ import {
 } from '../../electron/shared/task-confidence';
 import { repoContent } from './repo-content';
 import { withReviewNotes, type ReviewDismissal } from './review-summary';
-import { fencePrompts, prepareDiffForBrief } from './task-brief';
+import { fencePrompts, prepareDiffExcerpt } from './diff-excerpt';
 import { readSingleJsonObject } from './tour-json';
 
 /**
@@ -42,7 +42,7 @@ export function withReviewEffort(model: ReviewModelSettings): ReviewModelSetting
 }
 
 const REVIEW_LIMITS = {
-  /** Every request matters to a review, unlike a brief that only needs the latest. */
+  /** Every request matters to a review, not only the latest. */
   promptsChars: 40_000,
   /** Within the review purpose's 300k budget, leaving room for prompts and notes. */
   diffChars: 200_000,
@@ -109,7 +109,7 @@ export function buildTaskReviewPrompt(input: TaskReviewPromptInput): string {
       ? '(the diff could not be read; say so in a risk instead of guessing)'
       : repoContent(
           input.rawDiff.trim()
-            ? prepareDiffForBrief(input.rawDiff, REVIEW_LIMITS.diffChars)
+            ? prepareDiffExcerpt(input.rawDiff, REVIEW_LIMITS.diffChars)
             : '(no changes)',
         );
   const checks = input.checks?.length

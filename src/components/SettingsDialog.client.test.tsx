@@ -190,7 +190,7 @@ it('moves selection and focus between tabs with arrow, Home and End keys', () =>
   const press = (key: string) =>
     document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   tabs()[0].focus();
-  expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1, -1]);
+  expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
 
   press('ArrowLeft');
   expect(document.activeElement?.textContent).toBe('Experimental');

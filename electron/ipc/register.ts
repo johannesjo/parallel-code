@@ -78,6 +78,8 @@ import { detectTaskPrs } from './task-prs.js';
 import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
+import { cardRunKey, cardRunKeyPrefix, runCardCheck } from './card-check.js';
+import { CARD_ID_PATTERN, CARD_PUBLISH_MAX_BYTES } from '../shared/card-publish.js';
 import {
   buildScriptInvocation,
   buildWorktreeScriptEnv,
@@ -115,6 +117,8 @@ import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
 import type { CanvasRequest } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
 import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { CardPublishRequest } from '../shared/card-publish.js';
+import type { CardConfigChange } from '../shared/card-config.js';
 import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
 import {
@@ -1119,6 +1123,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args.taskId) {
       verificationRunner.cancel(args.taskId);
       verificationRunner.cancelPrefix(suiteKeyPrefix(args.taskId));
+      verificationRunner.cancelPrefix(cardRunKeyPrefix(args.taskId));
     }
     const authority = args.taskId ? delegation.getTask(args.taskId) : undefined;
     if (authority?.delegationParent || authority?.coordinatorMode)
@@ -1554,6 +1559,40 @@ export function registerAllHandlers(win: BrowserWindow): void {
       onOutput: (chunk) => {
         if (!win.isDestroyed()) win.webContents.send(channel, chunk);
       },
+    });
+  });
+  ipcMain.handle(IPC.RunCardCheck, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    if (
+      typeof args.cardId !== 'string' ||
+      args.cardId.length > 40 ||
+      !CARD_ID_PATTERN.test(args.cardId)
+    )
+      throw new Error('cardId must be a card id');
+    const worktreePath = worktreePathArg(args);
+    validateVerifyCommand(args.command);
+    if (args.mode !== 'exit-code' && args.mode !== 'json')
+      throw new Error('mode must be exit-code or json');
+    assertOptionalString(args.branchName, 'branchName');
+    const baseBranch = optionalBaseBranch(args);
+    assertString(args.diff, 'diff');
+    assertOptionalString(args.taskName, 'taskName');
+    assertOptionalString(args.previous, 'previous');
+    if ((args.taskName?.length ?? 0) > 500) throw new Error('taskName too long');
+    if ((args.previous?.length ?? 0) > CARD_PUBLISH_MAX_BYTES)
+      throw new Error('previous too large');
+    return runCardCheck(verificationRunner, {
+      key: cardRunKey(args.taskId, args.cardId),
+      worktreePath,
+      command: args.command,
+      mode: args.mode,
+      env: {
+        ...buildVerifyEnv({ taskId: args.taskId, branchName: args.branchName, worktreePath }),
+        PC_TASK_NAME: args.taskName ?? '',
+        PC_BASE_BRANCH: baseBranch ?? '',
+      },
+      previous: args.previous,
+      diff: args.diff,
     });
   });
   ipcMain.handle(IPC.CancelTaskVerification, (_e, args) => {
@@ -2024,6 +2063,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishTourRequest, { taskId, payload }),
     publishConfidence: (taskId: string, payload: ConfidencePayload) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishConfidenceRequest, { taskId, payload }),
+    listCards: (taskId: string) => callRenderer<unknown>(IPC.MCP_ListCardsRequest, { taskId }),
+    publishCard: (taskId: string, request: CardPublishRequest) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishCardRequest, { taskId, ...request }),
+    readCardConfig: (taskId: string) =>
+      callRenderer<unknown>(IPC.MCP_ReadCardConfigRequest, { taskId }),
+    changeCardConfig: (taskId: string, change: CardConfigChange) =>
+      callRenderer<unknown>(IPC.MCP_ChangeCardConfigRequest, { taskId, change }),
     publishPrDraft: (taskId: string, draft: PrDraft) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishPrDraftRequest, { taskId, draft }),
     publishFinishItems: (taskId: string, items: string[]) =>

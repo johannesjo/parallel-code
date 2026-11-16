@@ -27,14 +27,16 @@ export function isTaskNameModelId(value: unknown): value is TaskNameModelId {
 }
 
 /**
- * Models offered for task briefs. A brief reads a whole turn and diff, which
- * the cheapest models summarise vaguely, so stronger ones are offered too.
+ * Models offered as the default AI model (AI cards and PR drafts). These read
+ * a whole turn and diff, which the cheapest models summarise vaguely, so
+ * stronger ones are offered too. Named for the task brief they first served;
+ * the persisted `briefModel` setting keeps the name.
  */
 export const BRIEF_MODELS = {
   haiku: TASK_NAME_MODELS.haiku,
   sonnet: { label: 'Claude Sonnet (claude CLI)', provider: 'claude', model: 'sonnet' },
   luna: TASK_NAME_MODELS.luna,
-  // Low reasoning, like Luna: a brief restates the turn rather than solving anything.
+  // Low reasoning, like Luna: these calls restate the work rather than solve anything.
   terra: {
     label: 'GPT-6.1-Terra (codex CLI)',
     provider: 'codex',

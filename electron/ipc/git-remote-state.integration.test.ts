@@ -53,6 +53,30 @@ describe('checkMergeStatus remote state', () => {
     expect((await checkMergeStatus(child, 'main')).remote).toBe('differs');
   });
 
+  it('counts the commits each side lacks once they differ', async () => {
+    const child = fixture(true);
+    expect((await checkMergeStatus(child, 'main')).remote_divergence).toBeUndefined();
+    git(child, 'push', '-u', 'origin', 'child');
+    expect((await checkMergeStatus(child, 'main')).remote_divergence).toBeUndefined();
+    commit(child, 'more.txt');
+    commit(child, 'even-more.txt');
+    expect((await checkMergeStatus(child, 'main')).remote_divergence).toEqual({
+      ahead: 2,
+      behind: 0,
+    });
+    // Back to the base: origin's copy now has the one commit the branch lost.
+    git(child, 'reset', '--hard', 'main');
+    expect((await checkMergeStatus(child, 'main')).remote_divergence).toEqual({
+      ahead: 0,
+      behind: 1,
+    });
+    commit(child, 'other.txt');
+    expect((await checkMergeStatus(child, 'main')).remote_divergence).toEqual({
+      ahead: 1,
+      behind: 1,
+    });
+  });
+
   it('reports nothing for a repository without an origin', async () => {
     const child = fixture(false);
     expect((await checkMergeStatus(child, 'main')).remote).toBeUndefined();

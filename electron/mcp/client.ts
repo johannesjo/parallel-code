@@ -5,6 +5,8 @@ import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
 import type { CanvasRequest } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
 import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { CardPublishRequest } from '../shared/card-publish.js';
+import type { CardConfigChange } from '../shared/card-config.js';
 import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
@@ -218,6 +220,25 @@ export class MCPClient {
     payload: ConfidencePayload,
   ): Promise<{ ok: true; scores: number }> {
     return this.taskOwnerRequest('POST', `/api/confidence/${encodeURIComponent(taskId)}`, payload);
+  }
+
+  async listCards(taskId: string): Promise<unknown> {
+    return this.taskOwnerRequest('GET', `/api/cards/${encodeURIComponent(taskId)}`);
+  }
+
+  async publishCard(
+    taskId: string,
+    request: CardPublishRequest,
+  ): Promise<{ ok: true; card: string }> {
+    return this.taskOwnerRequest('POST', `/api/cards/${encodeURIComponent(taskId)}`, request);
+  }
+
+  async readCardConfig(taskId: string): Promise<unknown> {
+    return this.taskOwnerRequest('GET', `/api/card-config/${encodeURIComponent(taskId)}`);
+  }
+
+  async changeCardConfig(taskId: string, change: CardConfigChange): Promise<unknown> {
+    return this.taskOwnerRequest('POST', `/api/card-config/${encodeURIComponent(taskId)}`, change);
   }
 
   async publishPrDraft(taskId: string, draft: PrDraft): Promise<{ ok: true; title: string }> {

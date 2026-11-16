@@ -1,7 +1,5 @@
-import type { JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { theme, sectionLabelStyle } from '../../lib/theme';
-
-export type SettingsTab = 'general' | 'appearance' | 'agents' | 'ai' | 'experimental';
 
 export function SettingsSection(props: { title: string; children: JSX.Element }) {
   return (
@@ -74,5 +72,36 @@ export function SettingsCheckboxRow(props: {
         <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>{props.description}</span>
       </div>
     </label>
+  );
+}
+
+/** A labelled model picker in its own card, such as the naming or default AI model. */
+export function ModelSelect(props: {
+  label: string;
+  value: string;
+  choices: Record<string, { label: string }>;
+  onChange: (id: string) => void;
+  hint?: string;
+}) {
+  return (
+    <SettingsCard>
+      <label style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+        <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+          {props.label}
+        </span>
+        <select
+          value={props.value}
+          onChange={(e) => props.onChange(e.currentTarget.value)}
+          style={{ flex: '1', ...settingsFieldStyle, 'font-size': '13px', cursor: 'pointer' }}
+        >
+          <For each={Object.entries(props.choices)}>
+            {([id, choice]) => <option value={id}>{choice.label}</option>}
+          </For>
+        </select>
+      </label>
+      <Show when={props.hint}>
+        <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>{props.hint}</span>
+      </Show>
+    </SettingsCard>
   );
 }

@@ -181,8 +181,11 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
       '--no-session-persistence',
       // A title replaces Claude Code's prompt: appended to it, the repository
       // context there (status, recent commits) leads Haiku to answer a vague
-      // prompt such as "what should we do next?" instead of naming it.
-      args.purpose === 'task-name' ? '--system-prompt' : '--append-system-prompt',
+      // prompt such as "what should we do next?" instead of naming it. A card
+      // draft runs in whichever project comes first, so that repo stays out of it too.
+      args.purpose === 'task-name' || args.purpose === 'card-layout'
+        ? '--system-prompt'
+        : '--append-system-prompt',
       askCodeSystemPrompt(args.purpose),
     ],
     {

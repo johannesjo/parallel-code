@@ -9,17 +9,7 @@ import {
   withReviewNotes,
   type ReviewDismissal,
 } from './review-summary';
-import type { TaskBriefRecord } from './task-brief';
 import type { TaskConfidence } from './task-confidence';
-
-const brief: TaskBriefRecord = {
-  brief: {
-    goal: 'Send people back to where they came from after sign-in.',
-    now: 'Redirect works; remember-me next.',
-  },
-  generatedAt: 2_000,
-  fingerprint: 'new',
-};
 
 const confidence: TaskConfidence = {
   scores: [
@@ -42,9 +32,8 @@ const confidence: TaskConfidence = {
 };
 
 describe('buildReviewSummary', () => {
-  it("collects risks and gaps from the rating, with the brief's goal", () => {
-    const summary = buildReviewSummary({ brief, confidence });
-    expect(summary.goal).toBe(brief.brief.goal);
+  it('collects risks and gaps from the rating', () => {
+    const summary = buildReviewSummary({ confidence });
     expect(summary.risks.map((risk) => risk.text)).toEqual([
       'Not tried against a real OAuth provider.',
       'Remember-me path not handled.',
@@ -56,7 +45,7 @@ describe('buildReviewSummary', () => {
     expect(summary.openRisks).toBe(2);
   });
 
-  it('takes what was asked, the changes and the key line from the reviewer, without a brief', () => {
+  it('takes what was asked, the changes and the key line from the reviewer', () => {
     const reviewed: TaskConfidence = {
       ...confidence,
       asked: 'Keep ?next= through sign-in.',
@@ -69,8 +58,6 @@ describe('buildReviewSummary', () => {
       changes: reviewed.changes,
       keyLine: reviewed.keyLine,
     });
-    // The reviewer read every prompt; a brief's reading of the ask comes second.
-    expect(buildReviewSummary({ brief, confidence: reviewed }).goal).toBe(reviewed.asked);
   });
 
   it('lists a doubt the rater did not confirm as a risk to check, not one to fix', () => {
@@ -92,7 +79,7 @@ describe('buildReviewSummary', () => {
   });
 
   it('takes extras from the rating', () => {
-    const summary = buildReviewSummary({ brief, confidence });
+    const summary = buildReviewSummary({ confidence });
     expect(summary.extras.map((entry) => entry.text)).toEqual([
       'Renamed parseNext to readReturnUrl.',
     ]);
@@ -101,7 +88,6 @@ describe('buildReviewSummary', () => {
   it('marks dismissed risks in place and leaves them out of the count', () => {
     const id = reviewItemId('risk', 'Not tried against a real OAuth provider.');
     const summary = buildReviewSummary({
-      brief,
       confidence,
       dismissed: {
         [id]: { text: 'Not tried against a real OAuth provider.', reason: 'CI does it' },
@@ -112,7 +98,10 @@ describe('buildReviewSummary', () => {
   });
 
   it('leads with the weakest score and judges staleness by the newest code read', () => {
-    const summary = buildReviewSummary({ brief, confidence });
+    const summary = buildReviewSummary({
+      confidence,
+      codeFingerprint: { fingerprint: 'new', at: 2_000 },
+    });
     const scores = summary.scores;
     expect(scores?.all.map((entry) => entry.label)).toEqual(['Correct', 'Complete']);
     expect(scores?.weakest?.label).toBe('Complete');
@@ -125,19 +114,12 @@ describe('buildReviewSummary', () => {
     expect([fine?.weakest?.score, fine?.low]).toEqual([75, false]);
     expect(scores?.stale).toBe(true);
     expect(scores?.source).toBe('sub-agent audit');
-    // A fresh code read that matches the rating wins over an older brief.
     const current = buildReviewSummary({
-      brief,
       confidence,
       codeFingerprint: { fingerprint: 'old', at: 3_000 },
     }).scores;
     expect(current?.stale).toBe(false);
-    const moved = buildReviewSummary({
-      brief: { ...brief, fingerprint: 'old' },
-      confidence,
-      codeFingerprint: { fingerprint: 'newer', at: 3_000 },
-    }).scores;
-    expect(moved?.stale).toBe(true);
+    expect(buildReviewSummary({ confidence }).scores?.stale).toBe(false);
   });
 
   it('gives items that differ only in case or spacing one id', () => {
@@ -159,7 +141,7 @@ describe('buildReviewSummary', () => {
 
 describe('reviewVerdict', () => {
   it('gives the weakest score and the open count', () => {
-    const summary = buildReviewSummary({ brief, confidence });
+    const summary = buildReviewSummary({ confidence });
     expect(reviewVerdict(summary)).toBe('50% · 2 open');
   });
 
@@ -177,15 +159,14 @@ describe('reviewVerdict', () => {
   });
 
   it('does not read as clear before anything rated the task', () => {
-    expect(reviewVerdict(buildReviewSummary({ brief }))).toBe('Not rated yet');
     const unscored = { ...confidence, scores: [] };
-    expect(reviewVerdict(buildReviewSummary({ brief, confidence: unscored }))).toBe('2 open risks');
+    expect(reviewVerdict(buildReviewSummary({ confidence: unscored }))).toBe('2 open risks');
   });
 });
 
 describe('prompts', () => {
   it('builds one rework prompt from the picked items', () => {
-    const summary = buildReviewSummary({ brief, confidence });
+    const summary = buildReviewSummary({ confidence });
     const prompt = buildReworkPrompt([summary.risks[1], summary.extras[0]]);
     expect(prompt).toMatch(
       /^Please rework this task based on my review:\n\n- Fill this gap: Remember-me path not handled\. \(src\/auth\/remember\.ts\)\n- Revert this, I didn’t ask for it: Renamed parseNext to readReturnUrl\.\n\n/,
@@ -193,7 +174,7 @@ describe('prompts', () => {
   });
 
   it('asks the agent to check each item before changing code for it', () => {
-    const prompt = buildReworkPrompt([buildReviewSummary({ brief, confidence }).risks[1]]);
+    const prompt = buildReworkPrompt([buildReviewSummary({ confidence }).risks[1]]);
     expect(prompt).toContain('check it first');
     expect(prompt).toContain('failing test first');
     expect(prompt).toContain('break the code, watch the test fail, then restore it');

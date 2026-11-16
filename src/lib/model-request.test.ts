@@ -29,7 +29,7 @@ function start() {
     settings: { provider: 'claude', model: 'haiku' },
     agentEnvFiles: {},
     projectId: 'project-1',
-    purpose: 'brief',
+    purpose: 'review',
   });
   const channel = channels.at(-1);
   if (!channel) throw new Error('no channel');

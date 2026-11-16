@@ -1,6 +1,5 @@
 import type { SuiteCheckRun } from '../../electron/shared/checks';
 import type { VerificationRun } from '../ipc/types';
-import type { TaskBriefRecord } from './task-brief';
 import { isConfidenceOutdated, type TaskConfidence } from './task-confidence';
 
 /** When the user last had a task open, and the code it was on then. */
@@ -30,7 +29,6 @@ export interface VisitChangesInput {
   headSha: string | null | undefined;
   confidence?: Pick<TaskConfidence, 'publishedAt' | 'fingerprint'>;
   codeFingerprint?: { fingerprint: string; at: number };
-  brief?: Pick<TaskBriefRecord, 'generatedAt' | 'fingerprint'>;
   verificationRun?: RunResult;
   checks?: readonly (RunResult & Pick<Partial<SuiteCheckRun>, 'reused'>)[];
 }
@@ -43,15 +41,13 @@ function failedSince(runs: readonly RunResult[], at: number): boolean {
 }
 
 function ratingOutdatedSince(input: VisitChangesInput, visit: TaskVisit): boolean {
-  const latest = input.codeFingerprint
-    ? { at: input.codeFingerprint.at, fingerprint: input.codeFingerprint.fingerprint }
-    : input.brief && { at: input.brief.generatedAt, fingerprint: input.brief.fingerprint };
+  const latest = input.codeFingerprint;
   return Boolean(
     input.confidence &&
     latest &&
     latest.at > visit.at &&
     latest.fingerprint !== visit.codeFingerprint &&
-    isConfidenceOutdated(input.confidence, input.codeFingerprint, input.brief),
+    isConfidenceOutdated(input.confidence, input.codeFingerprint),
   );
 }
 

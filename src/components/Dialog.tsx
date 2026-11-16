@@ -19,6 +19,8 @@ interface DialogProps {
   ariaLabel?: string;
   /** Element id (or space-separated list) describing this dialog (aria-describedby). */
   describedBy?: string;
+  /** False for dialogs holding work a stray click must not throw away; Escape and Cancel still close. */
+  closeOnBackdrop?: boolean;
   children: JSX.Element;
 }
 
@@ -129,7 +131,8 @@ export function Dialog(props: DialogProps) {
             if (e.target !== e.currentTarget) pressedBackdrop = false;
           }}
           onClick={(e) => {
-            const closes = e.target === e.currentTarget && pressedBackdrop;
+            const closes =
+              e.target === e.currentTarget && pressedBackdrop && props.closeOnBackdrop !== false;
             pressedBackdrop = false;
             if (closes) props.onClose();
           }}

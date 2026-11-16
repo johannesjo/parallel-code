@@ -1,6 +1,6 @@
 /**
  * Create PR in one click: push, draft the title and description with the
- * brief model, and open a draft PR, with no dialog. The Create pull request
+ * default AI model, and open a draft PR, with no dialog. The Create pull request
  * form in Finish remains for writing the description first.
  */
 import { createSignal } from 'solid-js';
@@ -128,7 +128,7 @@ interface Drafting {
 }
 
 /**
- * A draft the task's agent already published, else the brief model's; when
+ * A draft the task's agent already published, else the default AI model's; when
  * drafting fails, the commits' squash message, so the click still opens a PR.
  */
 async function startDraft(task: Task, commits: CommitInfo[]): Promise<Drafting> {

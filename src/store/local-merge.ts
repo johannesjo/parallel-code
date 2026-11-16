@@ -27,8 +27,7 @@ export function isTaskReadyToMergeLocally(task: Task): boolean {
   return isReadyToMergeLocally({
     git: store.taskGitStatus[task.id],
     confidence,
-    reviewOutdated:
-      !!confidence && isConfidenceOutdated(confidence, task.codeFingerprint, task.brief),
+    reviewOutdated: !!confidence && isConfidenceOutdated(confidence, task.codeFingerprint),
     dismissed: task.reviewDismissed,
     verifyCommandConfigured: hasVerifyCommand(task.id),
     verificationRun: task.verificationRun,

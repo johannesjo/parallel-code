@@ -52,15 +52,14 @@ describe('changesSinceVisit', () => {
     ).toEqual([]);
   });
 
-  it('falls back to the brief fingerprint when no diff fingerprint was read', () => {
+  it('does not call a rating outdated before any diff fingerprint was read', () => {
     expect(
       changesSinceVisit({
         visit,
         headSha: 'aaa',
         confidence: { publishedAt: 500, fingerprint: 'rated' },
-        brief: { generatedAt: 3_000, fingerprint: 'newer' },
       }),
-    ).toEqual(['rating outdated']);
+    ).toEqual([]);
   });
 
   it('reports an app-run verify that failed after the visit; a pass asks nothing', () => {

@@ -7,7 +7,7 @@ import { parseUnifiedDiff } from '../lib/unified-diff-parser';
 import { ChangeTour } from './ChangeTour';
 import { ChangeTourButton } from './ChangeTourButton';
 import { createChangeTour } from '../lib/create-change-tour';
-import { diffFingerprint } from '../lib/task-brief';
+import { diffFingerprint } from '../lib/diff-excerpt';
 import { info as logInfo } from '../lib/log';
 import { setAskCodeModel, setAskCodeProvider, store } from '../store/store';
 import {

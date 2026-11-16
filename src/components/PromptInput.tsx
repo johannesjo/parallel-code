@@ -83,8 +83,6 @@ interface PromptInputProps {
   autoSendChildUpdates?: boolean;
   controlledBy?: 'human' | 'coordinator';
   stagedNotification?: StagedNotification;
-  /** The task brief's question for the user, shown where the answer is typed. */
-  needsYou?: string;
   nowMs?: () => number;
   initialPrompt?: string;
   prefillPrompt?: string;
@@ -960,8 +958,6 @@ export function PromptInput(props: PromptInputProps) {
     !!props.autoSendChildUpdates &&
     !!props.stagedNotification &&
     !props.stagedNotification.userEdited;
-  // A question waiting in the terminal is answered there, and the staged label owns the same spot.
-  const question = () => (questionActive() || staged() ? '' : (props.needsYou ?? ''));
 
   return (
     <div
@@ -993,52 +989,9 @@ export function PromptInput(props: PromptInputProps) {
             {store.mcpOrchestrationEnabled ? 'Staged for auto-send' : 'Ready for review'}
           </div>
         </Show>
-        <Show when={question()}>
-          <div
-            class="prompt-needs-you"
-            style={{
-              position: 'absolute',
-              top: '4px',
-              right: '36px',
-              display: 'flex',
-              gap: '6px',
-              'align-items': 'baseline',
-              'font-size': sf(14),
-              color: theme.fg,
-              overflow: 'hidden',
-              'white-space': 'nowrap',
-              'pointer-events': 'none',
-              'z-index': '1',
-              'padding-bottom': '3px',
-              'border-bottom': `1px solid color-mix(in srgb, ${theme.warning} 55%, transparent)`,
-            }}
-          >
-            <span
-              style={{
-                color: theme.warning,
-                'font-weight': '700',
-                'letter-spacing': '0.06em',
-                'text-transform': 'uppercase',
-                'flex-shrink': '0',
-              }}
-            >
-              Needs you
-            </span>
-            <span
-              style={{
-                overflow: 'hidden',
-                'text-overflow': 'ellipsis',
-                'min-width': '0',
-                'font-weight': '600',
-              }}
-            >
-              {question()}
-            </span>
-          </div>
-        </Show>
         <textarea
           class="prompt-textarea"
-          classList={{ 'prompt-textarea--labelled': !!staged() || !!question() }}
+          classList={{ 'prompt-textarea--labelled': !!staged() }}
           ref={(el) => {
             textareaRef = el;
             props.ref?.(el);

@@ -12,6 +12,7 @@ import {
   getTaskChecks,
   mergeTask,
   pushTask,
+  refreshBranchFacts,
   sendPrompt,
   store,
 } from '../store/store';
@@ -30,6 +31,8 @@ import type { Task } from '../store/types';
 vi.mock('../store/store', () => ({
   store: { agents: {}, tasks: {} },
   backgroundVerifyEnabled: () => false,
+  enabledCards: () => [],
+  runFinishCards: vi.fn(),
   cancelTaskVerification: vi.fn(async () => true),
   getBackgroundVerifyHold: () => undefined,
   runBackgroundVerify: vi.fn(async () => undefined),
@@ -44,6 +47,7 @@ vi.mock('../store/store', () => ({
   getCheckSuiteUiState: () => ({}),
   isCheckSuiteBusy: () => false,
   mergeTask: vi.fn(async () => {}),
+  refreshBranchFacts: vi.fn(async () => undefined),
   pushTask: vi.fn(async () => {}),
   sendPrompt: vi.fn(),
   updateTaskBranch: vi.fn(),
@@ -99,8 +103,8 @@ vi.mock('./ChangeTourButton', () => ({
   ),
 }));
 const refreshCodeFingerprint = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-vi.mock('../store/task-brief', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../store/task-brief')>()),
+vi.mock('../store/task-diff', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../store/task-diff')>()),
   refreshCodeFingerprint,
 }));
 // Covered by its own tests; here only whether it shows and how it hands back.
@@ -899,6 +903,21 @@ describe('FinishDialog base sync', () => {
     expect(invoke).not.toHaveBeenCalledWith(IPC.RebaseTask, expect.anything());
   });
 
+  it('rereads the branch facts after an update, which moves the branch off what origin has', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 1 };
+      if (channel === IPC.RebaseTask) return undefined;
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    mount({ task: task({ baseBranch: 'main' }) });
+    await flush();
+    vi.mocked(refreshBranchFacts).mockClear();
+    button('Update branch')?.click();
+    await flush();
+    expect(refreshBranchFacts).toHaveBeenCalledWith('parent');
+  });
+
   it('offers a way out when a rebase stops on conflicts the merge check did not predict', async () => {
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';
@@ -916,8 +935,10 @@ describe('FinishDialog base sync', () => {
     });
     mount({ task: task({ baseBranch: 'main', agentIds: ['agent'] }) });
     await flush();
+    vi.mocked(refreshBranchFacts).mockClear();
     button('Update branch')?.click();
     await flush();
+    expect(refreshBranchFacts).not.toHaveBeenCalled();
     const text = document.body.textContent ?? '';
     expect(text).toContain(
       'Rebase stopped on conflicts in src/a.ts and was undone; the branch is unchanged.',
@@ -1131,65 +1152,6 @@ describe('FinishDialog readiness tip', () => {
     expect(note?.textContent).toContain('Check what backs this change');
     expect(note?.textContent).not.toContain('Add a verify command');
     expect(tipButton(note, 'Configure checks')).toBeUndefined();
-  });
-});
-
-describe('FinishDialog changes summary', () => {
-  const brief = (changes?: string) => ({
-    brief: { goal: 'g', now: 'n', ...(changes && { changes }) },
-    generatedAt: 100,
-    fingerprint: 'a',
-  });
-  const summary = () => document.querySelector('[data-testid="changes-summary"]');
-
-  it("says in a sentence what the branch changes, from the task's brief", async () => {
-    mount({ task: task({ brief: brief('Adds retry backoff to the webhook queue.') }) });
-    await flush();
-    expect(summary()?.textContent).toBe('Adds retry backoff to the webhook queue.');
-    // The code may have moved on since the brief; reading it tells.
-    expect(refreshCodeFingerprint).toHaveBeenCalledWith('parent');
-  });
-
-  it('marks a summary of code that changed since', async () => {
-    mount({
-      task: task({
-        brief: brief('Adds retry backoff.'),
-        codeFingerprint: { fingerprint: 'b', at: 200 },
-      }),
-    });
-    await flush();
-    expect(summary()?.textContent).toBe('Adds retry backoff. (written before the latest changes)');
-  });
-
-  it('notes that the summary may cover uncommitted changes the merge leaves out', async () => {
-    mockInvoke((channel) => {
-      if (channel === IPC.GetBranchLog) return '';
-      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 0 };
-      return {
-        current_branch: 'task/parent',
-        has_committed_changes: true,
-        has_uncommitted_changes: true,
-      };
-    });
-    mount({ task: task({ brief: brief('Adds retry backoff.') }) });
-    await flush();
-    expect(summary()?.textContent).toBe('Adds retry backoff. (may include uncommitted changes)');
-  });
-
-  it('shows nothing without a summary or anything to merge', async () => {
-    mount({ task: task({ brief: brief() }) });
-    await flush();
-    expect(summary()).toBeNull();
-    dispose?.();
-    document.body.replaceChildren();
-    mockInvoke((channel) => {
-      if (channel === IPC.GetBranchLog) return '';
-      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 0 };
-      return { current_branch: 'task/parent', has_committed_changes: false };
-    });
-    mount({ task: task({ brief: brief('Adds retry backoff.') }) });
-    await flush();
-    expect(summary()).toBeNull();
   });
 });
 

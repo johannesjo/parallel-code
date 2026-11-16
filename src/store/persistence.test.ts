@@ -1982,41 +1982,22 @@ describe('new task defaults persistence', () => {
   });
 });
 
-describe('task brief settings', () => {
+describe('task context, removed', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('keeps task briefs off unless they were turned on', async () => {
-    mockInvoke.mockResolvedValueOnce(basePayload());
-    await loadState();
-    expect(store.taskBriefs).toBe(false);
-    mockInvoke.mockResolvedValueOnce(basePayload({ taskBriefs: true }));
-    await loadState();
-    expect(store.taskBriefs).toBe(true);
-    mockInvoke.mockResolvedValueOnce(basePayload({ taskBriefs: 'yes' }));
-    await loadState();
-    expect(store.taskBriefs).toBe(false);
-  });
-
-  it('restores the header fields, keeping the default for any missing or malformed one', async () => {
-    mockInvoke.mockResolvedValueOnce(basePayload());
-    await loadState();
-    expect(store.briefBarFields).toEqual({ goal: true, now: false, needsYou: true });
-    mockInvoke.mockResolvedValueOnce(
-      basePayload({ briefBarFields: { goal: false, now: true, needsYou: 'no' } }),
-    );
-    await loadState();
-    expect(store.briefBarFields).toEqual({ goal: false, now: true, needsYou: true });
-  });
-  it('keeps task context off unless it was turned on', async () => {
-    mockInvoke.mockResolvedValueOnce(basePayload());
-    await loadState();
-    expect(store.taskContext).toBe(false);
-    mockInvoke.mockResolvedValueOnce(basePayload({ taskContext: true }));
-    await loadState();
-    expect(store.taskContext).toBe(true);
+  it('gives whoever had task context on the Plan card that replaced it, once', async () => {
+    const planCards = () => store.cardDefinitions.filter((card) => card.id === 'plan');
     mockInvoke.mockResolvedValueOnce(basePayload({ taskContext: 'yes' }));
     await loadState();
-    expect(store.taskContext).toBe(false);
+    expect(planCards()).toEqual([]);
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskContext: true }));
+    await loadState();
+    expect(planCards()).toMatchObject([{ enabled: true, source: { kind: 'app', fact: 'plan' } }]);
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({ taskContext: true, cards: [{ ...planCards()[0], enabled: false }] }),
+    );
+    await loadState();
+    expect(planCards()).toMatchObject([{ enabled: false }]);
   });
 });
 
@@ -2306,7 +2287,7 @@ describe('code Q&A model persistence', () => {
     expect(store.taskNameModel).toBe('haiku');
   });
 
-  it('keeps a chosen brief model and otherwise follows what briefs used before', async () => {
+  it('keeps a chosen default AI model and otherwise follows what briefs used before', async () => {
     mockInvoke.mockResolvedValueOnce(stateJson({ briefModel: 'terra', taskNameModel: 'luna' }));
     await loadState();
     expect(store.briefModel).toBe('terra');
@@ -3132,5 +3113,90 @@ describe('project agent env persistence', () => {
       teardownScript: 'docker compose down',
       includes: [{ name: 'node_modules', mode: 'copy' }],
     });
+  });
+});
+
+describe('card persistence', () => {
+  it('round-trips card settings and task card values through load and save', async () => {
+    const def = agentDef();
+    const cards = {
+      notes: { at: 5, fingerprint: 'fp1', values: { note: { type: 'line', text: 'Ship' } } },
+    };
+    const notes = {
+      id: 'notes',
+      name: 'Notes',
+      description: '',
+      source: { kind: 'agent' },
+      slots: [{ id: 'note', type: 'line', label: 'Note' }],
+      enabled: true,
+    };
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: ['task-2'],
+        tasks: {
+          'task-1': { ...persistedTask(def), cards },
+          'task-2': { ...persistedTask(def), id: 'task-2', collapsed: true, cards },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+        showCards: false,
+        // A Brief entry saved before briefs were removed is dropped.
+        cards: [notes, { id: 'brief', builtIn: 'brief', projects: { 'project-1': true } }],
+      }),
+    );
+    await loadState();
+    expect(store.showCards).toBe(false);
+    // Confidence is added, switched off, for a save from before it existed.
+    expect(store.cardDefinitions.map((card) => [card.id, card.enabled])).toEqual([
+      ['confidence', false],
+      ['notes', true],
+    ]);
+    expect(store.tasks['task-1'].cards).toEqual(cards);
+    expect(store.tasks['task-2'].collapsed).toBe(true);
+    expect(store.tasks['task-2'].cards).toEqual(cards);
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const saved = JSON.parse(mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1][1].json);
+    expect(saved.showCards).toBe(false);
+    expect(saved.cards.map((card: { id: string }) => card.id)).toEqual(['confidence', 'notes']);
+    expect(saved.cards[1]).toEqual(notes);
+    expect(saved.tasks['task-1'].cards).toEqual(cards);
+    expect(saved.tasks['task-2'].cards).toEqual(cards);
+    expect(store.cardsOfferPending).toBe(false);
+    expect(saved.cardsOfferPending).toBeUndefined();
+  });
+
+  it('offers the free cards once to a save from before cards, until answered', async () => {
+    const before = {
+      projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: [],
+      tasks: {},
+      activeTaskId: null,
+      sidebarVisible: true,
+    };
+    mockInvoke.mockResolvedValueOnce(JSON.stringify(before));
+    await loadState();
+    expect(store.cardsOfferPending).toBe(true);
+    expect(store.cardDefinitions.map((card) => [card.id, card.enabled])).toEqual([
+      ['confidence', false],
+      ['branch-health', false],
+      ['diff-size', false],
+    ]);
+
+    // Unanswered, it survives a save, though the save now has cards.
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const saved = JSON.parse(mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1][1].json);
+    expect(saved.cardsOfferPending).toBe(true);
+    mockInvoke.mockResolvedValueOnce(JSON.stringify(saved));
+    await loadState();
+    expect(store.cardsOfferPending).toBe(true);
   });
 });

@@ -163,7 +163,11 @@ describe('Claude code Q&A deadlines', () => {
 });
 
 describe('Claude code Q&A model', () => {
-  function spawnArgs(model?: string, effort?: string, purpose?: 'review' | 'task-name'): string[] {
+  function spawnArgs(
+    model?: string,
+    effort?: string,
+    purpose?: 'review' | 'task-name' | 'card-layout',
+  ): string[] {
     mockProc();
     const win = {
       isDestroyed: () => false,
@@ -199,6 +203,11 @@ describe('Claude code Q&A model', () => {
     const naming = spawnArgs('haiku', undefined, 'task-name');
     expect(naming).toContain('--system-prompt');
     expect(naming).not.toContain('--append-system-prompt');
+    vi.mocked(spawn).mockClear();
+    // Drafting a card sends the user's description only, not the first project's git status.
+    const layout = spawnArgs('haiku', undefined, 'card-layout');
+    expect(layout).toContain('--system-prompt');
+    expect(layout).not.toContain('--append-system-prompt');
     vi.mocked(spawn).mockClear();
     const answer = spawnArgs('opus');
     expect(answer).toContain('--append-system-prompt');
@@ -434,8 +443,10 @@ describe('isStructuredPurpose', () => {
     expect(isStructuredPurpose('understand')).toBe(true);
     expect(isStructuredPurpose('evidence')).toBe(false);
     expect(isStructuredPurpose('task-name')).toBe(true);
-    expect(isStructuredPurpose('brief')).toBe(true);
+    expect(isStructuredPurpose('brief')).toBe(false);
     expect(isStructuredPurpose('review')).toBe(true);
+    expect(isStructuredPurpose('card')).toBe(true);
+    expect(isStructuredPurpose('card-layout')).toBe(true);
     expect(isStructuredPurpose('plan')).toBe(false);
     expect(isStructuredPurpose(undefined)).toBe(false);
   });

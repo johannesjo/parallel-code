@@ -5,11 +5,13 @@ import { expectDefined, type MockStoreHarness } from './test-helpers';
 import { showNotification } from './notification';
 
 // Hoisted so these refs are available both in vi.mock() factories and in test bodies.
-const { mockInvoke, mockIsAgentBracketedPasteEnabled, mockSaveState } = vi.hoisted(() => ({
-  mockInvoke: vi.fn(),
-  mockIsAgentBracketedPasteEnabled: vi.fn(),
-  mockSaveState: vi.fn(),
-}));
+const { mockInvoke, mockIsAgentBracketedPasteEnabled, mockRefreshBranchFacts, mockSaveState } =
+  vi.hoisted(() => ({
+    mockInvoke: vi.fn(),
+    mockRefreshBranchFacts: vi.fn(),
+    mockIsAgentBracketedPasteEnabled: vi.fn(),
+    mockSaveState: vi.fn(),
+  }));
 const core = vi.hoisted(() => ({
   harness: undefined as
     | MockStoreHarness<{
@@ -96,6 +98,7 @@ vi.mock('./core', async () => {
 });
 
 vi.mock('./persistence', () => ({ saveState: mockSaveState }));
+vi.mock('./app-facts', () => ({ refreshBranchFacts: mockRefreshBranchFacts }));
 vi.mock('./focus', () => ({ setTaskFocusedPanel: vi.fn() }));
 vi.mock('./projects', () => ({
   getProject: vi.fn(),
@@ -2945,6 +2948,27 @@ describe('mergeTask / pushTask preconditions', () => {
     vi.mocked(getProjectPath).mockReturnValue(undefined);
     await expect(pushTask('task-2', channel)).rejects.toThrow('Project folder not found');
     expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('pushTask rereads the branch facts, so a card about origin is right at once', async () => {
+    const channel = { onmessage: undefined } as unknown as Parameters<typeof pushTask>[1];
+    mockTasks['task-1'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'worktree',
+      projectId: 'p',
+      branchName: 'task/one',
+    };
+    vi.mocked(getProjectPath).mockReturnValue('/repo');
+    mockInvoke.mockResolvedValue(undefined);
+    mockRefreshBranchFacts.mockClear();
+    await pushTask('task-1', channel);
+    expect(mockRefreshBranchFacts).toHaveBeenCalledWith('task-1');
+
+    mockRefreshBranchFacts.mockClear();
+    mockInvoke.mockRejectedValueOnce(new Error('rejected'));
+    await expect(pushTask('task-1', channel)).rejects.toThrow('rejected');
+    expect(mockRefreshBranchFacts).not.toHaveBeenCalled();
   });
 });
 

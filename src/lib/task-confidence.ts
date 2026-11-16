@@ -2,7 +2,6 @@ import {
   parseConfidencePayload,
   type ConfidencePayload,
 } from '../../electron/shared/task-confidence';
-import type { TaskBriefRecord } from './task-brief';
 
 /** A published rating plus when it arrived and which code it rated. */
 export interface TaskConfidence extends ConfidencePayload {
@@ -37,32 +36,21 @@ export function restoreTaskConfidence(value: unknown): TaskConfidence | undefine
   }
 }
 
-/**
- * A rating is out of date once a brief written after it saw different code.
- * Without both fingerprints there is nothing to compare, so it counts as current.
- */
-export function isConfidenceStale(
-  confidence: Pick<TaskConfidence, 'publishedAt' | 'fingerprint'>,
-  brief: Pick<TaskBriefRecord, 'generatedAt' | 'fingerprint'> | undefined,
-): boolean {
-  if (!brief?.fingerprint || !confidence.fingerprint) return false;
-  return brief.generatedAt > confidence.publishedAt && brief.fingerprint !== confidence.fingerprint;
-}
-
 /** Scores below this are the ones worth reading; the rest need no attention. */
 export const LOW_CONFIDENCE_SCORE = 60;
 
 /**
- * Whether the code moved on since the rating, judged by the newest code read:
- * the task's latest diff fingerprint when one was taken, otherwise its brief.
+ * Whether the code moved on since the rating: the newest diff fingerprint was
+ * read after it and differs. Without both fingerprints there is nothing to
+ * compare, so it counts as current.
  */
 export function isConfidenceOutdated(
   confidence: Pick<TaskConfidence, 'publishedAt' | 'fingerprint'>,
   codeFingerprint: { fingerprint: string; at: number } | undefined,
-  brief: Pick<TaskBriefRecord, 'generatedAt' | 'fingerprint'> | undefined,
 ): boolean {
-  const latest = codeFingerprint
-    ? { generatedAt: codeFingerprint.at, fingerprint: codeFingerprint.fingerprint }
-    : brief;
-  return isConfidenceStale(confidence, latest);
+  if (!codeFingerprint || !confidence.fingerprint) return false;
+  return (
+    codeFingerprint.at > confidence.publishedAt &&
+    codeFingerprint.fingerprint !== confidence.fingerprint
+  );
 }

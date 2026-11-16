@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfidencePayload } from '../../electron/shared/task-confidence';
-import { isConfidenceStale, restoreTaskConfidence } from './task-confidence';
+import { isConfidenceOutdated, restoreTaskConfidence } from './task-confidence';
 
 describe('parseConfidencePayload', () => {
   it('accepts named scores, findings and a source', () => {
@@ -105,19 +105,17 @@ describe('restoreTaskConfidence', () => {
   });
 });
 
-describe('isConfidenceStale', () => {
+describe('isConfidenceOutdated', () => {
   const rating = { publishedAt: 100, fingerprint: 'a' };
 
-  it('is stale only when a later brief saw different code', () => {
-    expect(isConfidenceStale(rating, { generatedAt: 200, fingerprint: 'b' })).toBe(true);
-    expect(isConfidenceStale(rating, { generatedAt: 200, fingerprint: 'a' })).toBe(false);
-    expect(isConfidenceStale(rating, { generatedAt: 50, fingerprint: 'b' })).toBe(false);
+  it('is outdated only when the code read after the rating differs', () => {
+    expect(isConfidenceOutdated(rating, { at: 200, fingerprint: 'b' })).toBe(true);
+    expect(isConfidenceOutdated(rating, { at: 200, fingerprint: 'a' })).toBe(false);
+    expect(isConfidenceOutdated(rating, { at: 50, fingerprint: 'b' })).toBe(false);
   });
 
   it('counts as current when there is nothing to compare', () => {
-    expect(isConfidenceStale(rating, undefined)).toBe(false);
-    expect(isConfidenceStale({ publishedAt: 100 }, { generatedAt: 200, fingerprint: 'b' })).toBe(
-      false,
-    );
+    expect(isConfidenceOutdated(rating, undefined)).toBe(false);
+    expect(isConfidenceOutdated({ publishedAt: 100 }, { at: 200, fingerprint: 'b' })).toBe(false);
   });
 });

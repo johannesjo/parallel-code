@@ -1,7 +1,7 @@
 import { createStore } from 'solid-js/store';
 import { DEFAULT_TERMINAL_FONT } from '../lib/fonts';
+import { defaultCards } from '../lib/app-facts';
 import { getLocalDateKey } from '../lib/date';
-import { DEFAULT_BRIEF_BAR_FIELDS } from '../lib/task-brief';
 import { defaultPresetForTone } from '../lib/look';
 import {
   DEFAULT_BRIEF_MODEL,
@@ -51,6 +51,7 @@ export const [store, setStore] = createStore<AppStore>({
   placeholderFocusedButton: 'add-task',
   showHelpDialog: false,
   showSettingsDialog: false,
+  settingsTabRequest: null,
   pendingAction: null,
   notification: null,
   notificationBusy: false,
@@ -77,9 +78,11 @@ export const [store, setStore] = createStore<AppStore>({
   kanbanHideDetails: false,
   modelTaskNames: false,
   taskNameModel: DEFAULT_TASK_NAME_MODEL,
-  taskBriefs: false,
-  briefBarFields: { ...DEFAULT_BRIEF_BAR_FIELDS },
   briefModel: DEFAULT_BRIEF_MODEL,
+  showCards: true,
+  // A new install starts with the free cards on; restore adds them switched off for existing ones.
+  cardDefinitions: defaultCards(true),
+  cardsOfferPending: false,
   reviewGuidance: '',
   showSidebarTips: true,
   showSidebarProgress: true,
@@ -131,7 +134,6 @@ export const [store, setStore] = createStore<AppStore>({
   mcpOrchestrationEnabled: true,
   allowCrossProjectReads: false,
   documentWorkspacesEnabled: false,
-  taskContext: false,
   documentFullWidth: false,
   activeDocumentProjectId: null,
   coordinatorNotificationDelayMs: 60_000,

@@ -7,7 +7,7 @@
 import type { CommitInfo } from '../../electron/ipc/shared-types';
 import { parsePrDraft, type PrDraft } from '../../electron/shared/pr-draft';
 import { repoContent } from './repo-content';
-import { fencePrompts, prepareDiffForBrief } from './task-brief';
+import { fencePrompts, prepareDiffExcerpt } from './diff-excerpt';
 import { readSingleJsonObject } from './tour-json';
 
 /** Where GitHub looks for a PR template, in the order it prefers them. */
@@ -20,7 +20,7 @@ export const PR_TEMPLATE_PATHS = [
   'docs/PULL_REQUEST_TEMPLATE.md',
 ] as const;
 
-// Together well under the purpose's prompt budget (TASK_BRIEF_PROMPT_LIMIT).
+// Together well under the purpose's prompt budget (PR_DESCRIPTION_PROMPT_LIMIT).
 export const PR_DESCRIPTION_LIMITS = {
   diffChars: 40_000,
   commitsChars: 8_000,
@@ -59,7 +59,7 @@ function formatCommits(commits: readonly CommitInfo[]): string {
 function formatDiff(rawDiff: string | undefined): string {
   if (rawDiff === undefined) return '(the diff could not be read; do not assume nothing changed)';
   if (!rawDiff.trim()) return repoContent('(no changes)');
-  return repoContent(prepareDiffForBrief(rawDiff, PR_DESCRIPTION_LIMITS.diffChars));
+  return repoContent(prepareDiffExcerpt(rawDiff, PR_DESCRIPTION_LIMITS.diffChars));
 }
 
 export function buildPrDescriptionPrompt(input: PrDescriptionPromptInput): string {

@@ -8,7 +8,7 @@ import { isTaskBackgrounded } from './background-tasks';
 import { uncollapseTask } from './tasks';
 import { isTaskCanvasVisible } from '../lib/canvas-tabs';
 import { boardShown, boardSidePanelOpen, towardBoard } from './project-pages';
-import type { PendingAction } from './types';
+import type { PendingAction, SettingsTab } from './types';
 import { getTaskShellLayout } from './shell-layout';
 import { shellColumns } from '../lib/shellLayout';
 import {
@@ -657,6 +657,15 @@ export function toggleHelpDialog(show?: boolean): void {
 
 export function toggleSettingsDialog(show?: boolean): void {
   setStore('showSettingsDialog', show ?? !store.showSettingsDialog);
+}
+
+/** Opens Settings on one tab, such as Cards from a task's cards popover. */
+export function openSettingsTab(tab: SettingsTab): void {
+  setStore({ showSettingsDialog: true, settingsTabRequest: tab });
+}
+
+export function clearSettingsTabRequest(): void {
+  setStore('settingsTabRequest', null);
 }
 
 export function sendActivePrompt(): void {

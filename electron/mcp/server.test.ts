@@ -713,6 +713,76 @@ describe('mind map tools', () => {
     expect(client.publishConfidence).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes a card for the session task, routing Confidence to its own storage', async () => {
+    const client = {
+      publishCard: vi.fn().mockResolvedValue({ ok: true, card: 'notes' }),
+      publishConfidence: vi.fn().mockResolvedValue({ ok: true, scores: 1 }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    const notes = { card: 'notes', values: { note: 'Ready' } };
+    expect(
+      await handleMCPToolCall(context, 'card_publish', { ...notes, taskId: 'other' }),
+    ).not.toHaveProperty('isError');
+    expect(client.publishCard).toHaveBeenCalledWith('own-task', notes);
+
+    const scores = [{ label: 'Correct', score: 90, why: 'Tested.' }];
+    await handleMCPToolCall(context, 'card_publish', { card: 'confidence', values: { scores } });
+    expect(client.publishConfidence).toHaveBeenCalledWith('own-task', { scores, findings: [] });
+    expect(
+      await handleMCPToolCall(context, 'card_publish', { card: 'confidence', values: {} }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('scores') }] });
+    expect(
+      await handleMCPToolCall(context, 'card_publish', { card: 'Notes!', values: {} }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('card id') }] });
+    expect(client.publishCard).toHaveBeenCalledTimes(1);
+    expect(client.publishConfidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a coordinator session list and publish cards for itself', async () => {
+    const client = {
+      listCards: vi.fn().mockResolvedValue({ cards: [] }),
+      publishCard: vi.fn().mockResolvedValue({ ok: true, card: 'notes' }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: '', coordinatorId: 'coord-1', canvasOnly: false };
+    expect(await handleMCPToolCall(context, 'card_list', {})).not.toHaveProperty('isError');
+    expect(client.listCards).toHaveBeenCalledWith('coord-1');
+    const notes = { card: 'notes', values: { note: 'Ready' } };
+    expect(await handleMCPToolCall(context, 'card_publish', notes)).not.toHaveProperty('isError');
+    expect(client.publishCard).toHaveBeenCalledWith('coord-1', notes);
+  });
+
+  it('reads and changes card definitions for the session task', async () => {
+    const client = {
+      readCardConfig: vi.fn().mockResolvedValue({ cards: [] }),
+      changeCardConfig: vi.fn().mockResolvedValue({ status: 'saved' }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    expect(await handleMCPToolCall(context, 'card_config_read', {})).not.toHaveProperty('isError');
+    expect(client.readCardConfig).toHaveBeenCalledWith('own-task');
+
+    const card = { id: 'risks', name: 'Risks' };
+    expect(
+      await handleMCPToolCall(context, 'card_config_save', { card, position: 0, taskId: 'other' }),
+    ).toMatchObject({ content: [{ text: expect.stringContaining('saved') }] });
+    expect(client.changeCardConfig).toHaveBeenCalledWith('own-task', {
+      action: 'save',
+      card,
+      position: 0,
+    });
+    await handleMCPToolCall(context, 'card_config_remove', { card: 'risks' });
+    expect(client.changeCardConfig).toHaveBeenLastCalledWith('own-task', {
+      action: 'remove',
+      card: 'risks',
+    });
+    expect(
+      await handleMCPToolCall(context, 'card_config_remove', { card: 'My Risks' }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('card id') }] });
+    expect(
+      await handleMCPToolCall({ ...context, taskId: '' }, 'card_config_read', {}),
+    ).toMatchObject({ isError: true });
+    expect(client.changeCardConfig).toHaveBeenCalledTimes(2);
+  });
+
   it('publishes a pull request draft only for a task session and rejects one without a title', async () => {
     const client = {
       publishPrDraft: vi.fn().mockResolvedValue({ ok: true, title: 'Fix' }),

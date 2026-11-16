@@ -1,5 +1,4 @@
 import { isConfidenceOutdated, type TaskConfidence } from './task-confidence';
-import type { TaskBriefRecord } from './task-brief';
 
 export type FinishReportKind = 'review' | 'tour' | 'screens';
 
@@ -19,7 +18,6 @@ export interface TourBasis {
 export interface FinishReportsInput {
   confidence?: TaskConfidence;
   codeFingerprint?: { fingerprint: string; at: number };
-  brief?: TaskBriefRecord;
   /** The latest finished capture, and how many screens it took. */
   screens?: CapturedScreens & { count: number };
   /** The ready change tour of the whole task, and how many stops it has. */
@@ -41,11 +39,11 @@ export interface CapturedScreens {
  */
 export function areScreensOutdated(
   screens: CapturedScreens,
-  code: Pick<FinishReportsInput, 'codeFingerprint' | 'brief' | 'headSha'>,
+  code: Pick<FinishReportsInput, 'codeFingerprint' | 'headSha'>,
 ): boolean {
   if (code.headSha && screens.headSha !== code.headSha) return true;
   const capture = { publishedAt: screens.capturedAt, fingerprint: screens.fingerprint };
-  return isConfidenceOutdated(capture, code.codeFingerprint, code.brief);
+  return isConfidenceOutdated(capture, code.codeFingerprint);
 }
 
 function reviewLabel(confidence: TaskConfidence): string {
@@ -56,10 +54,10 @@ function reviewLabel(confidence: TaskConfidence): string {
 /** Whether the task's diff changed since the tour was generated. Unknown counts as unchanged. */
 export function isTourOutdated(
   tour: TourBasis,
-  code: Pick<FinishReportsInput, 'codeFingerprint' | 'brief'>,
+  code: Pick<FinishReportsInput, 'codeFingerprint'>,
 ): boolean {
   const generated = { publishedAt: tour.generatedAt, fingerprint: tour.fingerprint };
-  return isConfidenceOutdated(generated, code.codeFingerprint, code.brief);
+  return isConfidenceOutdated(generated, code.codeFingerprint);
 }
 
 /** The reports Finish can show for the task, in Finish's order. */
@@ -70,7 +68,7 @@ export function finishReports(input: FinishReportsInput): FinishReport[] {
     reports.push({
       kind: 'review',
       label: reviewLabel(confidence),
-      outdated: isConfidenceOutdated(confidence, input.codeFingerprint, input.brief),
+      outdated: isConfidenceOutdated(confidence, input.codeFingerprint),
     });
   }
   if (tour && tour.stops > 0) {

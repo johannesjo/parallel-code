@@ -5,13 +5,15 @@ import { DialogCloseButton } from './DialogCloseButton';
 import { DialogTabs, dialogTabId, dialogTabPanelId, type DialogTab } from './DialogTabs';
 import { getAvailableTerminalFonts, fetchAvailableTerminalFonts } from '../lib/fonts';
 import { theme } from '../lib/theme';
-import { store, setTaskContext, setDocumentWorkspacesEnabled } from '../store/store';
+import { store, clearSettingsTabRequest, setDocumentWorkspacesEnabled } from '../store/store';
 import { mod } from '../lib/platform';
-import { SettingsCheckboxRow, SettingsSection, type SettingsTab } from './settings/settings-ui';
+import { SettingsCheckboxRow, SettingsSection } from './settings/settings-ui';
+import type { SettingsTab } from '../store/types';
 import { GeneralSettings } from './settings/GeneralSettings';
 import { AppearanceSettings } from './settings/AppearanceSettings';
 import { AgentSettings } from './settings/AgentSettings';
 import { AiAssistSettings } from './settings/AiAssistSettings';
+import { CardsSettings } from './settings/CardsSettings';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -28,6 +30,7 @@ const SETTINGS_TABS: DialogTab<SettingsTab>[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'agents', label: 'Agents' },
   { id: 'ai', label: 'AI assist' },
+  { id: 'cards', label: 'Cards' },
   { id: 'experimental', label: 'Experimental' },
 ];
 
@@ -56,6 +59,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const titleId = createUniqueId();
   const [fonts, setFonts] = createSignal<string[]>(ensureSelectedFont(getAvailableTerminalFonts()));
   const [activeTab, setActiveTab] = createSignal<SettingsTab>('general');
+
+  createEffect(() => {
+    const tab = store.settingsTabRequest;
+    if (!tab) return;
+    setActiveTab(tab);
+    clearSettingsTabRequest();
+  });
 
   // Fetch system fonts when the dialog opens
   createEffect(
@@ -152,6 +162,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
           <AiAssistSettings />
         </SettingsTabPanel>
       </Show>
+      <Show when={activeTab() === 'cards'}>
+        <SettingsTabPanel tab="cards">
+          <CardsSettings />
+        </SettingsTabPanel>
+      </Show>
       <Show when={activeTab() === 'experimental'}>
         <SettingsTabPanel tab="experimental">
           <SettingsSection title="Document workspaces">
@@ -160,14 +175,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.documentWorkspacesEnabled}
               onChange={setDocumentWorkspacesEnabled}
               description="Add document projects: a folder with one Markdown document, set up for you if it is not a Git repository yet. Select a passage, send the same instruction to one or more agents running headlessly in isolated worktrees, compare the proposals side by side, and accept one as a single readable commit. Adds Documents as an Open as choice when adding a project."
-            />
-          </SettingsSection>
-          <SettingsSection title="Task context">
-            <SettingsCheckboxRow
-              label="Task context"
-              checked={store.taskContext}
-              onChange={setTaskContext}
-              description="Show the task's goal and the agent's plan in place of the brief under the task title: as a Context pane above Changed files when the task is wide, or as one line under the title that opens the full plan when it is narrow. Shows the prompt box whenever the agent waits on you."
             />
           </SettingsSection>
         </SettingsTabPanel>

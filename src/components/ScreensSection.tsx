@@ -17,7 +17,7 @@ import { errMessage, warn as logWarn } from '../lib/log';
 import { sf } from '../lib/fontScale';
 import { theme } from '../lib/theme';
 import { showNotification } from '../store/notification';
-import { refreshCodeFingerprint } from '../store/task-brief';
+import { refreshCodeFingerprint } from '../store/task-diff';
 import {
   areTaskScreensOutdated,
   cancelTaskScreens,

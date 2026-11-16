@@ -19,6 +19,7 @@ import { closeTaskNow } from './CloseTaskDialog';
 import { PushSection } from './PushSection';
 import { ReadinessSection } from './ReadinessSection';
 import { FinishItems } from './FinishItems';
+import { FinishCards } from './cards/FinishCards';
 import { FollowUps } from './FollowUps';
 import { ReviewSection } from './ReviewSection';
 import { RetroButton } from './RetroButton';
@@ -37,7 +38,7 @@ import { isVerificationStale, summarizeVerificationRun } from '../lib/verificati
 import { isTourOutdated } from '../lib/finish-reports';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { parseGitHubUrl } from '../lib/github-url';
-import { refreshCodeFingerprint } from '../store/task-brief';
+import { refreshCodeFingerprint } from '../store/task-diff';
 import { GitMergeIcon, SyncIcon, UploadIcon } from './icons';
 
 export type FinishAction = 'merge' | 'push' | 'create-pr';
@@ -93,11 +94,10 @@ export function FinishDialog(props: FinishDialogProps) {
   createEffect(() => {
     if (!props.open) setReviewLocation(undefined);
   });
-  // A tour or the brief's changes summary is judged against the code as it is
-  // now, edits since the last turn included.
+  // A tour is judged against the code as it is now, edits since the last turn included.
   createEffect(
     on(
-      () => props.open && (!!props.tour.basis() || !!props.task.brief?.brief.changes),
+      () => props.open && !!props.tour.basis(),
       (check) => {
         if (!check) return;
         refreshCodeFingerprint(props.task.id).catch((error: unknown) =>
@@ -458,6 +458,7 @@ export function FinishDialog(props: FinishDialogProps) {
                   onOpenFile={(file, line) => setReviewLocation({ file, line, side: 'new' })}
                 />
               </Show>
+              <FinishCards task={props.task} />
               <Show when={tourShown()}>{tourBox()}</Show>
               <Show when={screensShown()}>
                 <ScreensFollowUp

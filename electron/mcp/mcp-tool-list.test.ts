@@ -15,6 +15,7 @@ import {
   CANVAS_INSTRUCTIONS,
   TOUR_TOOLS,
   CONFIDENCE_TOOLS,
+  CARD_TOOLS,
   PR_DRAFT_TOOLS,
   FINISH_ITEMS_TOOLS,
   GITHUB_LIST_TOOLS,
@@ -36,6 +37,7 @@ describe('selectTools — role-based tool list', () => {
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
       ...CONFIDENCE_TOOLS,
+      ...CARD_TOOLS,
       ...PR_DRAFT_TOOLS,
     ]);
     expect(tools.map((t: ToolDef) => t.name)).toStrictEqual([
@@ -48,6 +50,11 @@ describe('selectTools — role-based tool list', () => {
       'canvas_open',
       'tour_publish',
       'confidence_publish',
+      'card_list',
+      'card_publish',
+      'card_config_read',
+      'card_config_save',
+      'card_config_remove',
       'pr_draft_publish',
     ]);
   });
@@ -61,6 +68,7 @@ describe('selectTools — role-based tool list', () => {
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
       ...CONFIDENCE_TOOLS,
+      ...CARD_TOOLS,
     ]);
   });
 
@@ -159,6 +167,7 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
+    ...CARD_TOOLS,
     ...PR_DRAFT_TOOLS,
     ...FINISH_ITEMS_TOOLS,
   ]);
@@ -171,6 +180,7 @@ it('offers github_list_publish only to the GitHub page agent', () => {
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
+    ...CARD_TOOLS,
     ...GITHUB_LIST_TOOLS,
   ]);
 });
@@ -191,6 +201,7 @@ it('gives a page agent only independent task creation and worktree import beside
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
       ...CONFIDENCE_TOOLS,
+      ...CARD_TOOLS,
       ...GITHUB_LIST_TOOLS,
     ].map((tool) => tool.name),
     'create_task',
@@ -280,6 +291,11 @@ describe('session capability tool sets', () => {
     'canvas_open',
     'tour_publish',
     'confidence_publish',
+    'card_list',
+    'card_publish',
+    'card_config_read',
+    'card_config_save',
+    'card_config_remove',
     'pr_draft_publish',
   ];
   // Only sessions that reach the Finish dialog record loose ends for it.

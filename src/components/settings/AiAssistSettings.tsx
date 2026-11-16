@@ -4,21 +4,12 @@ import {
   type AskCodeProvider,
 } from '../../../electron/shared/ask-code-models';
 import { codexModels, loadCodexModels } from '../../lib/codex-models';
-import {
-  BRIEF_MODELS,
-  TASK_NAME_MODELS,
-  type BriefModelId,
-  type TaskNameModelId,
-} from '../../../electron/shared/task-name-model';
+import { TASK_NAME_MODELS, type TaskNameModelId } from '../../../electron/shared/task-name-model';
 import { theme } from '../../lib/theme';
-import type { BriefBarFields } from '../../lib/task-brief';
 import {
   store,
   setModelTaskNames,
   setTaskNameModel,
-  setTaskBriefs,
-  setBriefBarField,
-  setBriefModel,
   setFinishReview,
   setReviewGuidance,
   setReviewModel,
@@ -30,6 +21,7 @@ import { modelToRun } from '../../lib/ask-code-model';
 import { withReviewEffort } from '../../lib/task-review';
 import { ReviewModelFields } from '../ReviewModelFields';
 import {
+  ModelSelect,
   SettingsCard,
   SettingsCheckboxRow,
   SettingsSection,
@@ -46,38 +38,6 @@ const ASK_CODE_PROVIDER_HINTS: Record<AskCodeProvider, string> = {
     'Uses MiniMax M2.7 (204K context) via the OpenAI-compatible API — no Claude Code CLI required.',
 };
 
-function ModelSelect(props: {
-  label: string;
-  value: string;
-  choices: Record<string, { label: string }>;
-  onChange: (id: string) => void;
-}) {
-  return (
-    <SettingsCard>
-      <label style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
-        <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
-          {props.label}
-        </span>
-        <select
-          value={props.value}
-          onChange={(e) => props.onChange(e.currentTarget.value)}
-          style={{ flex: '1', ...settingsFieldStyle, 'font-size': '13px', cursor: 'pointer' }}
-        >
-          <For each={Object.entries(props.choices)}>
-            {([id, choice]) => <option value={id}>{choice.label}</option>}
-          </For>
-        </select>
-      </label>
-    </SettingsCard>
-  );
-}
-
-const BRIEF_BAR_FIELD_CHOICES: { field: keyof BriefBarFields; label: string }[] = [
-  { field: 'goal', label: 'Goal' },
-  { field: 'now', label: 'Now' },
-  { field: 'needsYou', label: 'Needs you' },
-];
-
 export function AiAssistSettings() {
   // The Codex model select is filled from the CLI's cache, read on first need.
   createEffect(() => {
@@ -86,18 +46,12 @@ export function AiAssistSettings() {
 
   return (
     <>
-      <SettingsSection title="Task names & briefs">
+      <SettingsSection title="Name tasks with a model">
         <SettingsCheckboxRow
           label="Name tasks with a model"
           checked={store.modelTaskNames}
           onChange={setModelTaskNames}
-          description="Ask a cheap model for a short title when a task is named from its prompt; sends the prompt to that model's provider. With briefs on, the first brief sharpens the title once from what the agent did. The branch keeps its prompt-based name"
-        />
-        <SettingsCheckboxRow
-          label="Write task briefs"
-          checked={store.taskBriefs}
-          onChange={setTaskBriefs}
-          description="After each agent turn, and as a task with a long prompt starts, a model sums up the goal, the current step and anything the agent needs from you. Sends the turn's prompts, the agent's last message and the diff to that model's provider"
+          description="Ask a cheap model for a short title when a task is named from its prompt; sends the prompt to that model's provider. The branch keeps its prompt-based name"
         />
         <Show when={store.modelTaskNames}>
           <ModelSelect
@@ -106,45 +60,6 @@ export function AiAssistSettings() {
             choices={TASK_NAME_MODELS}
             onChange={(id) => setTaskNameModel(id as TaskNameModelId)}
           />
-        </Show>
-        <Show when={store.taskBriefs}>
-          <ModelSelect
-            label="Briefs model"
-            value={store.briefModel}
-            choices={BRIEF_MODELS}
-            onChange={(id) => setBriefModel(id as BriefModelId)}
-          />
-          <SettingsCard>
-            <span style={{ 'font-size': '13px', color: theme.fg }}>Show in the task header</span>
-            <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-              Clicking the header line opens every field. A question takes the top line while the
-              agent waits on you.
-            </span>
-            <div style={{ display: 'flex', gap: '16px', 'flex-wrap': 'wrap' }}>
-              <For each={BRIEF_BAR_FIELD_CHOICES}>
-                {(choice) => (
-                  <label
-                    style={{
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '6px',
-                      'font-size': '13px',
-                      color: theme.fg,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={store.briefBarFields[choice.field]}
-                      onChange={(e) => setBriefBarField(choice.field, e.currentTarget.checked)}
-                      style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
-                    />
-                    {choice.label}
-                  </label>
-                )}
-              </For>
-            </div>
-          </SettingsCard>
         </Show>
       </SettingsSection>
       <SettingsSection title="Review">

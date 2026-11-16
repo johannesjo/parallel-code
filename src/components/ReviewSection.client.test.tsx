@@ -24,7 +24,7 @@ const {
   mockStage: vi.fn(() => true),
 }));
 
-vi.mock('../store/task-brief', () => ({ refreshCodeFingerprint: mockRefreshCode }));
+vi.mock('../store/task-diff', () => ({ refreshCodeFingerprint: mockRefreshCode }));
 
 vi.mock('../store/task-review', () => ({
   reviewerName: () => 'opus',
@@ -118,11 +118,6 @@ function baseTask(overrides: Partial<Task> = {}): Task {
     notes: '',
     lastPrompt: '',
     gitIsolation: 'worktree',
-    brief: {
-      brief: { goal: 'Send people back after sign-in.', now: '' },
-      generatedAt: 2_000,
-      fingerprint: 'same',
-    },
     confidence: {
       scores: [
         {
@@ -322,7 +317,7 @@ describe('ReviewSection', () => {
   });
 
   it('shows what changed and the key line from the reviewer alone, the ask on hover', () => {
-    const task = baseTask({ brief: undefined });
+    const task = baseTask();
     const { root, onOpenFile } = mount({
       ...task,
       confidence: task.confidence && {
@@ -348,7 +343,6 @@ describe('ReviewSection', () => {
       'Lost return URLs are remembereduntested',
     ]);
     expect(items[0].getAttribute('title')).toBe('Tested: unit');
-    expect(text).not.toContain('brief');
     button(root, 'src/auth.ts:72').click();
     expect(onOpenFile).toHaveBeenCalledWith('src/auth.ts', 72);
   });

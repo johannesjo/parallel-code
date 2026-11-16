@@ -17,7 +17,7 @@ import {
 import { store } from './core';
 import { babysitAgentBlocker } from './pr-babysit';
 import { sendPrompt } from './tasks';
-import { promptsSince, readTaskDiff } from './task-brief';
+import { promptsSince, readTaskDiff } from './task-diff';
 import type { Task } from './types';
 
 /** The first PR template GitHub would use for this worktree, or undefined when it has none. */

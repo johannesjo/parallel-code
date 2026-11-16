@@ -29,6 +29,7 @@ import {
   isTaskCanvasVisible,
   referenceTourCard,
   openCanvasDocument,
+  enabledCards,
 } from '../store/store';
 import { markFeatureHintSeen } from '../store/onboarding';
 import { useFocusRegistration } from '../lib/focus-registration';
@@ -58,9 +59,10 @@ import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
 import { TaskShellSection, shellSectionMinHeight } from './TaskShellSection';
 import { TaskCanvasPanel } from './TaskCanvasPanel';
-import { TaskBriefBar, needsYouNow } from './TaskBrief';
-import { TaskContext } from './TaskContext';
-import { TaskContextStrip } from './TaskContextStrip';
+import { CardLine } from './cards/CardLine';
+import { CardsPane } from './cards/CardsPane';
+import { PinRow } from './cards/PinRow';
+import { showsInPinRow } from '../lib/card-display';
 import { TaskAITerminal } from './TaskAITerminal';
 import { isAgentChat } from '../store/agent-chat';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
@@ -111,7 +113,7 @@ interface TaskPanelProps {
 // never taller than 33vh. User drag pins intentionally bypass this.
 const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
-const CONTEXT_PANEL_AUTO_MAX = '45%';
+const CARDS_PANEL_AUTO_MAX = '45%';
 const NOTES_SPLIT_DEFAULT = 'min(240px, 25vh)';
 // Last agent-tour revision shown per task. Collapsing and expanding a task
 // remounts its panel, which must not reopen a tour the user already dismissed.
@@ -208,11 +210,15 @@ export function TaskPanel(props: TaskPanelProps) {
       baseBranch: diffBaseBranch(),
       selectedCommit: selectedCommit(),
     });
-  // A task without agents has no turns to brief. Shown before the first brief
-  // too, so the header keeps one height while a task runs. Opt-in task
-  // context takes over the brief's goal, so the header drops it then.
-  const contextOn = () => store.taskContext && props.task.agentIds.length > 0;
-  const showBrief = () => store.taskBriefs && props.task.agentIds.length > 0 && !contextOn();
+  // A task without agents has no turns for cards to read. The card line is a
+  // fixed one-line row shown before any card is filled too, so the header's
+  // height follows the settings, never the values. The split view shows the
+  // cards as a pane instead (see `cardsChild`).
+  const cardsOn = () =>
+    props.task.agentIds.length > 0 && enabledCards(props.task.projectId).length > 0;
+  const showCardLine = () => cardsOn() && !useSplit();
+  // Pins are settings, so the pin row never comes and goes with values.
+  const showPinRow = () => cardsOn() && enabledCards(props.task.projectId).some(showsInPinRow);
 
   const finishTour = () => {
     const basis = tour.basis();
@@ -470,8 +476,6 @@ export function TaskPanel(props: TaskPanelProps) {
   const SPLIT_EXIT_WIDTH = 1030;
   const [panelWidth, setPanelWidth] = createSignal(0);
   const [useSplit, setUseSplit] = createSignal(false);
-  // Split mode shows task context as a pane in the side column instead.
-  const showContextStrip = () => contextOn() && !useSplit();
   createEffect(() => {
     const w = panelWidth();
     const focused = document.activeElement;
@@ -765,13 +769,8 @@ export function TaskPanel(props: TaskPanelProps) {
   );
   // Prompt wrapper carries its own intrinsic height so the flex-first panel
   // tree sizes it to 72 px by default and lets a user-drag pin override.
-  // With task context on there is no header brief to ask the agent's
-  // question, so the prompt box appears for it even when turned off.
   const promptBoxShown = () =>
-    !isAgentChat(props.task, firstAgentId()) &&
-    (store.showPromptInput ||
-      autoSendChildUpdates() ||
-      (contextOn() && needsYouNow(props.task) !== ''));
+    !isAgentChat(props.task, firstAgentId()) && (store.showPromptInput || autoSendChildUpdates());
   const promptInputEl = (
     <div
       onClick={() => setTaskFocusedPanel(props.task.id, 'prompt')}
@@ -788,7 +787,6 @@ export function TaskPanel(props: TaskPanelProps) {
         autoSendChildUpdates={autoSendChildUpdates()}
         controlledBy={props.task.controlledBy}
         stagedNotification={props.task.stagedNotification}
-        needsYou={needsYouNow(props.task)}
         nowMs={nowMs}
         initialPrompt={props.task.initialPrompt}
         prefillPrompt={props.task.prefillPrompt}
@@ -861,19 +859,14 @@ export function TaskPanel(props: TaskPanelProps) {
     content: () => changedFilesEl,
   };
 
-  // Split mode only: the goal and plan on top of the side column, as tall as
-  // they need up to the cap, then scrolling. The changed files right below
-  // carry their own tour button, so this pane leaves out the walkthrough.
-  const contextChild: PanelChild = {
-    id: 'context',
-    resizeLabel: 'Resize context panel',
+  // Split mode only: the cards pane above the changed files,
+  // as tall as they need up to the cap, then scrolling.
+  const cardsChild: PanelChild = {
+    id: 'cards',
+    resizeLabel: 'Resize cards panel',
     minSize: 80,
-    maxAutoSize: CONTEXT_PANEL_AUTO_MAX,
-    content: () => (
-      <div class="task-context-pane">
-        <TaskContext task={props.task} />
-      </div>
-    ),
+    maxAutoSize: CARDS_PANEL_AUTO_MAX,
+    content: () => <CardsPane task={props.task} />,
   };
 
   // Stack-mode row containing notes (absorbs horizontally) and changed files.
@@ -971,7 +964,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       overflow: 'auto',
                     }}
                     children={[
-                      ...(contextOn() ? [contextChild] : []),
+                      ...(cardsOn() ? [cardsChild] : []),
                       ...(isGitUnavailable() ? [] : [changedFilesChild]),
                       notesChild,
                       shellSectionChild,
@@ -1036,10 +1029,8 @@ export function TaskPanel(props: TaskPanelProps) {
       <div
         class="task-header-stack"
         style={{
-          // Grows with the brief, up to three lines: new content may move the
-          // output down, but nothing else changes the header's height. The
-          // plan line is a fixed 28px.
-          flex: showBrief() ? '0 0 auto' : showContextStrip() ? '0 0 94px' : '0 0 66px',
+          // The card line is a fixed 28px, the pin row 24px.
+          flex: `0 0 ${(showCardLine() ? 94 : 66) + (showPinRow() ? 24 : 0)}px`,
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
@@ -1048,7 +1039,7 @@ export function TaskPanel(props: TaskPanelProps) {
         {/* Title + branch bars live outside <Show> so they don't remount on layout flips. */}
         {/* 38px fits the title bar's single 30px row and its 8px vertical
             padding. The stack total above is this plus the 28px branch bar,
-            and the brief while briefs are on. */}
+            and the 28px card line when it shows. */}
         <div style={{ flex: '0 0 38px', overflow: 'hidden' }}>
           <TaskTitleBar
             task={props.task}
@@ -1062,26 +1053,19 @@ export function TaskPanel(props: TaskPanelProps) {
             onTitleEditRef={(h) => (titleEditHandle = h)}
           />
         </div>
-        {/* Directly under the title, as its subtitle: the brief describes the whole task. */}
-        <Show when={showBrief()}>
-          <div style={{ flex: '0 0 auto' }}>
-            <TaskBriefBar
+        {/* The stacked view has no side column for the cards pane. */}
+        <Show when={showCardLine()}>
+          <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
+            <CardLine
               task={props.task}
-              fields={store.briefBarFields}
               onWalkThrough={openOrGenerateTour}
               walkThroughDisabled={changedFileCount() === 0}
-              questionInPrompt={promptBoxShown()}
             />
           </div>
         </Show>
-        {/* The stacked view has no side column for the context pane. */}
-        <Show when={showContextStrip()}>
-          <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
-            <TaskContextStrip
-              task={props.task}
-              onWalkThrough={openOrGenerateTour}
-              walkThroughDisabled={changedFileCount() === 0}
-            />
+        <Show when={showPinRow()}>
+          <div style={{ flex: '0 0 24px', overflow: 'hidden' }}>
+            <PinRow task={props.task} />
           </div>
         </Show>
         <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>

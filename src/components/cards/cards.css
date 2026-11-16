@@ -1,0 +1,607 @@
+/* Cards: routine values stay neutral; colour only for a value past its
+   threshold, a blocking item or a failed status (AGENTS.md → UI design). */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.card:first-child {
+  border-top: none;
+}
+.card[data-outdated] .card-body {
+  opacity: 0.55;
+}
+
+.card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  flex-shrink: 0;
+}
+.card-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+/* Shrinks last and ends in an ellipsis, so a long run error never widens the card. */
+.card-meta {
+  margin-left: auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+.card-meta-text {
+  display: flex;
+}
+/* On a short line the source gives up its room before the state loses a letter. */
+.card-meta-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Keeps the space after its dot, which the end of a flex item would drop. */
+  white-space: pre;
+}
+/* Never shrinks while the source has room left to give; only wider than the line is it cut. */
+.card-meta-state {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Who fills the card waits for the pointer or the keyboard. Its room is kept,
+   so the age beside it does not move when it shows. A touch screen has no
+   pointer to wait for, so there it stays in view. */
+@media (hover: hover) {
+  .card-meta-source {
+    opacity: 0;
+  }
+  .card:hover .card-meta-source,
+  .card:has(:focus-visible) .card-meta-source {
+    opacity: 1;
+  }
+}
+
+/* The top line opens and closes the card, so a quiet one can stay one line. */
+.card-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  box-sizing: border-box;
+  /* Reaches into the card's padding, so the hover fill has room around the text. */
+  width: calc(100% + 12px);
+  min-width: 0;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.card-toggle:hover {
+  background: var(--bg-hover);
+}
+.card-chevron {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--fg-muted);
+}
+.card-chevron-closed {
+  transform: rotate(-90deg);
+}
+
+/* Stats sit side by side, so a card of numbers stays short; everything else takes a full row. */
+.card-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+}
+.card-body > * {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.card-body > .slot[data-type='stat'] {
+  flex: 1 1 96px;
+}
+.card-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.slot-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.slot-placeholder {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.slot-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.slot-text {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+.slot-number {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.slot-number-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.slot-number-unit {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+[data-warn] .slot-number-value {
+  color: var(--warning);
+}
+
+.slot-meter {
+  position: relative;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+}
+.slot-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--fg-muted);
+}
+[data-warn] .slot-meter-fill {
+  background: var(--warning);
+}
+.slot-meter-tick {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 7px;
+  background: var(--fg-muted);
+}
+.slot-why {
+  font-size: 12px;
+  color: var(--fg-subtle);
+  line-height: 1.4;
+}
+
+.slot-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.slot-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fg);
+}
+.slot-list li[data-severity='block'] {
+  color: var(--error);
+}
+.slot-list li[data-state='done'],
+.slot-list li[data-state='todo'] {
+  color: var(--fg-subtle);
+}
+li[data-state='current'] .slot-mark {
+  color: var(--fg);
+}
+.slot-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.slot-progress .slot-meter {
+  flex: 1;
+}
+.slot-progress-count {
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.slot-mark {
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+li[data-state='fail'] .slot-mark,
+li[data-severity='block'] .slot-mark {
+  color: var(--error);
+}
+li[data-state='warn'] .slot-mark {
+  color: var(--warning);
+}
+.slot-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.slot-item-file {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.slot-row-value,
+.slot-item-tag {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-muted);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Outdated values lose their warning colour: an old breach is no longer news. */
+.card[data-outdated] [data-warn] .slot-number-value,
+.card[data-outdated] .confidence-score[data-low] .confidence-number {
+  color: var(--fg);
+}
+.card[data-outdated] [data-warn] .slot-meter-fill {
+  background: var(--fg-muted);
+}
+.card[data-outdated] li[data-severity='block'],
+.card[data-outdated] li .slot-mark {
+  color: var(--fg-muted);
+}
+
+/* The Confidence card: every score on one row. Why a score is not higher and
+   what backs it wait in a popover, so the card stays a glance. */
+.confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.confidence-scores {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
+}
+.confidence-score {
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--fg-subtle);
+  cursor: default;
+}
+.confidence-number {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.confidence-score[data-low] .confidence-number {
+  color: var(--warning);
+}
+.confidence-lead {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.confidence-lead .confidence-number {
+  font-size: 18px;
+  line-height: 1;
+}
+.confidence-lead strong {
+  font-weight: 600;
+  color: var(--fg);
+}
+.confidence-why {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.confidence-checked {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--fg-muted);
+}
+
+.cards-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 16px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.cards-foot-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.cards-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.cards-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cards-popover {
+  position: fixed;
+  overflow: auto;
+  z-index: var(--z-modal);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* The split view's cards pane: flat on the column's background like Notes and
+   Changed files, cards edge to edge with dividers, only the list scrolls. */
+.cards-pane {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.cards-pane-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.cards-pane-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+}
+.cards-pane .card {
+  padding: 10px 12px;
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The stacked view's card line under the title. Routine: fill and chevron
+   only on hover or while open. */
+.card-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 12px 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--fg-subtle);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.card-line:hover,
+.card-line[aria-expanded='true'] {
+  background: var(--bg-elevated);
+}
+.card-line-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.card-line-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+.card-line-chevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.card-line:hover .card-line-chevron,
+.card-line:focus-visible .card-line-chevron,
+.card-line[aria-expanded='true'] .card-line-chevron {
+  opacity: 1;
+}
+.card-line[aria-expanded='true'] .card-line-chevron {
+  transform: rotate(180deg);
+}
+
+/* The card line names a card past its threshold in the warning colour; the
+   line itself stays untinted. */
+.card-line-label[data-urgent] {
+  color: var(--warning);
+}
+.card-line-empty {
+  color: var(--fg-muted);
+}
+
+/* The pin row: a fixed 24px row of pinned values in neutral text. Colour only
+   past a threshold; outdated values fade and lose it. */
+.pin-row {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px 0 16px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pin-group {
+  display: inline-flex;
+  gap: 8px;
+}
+.pin b {
+  font-weight: 600;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pin[data-warn],
+.pin[data-warn] b {
+  color: var(--warning);
+}
+.pin[data-faded] {
+  opacity: 0.5;
+}
+.pin[data-empty] b {
+  font-weight: 400;
+  color: var(--fg-subtle);
+}
+/* A mini view is a whole summary; it truncates so the pins after it stay in view. */
+.pin[data-mini] {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.pin-sep {
+  width: 1px;
+  height: 10px;
+  background: var(--border);
+}
+
+/* The one-time cards offer: where the keyboard-shortcut notice sits, and only after it. */
+.cards-offer {
+  position: fixed;
+  top: 46px;
+  left: 50%;
+  z-index: calc(var(--z-overlay) - 100);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--island-border);
+  border-radius: var(--radius-md);
+  background: var(--island-bg);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cards-offer > span {
+  color: var(--fg-muted);
+}
+.cards-offer-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+/* Outside a dialog footer the shared button classes carry no size of their own.
+   Turn on ranks first by full-strength text, not colour. */
+.cards-offer-actions button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cards-offer-actions .btn-primary {
+  font-weight: 500;
+}
+
+/* Check cards: the command and its Run button, then the last run's output. */
+.card-error {
+  color: var(--error);
+}
+.card-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-check code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-check-output summary {
+  font-size: 11px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-check-output pre {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--fg-subtle);
+}
+.card-spinner {
+  width: 8px;
+  height: 8px;
+  vertical-align: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-line-chevron {
+    transition: none;
+  }
+}

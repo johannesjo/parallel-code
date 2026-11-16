@@ -1,0 +1,513 @@
+/* The Cards tab: type labels stay neutral; a ticked checkbox is the only colour. */
+.cards-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+/* Each row carries the list's background itself: the picture the browser drags
+   along is of the row alone, and without it that is text with nothing behind. */
+.cards-row {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+}
+/* One pixel tighter than the list's corners, to sit inside its border. */
+.cards-row:first-child {
+  border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+}
+.cards-row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px);
+}
+.cards-row:only-child {
+  border-radius: calc(var(--radius-md) - 1px);
+}
+/* While dragging, the row in hand dims and a line marks the edge it will land
+   on. The line is an inset shadow, so no row moves to make room for it. */
+.cards-row[data-dragging] {
+  opacity: 0.4;
+}
+.cards-row[data-drop='before'] {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.cards-row[data-drop='after'] {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.cards-row-line {
+  display: grid;
+  /* Fixed tracks: each row is its own grid, so sized-to-content columns would
+     not line up from row to row. Type, pins, Edit, on/off. */
+  grid-template-columns: 14px minmax(0, 1fr) 52px 60px 26px 16px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--fg);
+}
+/* Built-in cards have no Edit; their switch keeps the last column. */
+.cards-row-line > input[type='checkbox'] {
+  grid-column: -2;
+  margin: 0;
+}
+/* Six dots, drawn: the "⋮⋮" glyphs ran together into what read as a colon. */
+.cards-grip {
+  width: 10px;
+  height: 15px;
+  color: var(--fg-subtle);
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1.3px);
+  background-size: 5px 5px;
+  cursor: grab;
+}
+.cards-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cards-row-detail {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A model card's prompt: one truncated line that opens the whole text below the row. */
+.cards-prompt {
+  /* Only the text toggles, not the empty width after a short prompt. */
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cards-prompt:hover,
+.cards-prompt[aria-expanded='true'] {
+  color: var(--fg-muted);
+}
+.cards-prompt-full {
+  max-height: 240px;
+  margin: 0 12px 10px 36px;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cards-row[data-off] .cards-row-name > span:first-child {
+  color: var(--fg-muted);
+}
+.cards-type {
+  justify-self: start;
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0 7px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.cards-pins,
+.cards-edit {
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+/* Ends in an ellipsis in a wider font rather than running into Edit. */
+.cards-pins {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cards-pins:hover:not(:disabled),
+.cards-edit:hover {
+  color: var(--fg);
+}
+.cards-pins:disabled {
+  cursor: default;
+}
+/* The pin row is a setting: these choose which slots it shows. */
+.cards-pin-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 0 12px 8px 36px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.cards-pin-list label {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.cards-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.cards-empty {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+/* Outside a dialog footer the shared button classes carry no size of their own. */
+.cards-new,
+.card-editor-redraft,
+.card-slot-add,
+.card-editor-preview button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cards-new {
+  align-self: flex-start;
+}
+:is(.cards-new, .card-editor-redraft, .card-slot-add, .card-editor-preview button):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Add card gallery and editor: neutral tiles; the only accent is a ticked box. */
+.card-editor-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: var(--fg);
+}
+.card-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: var(--card-editor-scroll-max);
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--fg);
+}
+.card-editor-field {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+/* Source, slots and where the card shows: a rule between them, no headings. */
+.card-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.card-editor-stack {
+  display: flex;
+  flex-direction: column;
+  /* A stack is also a field; without this its textarea shrinks to its text and centres. */
+  align-items: stretch;
+  gap: 6px;
+}
+/* The shared input class sets colours only; the size comes from here. */
+:is(.card-editor-body, .card-editor-field) .input-field {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+/* One height, or a select stands taller than the text field beside it. */
+.card-editor-body :is(input, select).input-field {
+  height: 28px;
+  padding-block: 0;
+}
+.card-editor-stack textarea.input-field {
+  resize: vertical;
+}
+.card-editor-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-editor-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+/* Selectable, so it can be copied into the check's script. */
+.card-editor-example {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg);
+  user-select: text;
+}
+.card-editor-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.card-editor-redraft,
+.card-slot-add {
+  align-self: flex-start;
+}
+.card-editor-redraft-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card-editor-redraft-row .card-editor-redraft {
+  flex-shrink: 0;
+  align-self: center;
+}
+.card-editor-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.card-editor-preview > span {
+  flex: 1 1 100%;
+}
+.card-editor-body label,
+.card-editor-inputs label {
+  gap: 5px;
+}
+.card-editor-body input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 5px;
+}
+.card-slot-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Framed, so a slot's own settings read as part of it, not of the next slot. */
+.card-slot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.card-slot-moves {
+  display: flex;
+}
+.card-slot-moves button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--fg-subtle);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  cursor: pointer;
+}
+.card-slot-moves button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-slot-moves button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.card-slot-extra {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+/* No settings for this slot: without this the empty row still took a grid gap. */
+.card-slot-extra:empty {
+  display: none;
+}
+.card-slot-extra input[type='number'] {
+  width: 70px;
+  margin-left: 6px;
+}
+/* Takes the row's free width; its placeholder was cut off at a fixed size. */
+.card-slot-hint {
+  flex: 1 1 220px;
+}
+/* The preview leads, beside the form, and stays in view while the form scrolls. */
+.card-editor-layout {
+  /* The dialog's 80vh less its padding, title and footer (about 154px), so
+     only these columns scroll, never the dialog around them. */
+  --card-editor-scroll-max: calc(80vh - 160px);
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: 24px;
+  align-items: start;
+}
+/* Stacked, only the dialog scrolls: two capped columns would nest scrollers. */
+@media (max-width: 1000px) {
+  .card-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    --card-editor-scroll-max: none;
+  }
+}
+/* A stage as tall as the form: the card is what the editor is about, so it
+   gets the room and the form reads as its controls. No box of its own; the
+   pane inside already has the task's border and surface. */
+.card-editor-live {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: var(--card-editor-scroll-max);
+  overflow-y: auto;
+}
+.card-editor-live-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+.card-editor-live-head h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg);
+}
+/* One column beside the form; stacked above it there is room for two, so the
+   stage stays short and leaves no empty half. */
+.card-editor-live-views {
+  /* A fieldset, for its `disabled`; none of its own look. */
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  /* min(): a stage narrower than a column must not scroll sideways. */
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+.card-editor-live-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+/* The cards pane as a task shows it, only as tall as its two rows. */
+.card-editor-live-views .cards-pane {
+  height: auto;
+  min-width: 0;
+}
+.card-editor-live-views .cards-pane,
+.card-editor-live-surface {
+  overflow: hidden;
+  background: var(--task-container-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+/* Not a button here: no pointer, no hover fill. */
+.card-editor-live-views .card-toggle {
+  cursor: default;
+}
+.card-editor-live-views .card-toggle:hover {
+  background: transparent;
+}
+/* The heading's icons set their own pointer; out of the pointer's reach, they show none. */
+.card-editor-live-views .icon-btn {
+  pointer-events: none;
+}
+/* Switched off, but drawn as on a task: the preview shows how the card looks. */
+.card-editor-live-views .cards-btn:disabled {
+  opacity: 1;
+}
+.card-editor-live-surface .pin-row {
+  border-top: none;
+  padding: 0 12px;
+}
+.card-gallery {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.card-gallery-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.card-gallery-col h3 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg);
+}
+.card-gallery-col h3 span {
+  font-weight: normal;
+  color: var(--fg-subtle);
+}
+.card-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.card-tile:hover {
+  background: var(--bg-hover);
+}
+.card-tile b {
+  color: var(--fg);
+  font-size: 13px;
+}
+.card-tile-meta {
+  font-size: 11px;
+  color: var(--fg-subtle);
+}

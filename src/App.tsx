@@ -59,10 +59,13 @@ import { TaskBoardControls } from './components/TaskBoardControls';
 import { FocusModeTaskIndicators } from './components/FocusModeTaskIndicators';
 import { UsageStatusBar } from './components/UsageStatusBar';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { CardChangeRequest } from './components/cards/CardChangeRequest';
+import { CardsOffer } from './components/cards/CardsOffer';
 import { linkButtonStyle, theme } from './lib/theme';
 import * as log from './lib/log';
 import {
   store,
+  waitingCardChanges,
   loadAgents,
   loadState,
   isStateLoaded,
@@ -153,7 +156,7 @@ import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startSuperProductivitySync, startSpOpenListener } from './store/store';
 import { isTaskBackgrounded, startBackgroundTaskWatcher } from './store/background-tasks';
-import { startTaskBriefWatcher } from './store/task-brief';
+import { startTurnWatcher } from './store/turn-watcher';
 import { showPlanTasks, startKanbanAutomation } from './store/kanban';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startPrBabysitWatcher } from './store/pr-babysit';
@@ -656,7 +659,7 @@ function App() {
     );
     const stopSpOpenListener = startSpOpenListener();
     const stopBackgroundTaskWatcher = startBackgroundTaskWatcher();
-    const stopTaskBriefWatcher = startTaskBriefWatcher();
+    const stopTurnWatcher = startTurnWatcher();
     const stopKanbanAutomation = startKanbanAutomation();
     const stopPrChecksSubscription = startPrChecksSubscription();
     const stopPrBabysitWatcher = startPrBabysitWatcher();
@@ -918,7 +921,7 @@ function App() {
       stopSuperProductivitySync();
       stopSpOpenListener();
       stopBackgroundTaskWatcher();
-      stopTaskBriefWatcher();
+      stopTurnWatcher();
       stopKanbanAutomation();
       stopPrChecksSubscription();
       stopPrBabysitWatcher();
@@ -1074,6 +1077,22 @@ function App() {
               &times;
             </button>
           </div>
+        </Show>
+        <Show
+          when={
+            !bare() &&
+            store.keybindingMigrationDismissed &&
+            store.cardsOfferPending &&
+            store.showCards &&
+            // An agent's question takes the same place, and it is waiting on the answer.
+            waitingCardChanges().length === 0
+          }
+        >
+          <CardsOffer />
+        </Show>
+        {/* Waits for the shortcut notice, which sits in the same place, as the offer does. */}
+        <Show when={!bare() && store.keybindingMigrationDismissed}>
+          <CardChangeRequest />
         </Show>
         <Show when={welcome()}>
           <WelcomeScreen />

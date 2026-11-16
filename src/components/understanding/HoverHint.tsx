@@ -8,7 +8,7 @@ import {
 } from '../../lib/floating';
 
 const HINT_WIDTH = 300;
-/** Room the hint needs; placeBelow flips it above the control when the foot is close. */
+/** Room a hint is taken to need until it is drawn and can be measured. */
 const HINT_HEIGHT = 200;
 
 /**
@@ -27,6 +27,7 @@ export function HoverHint(props: {
   const open = () => !!held.value();
   const [position, setPosition] = createSignal<BelowAnchor>({ top: 0, right: 0, maxHeight: 0 });
   let anchor: HTMLDivElement | undefined;
+  let hint: HTMLDivElement | undefined;
 
   createAnchorEffect(open, () => {
     if (!anchor) return;
@@ -36,7 +37,9 @@ export function HoverHint(props: {
         Math.min(HINT_WIDTH, window.innerWidth - 24),
         { width: window.innerWidth, height: window.innerHeight },
         12,
-        HINT_HEIGHT,
+        // Its real height, so a long hint goes above the control before it runs off
+        // the window's foot, and a short one above rests on the control.
+        hint?.offsetHeight || HINT_HEIGHT,
       ),
     );
   });
@@ -61,6 +64,7 @@ export function HoverHint(props: {
       <Show when={open()}>
         <Portal>
           <div
+            ref={hint}
             id={id}
             role="tooltip"
             class="tour-hint"

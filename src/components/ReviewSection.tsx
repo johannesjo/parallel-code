@@ -26,7 +26,7 @@ import {
   setReviewDismissReason,
   stageRework,
 } from '../store/review';
-import { refreshCodeFingerprint } from '../store/task-brief';
+import { refreshCodeFingerprint } from '../store/task-diff';
 import { getProject } from '../store/projects';
 import { cancelReview, startReview } from '../store/review-run';
 import {
@@ -158,8 +158,8 @@ function Folded(props: { ids: string[]; children: (id: string) => JSX.Element })
 /**
  * The review half of finishing a task, one follow-up box until asked for.
  * Run review asks a separate reviewer model for a confidence rating; the result lists what is
- * still a risk and what was done without being asked, built from the brief's
- * goal and the rating. Items can be collected into one rework prompt, which is
+ * still a risk and what was done without being asked, built from the
+ * rating. Items can be collected into one rework prompt, which is
  * staged in the task input for the user to send. Opening the dialog sends
  * nothing.
  */
@@ -175,7 +175,6 @@ export function ReviewSection(props: {
   const bodyId = createUniqueId();
   const summary = createMemo(() =>
     buildReviewSummary({
-      brief: props.task.brief,
       confidence: props.task.confidence,
       dismissed: props.task.reviewDismissed,
       codeFingerprint: props.task.codeFingerprint,
@@ -232,7 +231,7 @@ export function ReviewSection(props: {
   const [showDismissed, setShowDismissed] = createSignal(false);
 
   onMount(() => {
-    // A rating is judged against the code as it is now, not as the last brief saw it.
+    // A rating is judged against the code as it is now, not as the last turn left it.
     if (props.task.confidence)
       refreshCodeFingerprint(props.task.id).catch((error: unknown) =>
         logWarn('review', 'Reading the code failed', { error: errMessage(error) }),

@@ -6,7 +6,7 @@ import { IPC } from '../../electron/ipc/channels';
 import type { WorktreeStatus } from '../ipc/types';
 import { invoke } from '../lib/ipc';
 import { errMessage, info as logInfo, warn as logWarn } from '../lib/log';
-import { diffFingerprint } from '../lib/task-brief';
+import { diffFingerprint } from '../lib/diff-excerpt';
 import {
   buildTaskReviewPrompt,
   parseTaskReviewResponse,
@@ -20,7 +20,7 @@ import { isLandedTaskState } from './landing';
 import { setActiveTask } from './navigation';
 import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
 import { getReviewDismissals } from './review';
-import { isLiveTask, noteCodeFingerprint, promptsSince, readTaskDiff } from './task-brief';
+import { isLiveTask, noteCodeFingerprint, promptsSince, readTaskDiff } from './task-diff';
 import { uncollapseTask } from './tasks';
 import type { Task } from './types';
 

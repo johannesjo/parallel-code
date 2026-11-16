@@ -104,7 +104,6 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
       confidence: props.task.confidence,
       tour: props.tour,
       codeFingerprint: props.task.codeFingerprint,
-      brief: props.task.brief,
       ...(screens?.state === 'done' && {
         screens: {
           headSha: screens.headSha,

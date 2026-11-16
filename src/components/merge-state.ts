@@ -13,6 +13,7 @@ import {
   getTaskDotStatus,
   getVerifyCommand,
   mergeTask,
+  refreshBranchFacts,
   runBackgroundVerify,
   store,
 } from '../store/store';
@@ -256,6 +257,8 @@ export function createMergeState(props: MergeStateProps) {
       });
       setSyncDone(kind);
       refetchAll();
+      // The branch moved without a turn ending; cards about it would keep the old state.
+      void refreshBranchFacts(props.task.id);
       // New commits outdate the checks; re-run where the project runs them on its own.
       if (backgroundVerifyEnabled(props.task.id)) {
         const taskId = props.task.id;

@@ -10,9 +10,9 @@ vi.mock('../lib/model-request', () => ({ startModelRequest: mockStartRequest }))
 vi.mock('./tasks', () => ({ updateTaskName: mockUpdateTaskName }));
 vi.mock('../lib/log', () => ({ warn: mockWarn }));
 
-import { setStore, store } from './core';
+import { setStore } from './core';
 import type { Task } from './types';
-import { nameTaskWithModel, retitleFromBrief } from './model-task-name';
+import { nameTaskWithModel } from './model-task-name';
 
 function reply(text: string) {
   mockStartRequest.mockReturnValue({ result: Promise.resolve(text), cancel: vi.fn() });
@@ -60,8 +60,6 @@ describe('nameTaskWithModel', () => {
       }),
     );
     expect(mockUpdateTaskName).toHaveBeenCalledWith('t1', 'Haiku task naming');
-    // Marked as the model's, so the first brief may still replace it.
-    expect(store.tasks.t1.nameFromModel).toBe(true);
   });
 
   it('does nothing when the setting is off', async () => {
@@ -116,17 +114,5 @@ describe('nameTaskWithModel', () => {
     });
     await expect(nameTaskWithModel('t1', 'prompt')).resolves.toBeUndefined();
     expect(mockUpdateTaskName).not.toHaveBeenCalled();
-  });
-});
-
-describe('retitleFromBrief', () => {
-  it('logs a brief title it cannot use, since later briefs never retry', () => {
-    retitleFromBrief('t1', 'A title from the brief that runs on far longer than ten words allow');
-    expect(mockUpdateTaskName).not.toHaveBeenCalled();
-    expect(mockWarn).toHaveBeenCalledWith(
-      'tasks',
-      expect.stringContaining('no usable title'),
-      expect.objectContaining({ title: expect.stringContaining('A title from the brief') }),
-    );
   });
 });

@@ -128,27 +128,6 @@ describe('PromptInput key ownership', () => {
   });
 });
 
-describe('PromptInput question from the brief', () => {
-  it('shows what the agent needs above where the answer is typed', () => {
-    storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'] } };
-    const container = document.createElement('div');
-    document.body.append(container);
-    const [needsYou, setNeedsYou] = createSignal('Keep the old route?');
-    disposers.push(
-      render(
-        () => (
-          <PromptInput taskId="task-1" taskName="Task" agentId="agent-1" needsYou={needsYou()} />
-        ),
-        container,
-      ),
-    );
-    const label = () => container.querySelector('.prompt-needs-you')?.textContent;
-    expect(label()).toBe('Needs youKeep the old route?');
-    setNeedsYou('');
-    expect(label()).toBeUndefined();
-  });
-});
-
 describe('PromptInput draft persistence', () => {
   it('shows the draft restored from the store on mount', () => {
     storeMock.tasks = {

@@ -23,7 +23,7 @@ export function applyTaskPlanEvent(event: PlanEvent): void {
   setStore('tasks', event.taskId, 'agentPlan', 'failedCommand', event.failedCommand);
 }
 
-/** The plan task context shows: a chat agent states its own (Claude's
+/** The plan the Plan card shows: a chat agent states its own (Claude's
  *  TodoWrite or Codex's plan); a terminal agent's arrives through hooks. */
 export function taskPlanView(taskId: string): Pick<TaskAgentPlan, 'steps' | 'failedCommand'> {
   const task = store.tasks[taskId];

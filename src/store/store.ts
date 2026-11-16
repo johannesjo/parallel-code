@@ -132,6 +132,8 @@ export {
   clearPendingAction,
   toggleHelpDialog,
   toggleSettingsDialog,
+  openSettingsTab,
+  clearSettingsTabRequest,
   sendActivePrompt,
   scrollTaskElementIntoView,
 } from './focus';
@@ -148,7 +150,6 @@ export {
   toggleSidebar,
   toggleArena,
   openThinkingSpace,
-  setTaskContext,
   setDocumentWorkspacesEnabled,
   toggleFocusMode,
   toggleTaskFocusMode,
@@ -172,8 +173,6 @@ export {
   setShowPromptInput,
   setModelTaskNames,
   setTaskNameModel,
-  setTaskBriefs,
-  setBriefBarField,
   setBriefModel,
   setReviewGuidance,
   setShowSidebarTips,
@@ -250,7 +249,12 @@ export {
 } from './verification';
 export type { BackgroundVerifyHold } from './verification';
 export { stageCheckFailurePrompt } from './check-suite';
-export { getCheckSuiteUiState, getTaskChecks, isCheckSuiteBusy } from './check-suite-state';
+export {
+  getCheckSuiteUiState,
+  getProjectChecks,
+  getTaskChecks,
+  isCheckSuiteBusy,
+} from './check-suite-state';
 export { getMergedTasksTodayCount } from './completion';
 export {
   createTerminal,
@@ -314,3 +318,21 @@ export {
   cloudHandoffCommand,
   startCloudSession,
 } from './claude-cloud';
+export { answerCardChange, waitingCardChanges } from './card-config';
+export {
+  answerCardsOffer,
+  enabledCards,
+  modelCallsPerTurn,
+  moveCard,
+  setCardEnabled,
+  setCardMini,
+  setShowCards,
+  setSlotPinned,
+  addCard,
+  removeCard,
+  saveCard,
+} from './cards';
+export { allProjectChecks, draftCard } from './card-layout';
+export { cardTaskState, refreshBranchFacts } from './app-facts';
+export { cardCheck, getCheckCardRun, runCheckCard } from './card-checks';
+export { getModelCardRun, runFinishCards, runModelCard, updateModelCards } from './card-models';

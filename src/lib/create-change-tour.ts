@@ -18,7 +18,7 @@ import { createTourQuestions } from './create-tour-questions';
 import { GO_DEEPER_QUESTION, buildFollowUpPrompt } from './understanding-prompt';
 import { parseUnifiedDiff, type FileDiff } from './unified-diff-parser';
 import { loadTaskDiff, type TaskDiffInput } from './load-task-diff';
-import { diffFingerprint } from './task-brief';
+import { diffFingerprint } from './diff-excerpt';
 import type { TourBasis } from './finish-reports';
 
 interface TourMessage {

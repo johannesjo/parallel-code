@@ -8,6 +8,7 @@ import { deleteTask } from '../../ipc/tasks.js';
 import { projectTeardownOptions } from '../../ipc/project-worktree.js';
 import { killAgent } from '../../ipc/pty.js';
 import { verificationRunner } from '../../ipc/verify.js';
+import { cardRunKeyPrefix } from '../../ipc/card-check.js';
 import type { CoordinatedTask } from '../types.js';
 import { IPC } from '../../ipc/channels.js';
 import {
@@ -188,6 +189,7 @@ async function cleanupTaskOnce(
   unsubscribeAgentOutput(c, task.agentId);
   // A verify run still going would keep writing into the worktree we delete.
   verificationRunner.cancel(taskId);
+  verificationRunner.cancelPrefix(cardRunKeyPrefix(taskId));
 
   // Remove worktree. If this fails, keep all coordinator state so the caller
   // can retry. Do NOT emit MCP_TaskClosed — the task still exists on disk.

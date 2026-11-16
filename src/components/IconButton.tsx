@@ -5,6 +5,7 @@ interface IconButtonProps {
   icon: string | JSX.Element;
   onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   title?: string;
+  disabled?: boolean;
   size?: 'sm' | 'md';
   /** Marks the button as a toggle; omit for plain actions. */
   pressed?: boolean;
@@ -22,6 +23,7 @@ export function IconButton(props: IconButtonProps) {
       class="icon-btn"
       title={props.title}
       aria-label={props.title}
+      disabled={props.disabled}
       aria-pressed={props.pressed}
       aria-haspopup={props.menuOpen === undefined ? undefined : 'menu'}
       aria-expanded={props.menuOpen}
@@ -33,7 +35,8 @@ export function IconButton(props: IconButtonProps) {
         background: 'transparent',
         border: `1px solid ${theme.border}`,
         color: theme.fgMuted,
-        cursor: 'pointer',
+        cursor: props.disabled ? 'default' : 'pointer',
+        opacity: props.disabled ? '0.5' : undefined,
         'border-radius': 'var(--radius-sm)',
         padding: isSm() ? '2px' : '4px',
         'font-size': isSm() ? '11px' : '13px',

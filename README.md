@@ -119,7 +119,7 @@ Phone access uses port `8777` in development (`npm run dev`) and `7777` in the i
 Each feature is described in [docs/features.md](docs/features.md).
 
 - **Review** — inline review comments, a guided tour of the changes, confidence ratings from a separate reviewer model, per-file test coverage, before-and-after screenshots of UI changes, and tours that explain a plan or a file
-- **Planning** — a Kanban project plan kept in `KANBAN.md`, agents that start and manage their own subtasks, an arena that runs one prompt with two to four agents to compare, a mind map and the agent's live reasoning graph, a live Markdown canvas, notes, and short task briefs
+- **Planning** — a Kanban project plan kept in `KANBAN.md`, agents that start and manage their own subtasks, an arena that runs one prompt with two to four agents to compare, a mind map and the agent's live reasoning graph, a live Markdown canvas, and notes
 - **Running code** — shell terminals per task, a browser preview of your local app, per-project Docker sandboxes (not for Antigravity), direct mode without a worktree, folders without git, and importing existing worktrees
 - **Phone** — a phone UI in any mobile browser, an Android app, and notifications when a task needs you. See [docs/phone.md](docs/phone.md)
 - **Integrations** — PR CI status notifications, [Super Productivity](https://super-productivity.com) time tracking (an open-source to-do list and time tracker by the same developer), and a choice of model for code Q&A

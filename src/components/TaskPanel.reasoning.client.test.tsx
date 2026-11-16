@@ -17,9 +17,7 @@ import {
   showNotification,
   toggleFocusMode,
   setTaskFocusedPanel,
-  setTaskBriefs,
-  setTaskContext,
-  setShowPromptInput,
+  setShowCards,
   setActiveTask,
 } from '../store/store';
 import { GIST_LABEL } from '../lib/understanding-tour';
@@ -65,8 +63,7 @@ vi.mock('../store/store', () => {
     taskViewportVisibility: {} as Record<string, string>,
     askCodeProvider: 'minimax',
     agentEnvFiles: {},
-    taskBriefs: true,
-    taskContext: false,
+    showCards: true,
     pendingAction: null as unknown,
   });
   pending.set = (action: unknown) => setStore('pendingAction', action);
@@ -103,9 +100,9 @@ vi.mock('../store/store', () => {
     uncollapseTask: vi.fn(),
     clearPendingAction: () => setStore('pendingAction', null),
     toggleFocusMode: (on?: boolean) => setStore('focusMode', on ?? !store.focusMode),
-    setTaskBriefs: (on: boolean) => setStore('taskBriefs', on),
-    setTaskContext: (on: boolean) => setStore('taskContext', on),
-    setShowPromptInput: (on: boolean) => setStore('showPromptInput', on),
+    setShowCards: (on: boolean) => setStore('showCards', on),
+    // One card stands in for all of them, so cards follow the master switch.
+    enabledCards: () => (store.showCards ? [{ id: 'notes', slots: [] }] : []),
     showCanvasContext: vi.fn(),
   };
 });
@@ -141,15 +138,10 @@ vi.mock('./TaskAITerminal', () => ({
     </div>
   ),
 }));
-vi.mock('./TaskBrief', () => ({
-  TaskBriefBar: () => <div class="test-brief-bar" />,
-  // The brief's question, without the working-state check behind it.
-  needsYouNow: (task: Task) => task.brief?.brief.needsYou ?? '',
+vi.mock('./cards/CardLine', () => ({
+  CardLine: () => <div class="test-card-line" />,
 }));
-vi.mock('./TaskContext', () => ({ TaskContext: () => <div class="test-context" /> }));
-vi.mock('./TaskContextStrip', () => ({
-  TaskContextStrip: () => <div class="test-context-strip" />,
-}));
+vi.mock('./cards/CardsPane', () => ({ CardsPane: () => <div class="test-cards-pane" /> }));
 vi.mock('./PromptInput', () => ({
   PromptInput: () => <textarea class="test-prompt" value="Draft" />,
 }));
@@ -354,7 +346,7 @@ it('opens a terminal Markdown link in the side panel and moves focus there', asy
   expect(setTaskFocusedPanel).not.toHaveBeenCalledWith('task', 'canvas');
 });
 
-it('hides the brief line while briefs are off', () => {
+it('hides the card line while cards are off', () => {
   const task: Task = {
     id: 'task',
     name: 'Task',
@@ -370,17 +362,21 @@ it('hides the brief line while briefs are off', () => {
   const container = document.createElement('div');
   document.body.append(container);
   dispose = render(() => <TaskPanel task={task} isActive />, container);
-  const bar = () => container.querySelector('.test-brief-bar');
-  expect(bar()).not.toBeNull();
-  setTaskBriefs(false);
+  const line = () => container.querySelector('.test-card-line');
+  const header = expectDefined(container.querySelector<HTMLElement>('.task-header-stack'));
+  expect(line()).not.toBeNull();
+  // Title 38px + card line 28px + branch bar 28px; only the setting changes it.
+  expect(header.style.flex).toBe('0 0 94px');
+  setShowCards(false);
   try {
-    expect(bar()).toBeNull();
+    expect(line()).toBeNull();
+    expect(header.style.flex).toBe('0 0 66px');
   } finally {
-    setTaskBriefs(true);
+    setShowCards(true);
   }
 });
 
-function briefTask(needsYou?: string): Task {
+function agentTask(): Task {
   return {
     id: 'task',
     name: 'Task',
@@ -392,82 +388,42 @@ function briefTask(needsYou?: string): Task {
     branchName: '',
     worktreePath: '/tmp/task',
     lastPrompt: '',
-    brief: { brief: { goal: 'g', now: 'n', needsYou }, generatedAt: 1, fingerprint: '' },
   };
 }
 
-it('swaps the header brief for a plan line while task context is on in the stacked view', () => {
-  const container = document.createElement('div');
-  document.body.append(container);
-  dispose = render(() => <TaskPanel task={briefTask()} isActive />, container);
-  const bar = () => container.querySelector('.test-brief-bar');
-  const strip = () => container.querySelector('.test-context-strip');
-  expect(bar()).not.toBeNull();
-  expect(strip()).toBeNull();
-  setTaskContext(true);
-  try {
-    expect(bar()).toBeNull();
-    expect(strip()).not.toBeNull();
-    expect(container.querySelector('.test-context')).toBeNull();
-    // Title 38px + plan line 28px + branch bar 28px, so the terminal never moves.
-    const header = expectDefined(container.querySelector<HTMLElement>('.task-header-stack'));
-    expect(header.style.flex).toBe('0 0 94px');
-  } finally {
-    setTaskContext(false);
-  }
-});
-
-it('puts task context on top of the split view side column instead of the header', () => {
+it('shows the cards as a pane above the changed files in the split view, not in the header', () => {
   const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
-  setTaskContext(true);
   try {
     toggleFocusMode(true);
     const container = document.createElement('div');
     document.body.append(container);
-    dispose = render(() => <TaskPanel task={briefTask()} isActive />, container);
-    const contextCell = expectDefined(
-      container.querySelector('.test-context')?.closest<HTMLElement>('.rp-cell'),
-    );
-    const notesCell = expectDefined(
-      container.querySelector('.test-notes')?.closest<HTMLElement>('.rp-cell'),
-    );
-    expect(contextCell.parentElement).toBe(notesCell.parentElement);
-    expect(contextCell.parentElement?.querySelector(':scope > .rp-cell')).toBe(contextCell);
-    // Sized to its content up to a cap, so the panes below keep their room.
-    expect(contextCell.style.maxHeight).toBe('45%');
-    expect(container.querySelector('.test-context-strip')).toBeNull();
-    expect(container.querySelector('.test-brief-bar')).toBeNull();
-    setTaskContext(false);
-    expect(container.querySelector('.test-context')).toBeNull();
-    expect(container.querySelector('.test-brief-bar')).not.toBeNull();
-  } finally {
-    toggleFocusMode(false);
-    setTaskContext(false);
-    width.mockRestore();
-  }
-});
-
-it("shows the turned-off prompt box for the agent's question only with task context on", () => {
-  const container = document.createElement('div');
-  document.body.append(container);
-  const prompt = () => container.querySelector('.test-prompt');
-  setShowPromptInput(false);
-  try {
     dispose = render(
-      () => <TaskPanel task={briefTask('Keep the old route?')} isActive />,
+      () => <TaskPanel task={{ ...agentTask(), gitIsolation: 'worktree' }} isActive />,
       container,
     );
-    // Without task context, the header brief asks the question instead.
-    expect(prompt()).toBeNull();
-    setTaskContext(true);
-    expect(prompt()).not.toBeNull();
-    dispose();
-    setTaskContext(true);
-    dispose = render(() => <TaskPanel task={briefTask()} isActive />, container);
-    expect(prompt()).toBeNull();
+    const cardsCell = expectDefined(
+      container.querySelector('.test-cards-pane')?.closest<HTMLElement>('.rp-cell'),
+    );
+    const filesCell = expectDefined(
+      container.querySelector('.test-files')?.closest<HTMLElement>('.rp-cell'),
+    );
+    expect(cardsCell.parentElement).toBe(filesCell.parentElement);
+    expect(cardsCell.parentElement?.querySelector(':scope > .rp-cell')).toBe(cardsCell);
+    // Sized to its cards up to a cap, so the panes below keep their room.
+    expect(cardsCell.style.maxHeight).toBe('45%');
+    expect(
+      cardsCell.compareDocumentPosition(filesCell) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.querySelector('.test-card-line')).toBeNull();
+    // Title 38px + branch bar 28px: the pane took over from the card line.
+    const header = expectDefined(container.querySelector<HTMLElement>('.task-header-stack'));
+    expect(header.style.flex).toBe('0 0 66px');
+    setShowCards(false);
+    expect(container.querySelector('.test-cards-pane')).toBeNull();
   } finally {
-    setTaskContext(false);
-    setShowPromptInput(true);
+    setShowCards(true);
+    toggleFocusMode(false);
+    width.mockRestore();
   }
 });
 
