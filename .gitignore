@@ -18,6 +18,7 @@ docs/*
 !docs/document-workspaces.md
 !docs/browser-preview.md
 !docs/investigation-spike.md
+!docs/acp-chat-spike.md
 !docs/mind-map.md
 !docs/reasoning-graph.md
 !docs/reasoning-graph-view-plan.md
