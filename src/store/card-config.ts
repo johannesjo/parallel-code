@@ -33,8 +33,9 @@ import { publishTarget } from './task-diff';
 /** A change an agent asked for that the user has not answered yet. */
 export interface WaitingCardChange {
   cardId: string;
-  /** The task whose agent asked. */
+  /** The task whose agent asked, by name for the notice and by id for the answer. */
   asker: string;
+  askerId: string;
   /** In words, after "wants to": `add "Notes", which switches on an AI card`. */
   change: string;
   apply: () => void;
@@ -42,6 +43,36 @@ export interface WaitingCardChange {
 
 /** More than the user can sensibly be asked about; an agent past it is told to wait. */
 const MAX_WAITING = 5;
+/** Answers kept per task until its agent reads them; older ones are dropped. */
+const MAX_ANSWERS = 10;
+
+/** What became of a waiting change, for the agent that asked. */
+interface CardChangeAnswer {
+  card: string;
+  change: string;
+  answer: 'applied' | 'dismissed' | 'not applied' | 'replaced';
+  reason?: string;
+}
+
+// In memory like the waiting list: a restart loses both, and the hold message says so.
+const answers = new Map<string, CardChangeAnswer[]>();
+
+function noteAnswer(entry: WaitingCardChange, answer: Omit<CardChangeAnswer, 'card' | 'change'>) {
+  const list = answers.get(entry.askerId) ?? [];
+  list.push({ card: entry.cardId, change: entry.change, ...answer });
+  answers.set(entry.askerId, list.slice(-MAX_ANSWERS));
+}
+
+/**
+ * Hands a task's agent its answers once: card_config_read reports news, not
+ * history. A reply lost on its way to the agent loses them; the cards it reads
+ * still show what was applied.
+ */
+function takeAnswers(taskId: string): CardChangeAnswer[] {
+  const list = answers.get(taskId) ?? [];
+  answers.delete(taskId);
+  return list;
+}
 
 // Kept out of the store: the store is saved, and a function cannot be.
 const [waiting, setWaiting] = createSignal<WaitingCardChange[]>([]);
@@ -51,16 +82,26 @@ export const waitingCardChanges = waiting;
 const drop = (cardId: string) =>
   setWaiting((entries) => entries.filter((entry) => entry.cardId !== cardId));
 
+/** Drops what waits for a card because a newer request took its place; another task's agent is told. */
+function supersede(cardId: string, askerId: string): void {
+  const older = waiting().find((entry) => entry.cardId === cardId);
+  if (older && older.askerId !== askerId) noteAnswer(older, { answer: 'replaced' });
+  drop(cardId);
+}
+
 /** Applies or drops the change waiting for a card. */
 export function answerCardChange(cardId: string, apply: boolean): void {
   const change = waiting().find((entry) => entry.cardId === cardId);
   drop(cardId);
-  if (!apply || !change) return;
+  if (!change) return;
+  if (!apply) return noteAnswer(change, { answer: 'dismissed' });
   try {
     change.apply();
+    noteAnswer(change, { answer: 'applied' });
   } catch (error) {
     // The cards changed while it waited, e.g. the cap was reached.
     showNotification(errMessage(error), { durationMs: NOTIFICATION_ERROR_MS });
+    noteAnswer(change, { answer: 'not applied', reason: errMessage(error) });
   }
 }
 
@@ -82,11 +123,15 @@ function hold(entry: WaitingCardChange) {
     throw new Error(
       `${MAX_WAITING} card changes are waiting for a click in the app. Ask the user to answer them first.`,
     );
+  supersede(entry.cardId, entry.askerId);
   setWaiting([...others, entry]);
   return {
     status: 'waiting' as const,
     card: entry.cardId,
-    message: `Nothing changed yet. To ${entry.change}, the user has to click Apply in the app.`,
+    message:
+      `Nothing changed yet. To ${entry.change}, the user has to click Apply in the app. ` +
+      'card_config_read reports the answer once, under "answers". A restart of the app drops ' +
+      'waiting changes: one neither waiting nor answered was lost and can be asked again.',
   };
 }
 
@@ -168,7 +213,12 @@ function asRead(change: string, inWords: () => string | undefined, run: () => vo
   };
 }
 
-function save(asker: string, raw: unknown, position: number | undefined) {
+interface Asker {
+  name: string;
+  id: string;
+}
+
+function save(asker: Asker, raw: unknown, position: number | undefined) {
   const card = parseCardConfig(raw);
   const previous = existing(card.id);
   if (!previous && store.cardDefinitions.length >= CARD_LIMITS.cards)
@@ -181,11 +231,11 @@ function save(asker: string, raw: unknown, position: number | undefined) {
       return JSON.stringify(now) === before ? saveInWords(card, now) : undefined;
     };
     const apply = asRead(change, inWords, () => applySave(card, position));
-    return hold({ cardId: card.id, asker, change, apply });
+    return hold({ cardId: card.id, asker: asker.name, askerId: asker.id, change, apply });
   }
   applySave(card, position);
   // The agent's newest word on this card; an older one still waiting would undo it.
-  drop(card.id);
+  supersede(card.id, asker.id);
   return {
     status: 'saved' as const,
     card,
@@ -195,7 +245,7 @@ function save(asker: string, raw: unknown, position: number | undefined) {
   };
 }
 
-function remove(asker: string, cardId: string) {
+function remove(asker: Asker, cardId: string) {
   const card = existing(cardId);
   if (!card) throw new Error(`There is no card "${cardId}". Call card_config_read.`);
   if (card.builtIn) throw new Error(`Card "${cardId}" is built in. Switch it off instead.`);
@@ -207,13 +257,14 @@ function remove(asker: string, cardId: string) {
     };
     return hold({
       cardId,
-      asker,
+      asker: asker.name,
+      askerId: asker.id,
       change,
       apply: asRead(change, inWords, () => removeCard(cardId)),
     });
   }
   removeCard(cardId);
-  drop(cardId);
+  supersede(cardId, asker.id);
   return { status: 'removed' as const, card: cardId };
 }
 
@@ -228,6 +279,7 @@ export function readCardConfig(taskId: string) {
     checks: allProjectChecks().map(({ id, name }) => ({ id, name })),
     cards: persistCardDefinitions(store.cardDefinitions),
     waiting: waiting().map(({ cardId, change }) => ({ card: cardId, change })),
+    answers: takeAnswers(taskId),
   };
 }
 
@@ -237,7 +289,7 @@ export function readCardConfig(taskId: string) {
  * the agent when the request cannot be carried out.
  */
 export function changeCardConfig(taskId: string, request: unknown) {
-  const asker = publishTarget(taskId).name;
+  const asker = { name: publishTarget(taskId).name, id: taskId };
   if (isRecord(request) && request.action === 'remove' && typeof request.card === 'string')
     return remove(asker, request.card);
   if (isRecord(request) && request.action === 'save') {

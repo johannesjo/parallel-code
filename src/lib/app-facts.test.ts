@@ -214,6 +214,16 @@ describe('the remote-branch card', () => {
     ]);
   });
 
+  it('ends with how long ago origin was last fetched or pushed to', () => {
+    const now = 3 * 86_400_000 + 10_000;
+    const facts = { merge: { ...merge, remote: 'pushed' as const, remoteSeenAt: 10_000 } };
+    const status = appFactValues('remote-branch', { ...base, facts, now })?.values.status;
+    expect(status?.type === 'status' && status.rows).toEqual([
+      { state: 'ok', text: 'Origin has the latest commit' },
+      { state: 'unknown', text: 'Last fetch or push', value: '3d ago' },
+    ]);
+  });
+
   it('shows nothing for a branch without a remote, and is dated by the read', () => {
     expect(appFactValues('remote-branch', { ...base, facts: { merge } })).toBeUndefined();
     const input = { ...base, facts: { merge: { ...merge, remote: 'pushed' as const } } };

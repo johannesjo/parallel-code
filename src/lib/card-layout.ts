@@ -61,9 +61,9 @@ function draftBody(data: Record<string, unknown>, context: LayoutContext) {
     const check = context.checks.find((entry) => entry.id === source.checkId);
     if (!check) throw new Error(`The draft names a check no project has: "${source.checkId}".`);
     // The pass/fail layout only fits exit-code mode; the editor switches to JSON and lays it out.
-    // Checks run on demand only, so a trigger the model chose would mislabel the card.
+    // On demand and at Finish, as `checkCard` starts one from the gallery; the editor changes it.
     return {
-      source: { ...source, mode: 'exit-code' as const, trigger: 'manual' as const },
+      source: { ...source, mode: 'exit-code' as const, trigger: 'finish' as const },
       slots: checkCard(check).slots,
     };
   }
@@ -101,5 +101,7 @@ export function parseLayoutResponse(response: string, context: LayoutContext): C
     source,
     slots: slots.slice(0, SLOT_LIMITS.slots),
     enabled: true,
+    // A check card runs when Finish opens, so its result shows there too, as `checkCard` does.
+    ...(source.kind === 'check' && { showAtFinish: true }),
   };
 }

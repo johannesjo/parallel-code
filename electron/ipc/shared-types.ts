@@ -157,6 +157,9 @@ export interface MergeStatus {
    *  origin's copy has. Absent otherwise, when they could not be counted, and
    *  from older senders. */
   remote_divergence?: RemoteDivergence;
+  /** When the local copy of origin's branch was last fetched or pushed to,
+   *  in ms. Absent when it never was, without an origin, and from older senders. */
+  remote_seen_at?: number;
   /** The task's uncommitted files the base's newer commits changed too.
    *  Bringing the base in could not put them back cleanly. Absent when there
    *  are none and from older senders. */

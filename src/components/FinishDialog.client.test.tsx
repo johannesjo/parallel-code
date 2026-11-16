@@ -33,6 +33,7 @@ vi.mock('../store/store', () => ({
   backgroundVerifyEnabled: () => false,
   enabledCards: () => [],
   runFinishCards: vi.fn(),
+  runFinishCheckCards: vi.fn(async () => undefined),
   cancelTaskVerification: vi.fn(async () => true),
   getBackgroundVerifyHold: () => undefined,
   runBackgroundVerify: vi.fn(async () => undefined),

@@ -334,5 +334,5 @@ export {
 } from './cards';
 export { allProjectChecks, draftCard } from './card-layout';
 export { cardTaskState, refreshBranchFacts } from './app-facts';
-export { cardCheck, getCheckCardRun, runCheckCard } from './card-checks';
+export { cardCheck, getCheckCardRun, runCheckCard, runFinishCheckCards } from './card-checks';
 export { getModelCardRun, runFinishCards, runModelCard, updateModelCards } from './card-models';

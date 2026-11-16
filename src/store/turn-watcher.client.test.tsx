@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Client suite: the unit suite renders Solid for the server, where effects never run.
-const { mockIsTaskWorking, mockDiff, mockRequest } = vi.hoisted(() => ({
+const { mockIsTaskWorking, mockDiff, mockRequest, mockInvoke } = vi.hoisted(() => ({
   mockIsTaskWorking: vi.fn(),
   mockDiff: { raw: '' },
   mockRequest: vi.fn(),
+  mockInvoke: vi.fn(() => Promise.resolve(undefined)),
 }));
 vi.mock('../lib/model-request', () => ({ startModelRequest: mockRequest }));
+vi.mock('../lib/ipc', () => ({ invoke: mockInvoke }));
+vi.mock('./check-suite-state', () => ({
+  getTaskChecks: () => [{ id: 'verify', name: 'Check', kind: 'static', command: 'npm test' }],
+}));
 
 vi.mock('../lib/load-task-diff', () => ({
   loadTaskDiff: () => Promise.resolve({ rawDiff: mockDiff.raw, cwd: '/wt' }),
@@ -21,6 +26,8 @@ vi.mock('./taskStatus', () => ({
 
 import { appFactCard } from '../lib/app-facts';
 import { confidenceCard, type CardDefinition } from '../lib/cards';
+import { checkCard } from '../lib/check-card';
+import { IPC } from '../../electron/ipc/channels';
 import { isConfidenceOutdated, type TaskConfidence } from '../lib/task-confidence';
 import { diffFingerprint } from '../lib/diff-excerpt';
 import { store, setStore } from './core';
@@ -185,6 +192,30 @@ describe('startTurnWatcher', () => {
     }
     expect(store.tasks.t1.codeFingerprint).toBeDefined();
     expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it("runs an after-turn check card after a turn, from that turn's diff, but not on a first read", async () => {
+    const card = checkCard({ id: 'verify', name: 'Check' });
+    const source = { kind: 'check', checkId: 'verify', mode: 'exit-code', trigger: 'after-turn' };
+    setStore('cardDefinitions', [{ ...card, source } as CardDefinition]);
+    const checkRuns = () =>
+      (mockInvoke.mock.calls as unknown as [string, Record<string, unknown>][]).filter(
+        ([channel]) => channel === IPC.RunCardCheck,
+      );
+    vi.useFakeTimers();
+    try {
+      setStore('taskOrder', ['t1']);
+      mockIsTaskWorking.mockReturnValue(false);
+      const stop = startTurnWatcher();
+      await vi.advanceTimersByTimeAsync(5_000);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(checkRuns()).toEqual([]);
+    await runTurn();
+    expect(checkRuns()).toHaveLength(1);
+    expect(checkRuns()[0][1]).toMatchObject({ command: 'npm test', diff: CHANGED });
   });
 
   it('reads nothing for live facts alone: activity and CI need no diff', async () => {

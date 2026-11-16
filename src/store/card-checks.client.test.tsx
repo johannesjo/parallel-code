@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CardCheckResult, VerificationRun } from '../ipc/types';
 
-const { mockInvoke, mockDiff } = vi.hoisted(() => ({
+const { mockInvoke, mockDiff, mockCheck } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockDiff: { reads: [] as string[] },
+  mockCheck: { command: 'npm run check' },
 }));
 vi.mock('../lib/ipc', () => ({ invoke: mockInvoke }));
 vi.mock('../lib/load-task-diff', () => ({
@@ -13,20 +14,26 @@ vi.mock('../lib/load-task-diff', () => ({
 }));
 vi.mock('./projects', () => ({ getProjectPath: () => '/repo' }));
 vi.mock('./check-suite-state', () => ({
-  getTaskChecks: () => [{ id: 'verify', name: 'Check', kind: 'static', command: 'npm run check' }],
+  getTaskChecks: () => [{ id: 'verify', name: 'Check', kind: 'static', ...mockCheck }],
 }));
 
 import { readCard } from '../lib/card-display';
+import type { CardValues } from '../lib/cards';
 import { checkCard } from '../lib/check-card';
 import { diffFingerprint } from '../lib/diff-excerpt';
-import { getCheckCardRun, runCheckCard } from './card-checks';
+import {
+  getCheckCardRun,
+  runAfterTurnCheckCards,
+  runCheckCard,
+  runFinishCheckCards,
+} from './card-checks';
 import { cardTaskState } from './app-facts';
 import { saveCard } from './cards';
 import { setStore, store } from './core';
 import type { Task } from './types';
 
 const CARD = checkCard({ id: 'verify', name: 'Check' });
-const OLD = {
+const OLD: CardValues = {
   at: 1,
   values: { result: { type: 'status', rows: [{ state: 'ok', text: 'Passed' }] } },
 };
@@ -140,5 +147,120 @@ describe('runCheckCard', () => {
     expect(getCheckCardRun('t1', CARD.id).error).toBeUndefined();
     const rows = store.tasks.t1.cards?.[CARD.id]?.values.result;
     expect(rows).toMatchObject({ rows: [{ text: 'Passed' }] });
+  });
+});
+
+describe('check cards that run by themselves', () => {
+  const DIFF = 'diff --git a/x b/x\n+x';
+  const withTrigger = (trigger: 'manual' | 'finish' | 'after-turn') => {
+    const card = { ...CARD, source: { ...CARD.source, trigger } } as typeof CARD;
+    setStore('cardDefinitions', [card]);
+    return card;
+  };
+  const passed = () => mockInvoke.mockResolvedValue(result({ status: 'passed', exitCode: 0 }));
+  const ran = () => mockInvoke.mock.calls.length > 0;
+  /** A clean run that saw DIFF, so later automatic runs can count it as current. */
+  const ranOn = async (diff: string) => {
+    mockDiff.reads = [diff, diff];
+    await runCheckCard('t1', CARD.id);
+    mockInvoke.mockClear();
+  };
+
+  it('run at Finish when set to, and not when on demand only', async () => {
+    passed();
+    withTrigger('manual');
+    await runFinishCheckCards('t1');
+    expect(ran()).toBe(false);
+    withTrigger('finish');
+    await runFinishCheckCards('t1');
+    expect(ran()).toBe(true);
+  });
+
+  it('run at Finish when set to run after each turn too', async () => {
+    passed();
+    withTrigger('after-turn');
+    await runFinishCheckCards('t1');
+    expect(ran()).toBe(true);
+  });
+
+  it('skip at Finish when the result already covers the code', async () => {
+    passed();
+    withTrigger('finish');
+    await ranOn(DIFF);
+    mockDiff.reads = [DIFF];
+    await runFinishCheckCards('t1');
+    expect(ran()).toBe(false);
+  });
+
+  it('rerun at Finish when the check command changed since the last result', async () => {
+    passed();
+    withTrigger('finish');
+    await ranOn(DIFF);
+    mockCheck.command = 'npm test';
+    try {
+      mockDiff.reads = [DIFF, DIFF];
+      await runFinishCheckCards('t1');
+      expect(mockInvoke.mock.calls[0]?.[1]).toMatchObject({ command: 'npm test' });
+    } finally {
+      mockCheck.command = 'npm run check';
+    }
+  });
+
+  it('rerun at Finish when the code changed under the last result', async () => {
+    passed();
+    withTrigger('finish');
+    mockDiff.reads = [DIFF, `${DIFF}\n+edited`];
+    await runCheckCard('t1', CARD.id);
+    mockInvoke.mockClear();
+    mockDiff.reads = [`${DIFF}\n+edited`];
+    await runFinishCheckCards('t1');
+    expect(ran()).toBe(true);
+  });
+
+  it('run after a turn only when set to, from the diff the tracker read', async () => {
+    passed();
+    withTrigger('finish');
+    await runAfterTurnCheckCards('t1', DIFF);
+    expect(ran()).toBe(false);
+    withTrigger('after-turn');
+    // The read after the run sees the same code, so the run is clean for the tests after it.
+    mockDiff.reads = [`${DIFF}\n+turn`];
+    await runAfterTurnCheckCards('t1', `${DIFF}\n+turn`);
+    expect(mockInvoke.mock.calls[0][1]).toMatchObject({ diff: `${DIFF}\n+turn` });
+  });
+
+  it('skip after a turn that left the code as the last result saw it', async () => {
+    passed();
+    withTrigger('after-turn');
+    await ranOn(DIFF);
+    await runAfterTurnCheckCards('t1', DIFF);
+    expect(ran()).toBe(false);
+  });
+
+  it.each(['none', 'direct'])(
+    'rerun at Finish on a %s task, whose diff cannot show every edit',
+    async (gitIsolation) => {
+      passed();
+      withTrigger('finish');
+      setStore('tasks', 't1', 'gitIsolation', gitIsolation as Task['gitIsolation']);
+      // The diff it reads now: a task without git always reads as ''.
+      const now = gitIsolation === 'none' ? '' : DIFF;
+      setStore('tasks', 't1', 'cards', CARD.id, { ...OLD, fingerprint: diffFingerprint(now) });
+      mockDiff.reads = [DIFF, DIFF];
+      await runFinishCheckCards('t1');
+      expect(ran()).toBe(true);
+    },
+  );
+
+  it('leave a run that is already going alone', async () => {
+    withTrigger('finish');
+    let finish: (value: CardCheckResult) => void = () => undefined;
+    mockInvoke.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const going = runCheckCard('t1', CARD.id);
+    await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    await runFinishCheckCards('t1');
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    finish(result({ status: 'passed', exitCode: 0 }));
+    await going;
   });
 });

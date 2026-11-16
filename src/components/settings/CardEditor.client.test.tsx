@@ -304,6 +304,24 @@ describe('Edit card', () => {
     expect(preview.querySelector('[inert]')).toBeNull();
   });
 
+  it('saves when a check card runs by itself', () => {
+    setStore('cardDefinitions', 0, 'source', {
+      kind: 'check',
+      checkId: 'lint',
+      mode: 'exit-code',
+      trigger: 'manual',
+    });
+    button('Edit').click();
+    const runs = [...document.body.querySelectorAll('label')]
+      .find((l) => l.textContent?.startsWith('Runs'))
+      ?.querySelector('select');
+    if (!runs) throw new Error('No Runs select');
+    runs.value = 'finish';
+    runs.dispatchEvent(new Event('change', { bubbles: true }));
+    button('Save').click();
+    expect(store.cardDefinitions[0].source).toMatchObject({ kind: 'check', trigger: 'finish' });
+  });
+
   it('shows a JSON check the object to write, keyed by slot id', () => {
     setStore('cardDefinitions', 0, 'source', { kind: 'check', checkId: 'lint', mode: 'json' });
     button('Edit').click();

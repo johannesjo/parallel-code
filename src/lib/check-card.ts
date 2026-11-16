@@ -21,9 +21,12 @@ export function checkCard(
     id: freeCardId(`check-${check.id}`, taken),
     name: check.name,
     description: '',
-    source: { kind: 'check', checkId: check.id, mode: 'exit-code', trigger: 'manual' },
+    // Finish is where a stale check result costs most; Run stays on the card either way.
+    source: { kind: 'check', checkId: check.id, mode: 'exit-code', trigger: 'finish' },
     slots: [{ id: RESULT_SLOT, type: 'status', label: 'Result' }],
     enabled: true,
+    // It runs when Finish opens, so its result shows there too.
+    showAtFinish: true,
   };
 }
 

@@ -343,6 +343,15 @@ async function setAsideLocalChanges(
   };
 }
 
+/** A git read in a checkout: its trimmed output, or undefined when it fails. */
+function gitReader(cwd: string) {
+  return (args: string[]) =>
+    exec('git', args, { cwd }).then(
+      ({ stdout }) => stdout.trim(),
+      () => undefined,
+    );
+}
+
 /**
  * Where origin's copy of the checked-out branch stands. Reads the local
  * remote-tracking ref without fetching, so it costs no network; pushes from
@@ -350,25 +359,73 @@ async function setAsideLocalChanges(
  */
 async function remoteBranchState(
   worktreePath: string,
-): Promise<{ state: RemoteBranchState; divergence?: RemoteDivergence } | undefined> {
-  const read = (args: string[]) =>
-    exec('git', args, { cwd: worktreePath }).then(
-      ({ stdout }) => stdout.trim(),
-      () => undefined,
-    );
+): Promise<
+  { state: RemoteBranchState; divergence?: RemoteDivergence; seenAt?: number } | undefined
+> {
+  const read = gitReader(worktreePath);
   const [origin, branch, head] = await Promise.all([
     read(['config', '--get', 'remote.origin.url']),
     read(['symbolic-ref', '--quiet', '--short', 'HEAD']),
     read(['rev-parse', 'HEAD']),
   ]);
   if (!origin || !branch || !head) return undefined;
-  const remote = await read(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`]);
-  if (!remote) return { state: 'unpushed' };
-  if (remote === head) return { state: 'pushed' };
+  const ref = `refs/remotes/origin/${branch}`;
+  const [remote, seenAt] = await Promise.all([
+    read(['rev-parse', '--verify', '--quiet', ref]),
+    remoteSeenAt(worktreePath, branch),
+  ]);
+  const seen = seenAt === undefined ? {} : { seenAt };
+  if (!remote) return { state: 'unpushed', ...seen };
+  if (remote === head) return { state: 'pushed', ...seen };
   const counts = await read(['rev-list', '--left-right', '--count', `${head}...${remote}`]);
   const [ahead, behind] = (counts ?? '').split(/\s+/).map(Number);
   const counted = Number.isInteger(ahead) && Number.isInteger(behind);
-  return { state: 'differs', ...(counted && { divergence: { ahead, behind } }) };
+  return { state: 'differs', ...seen, ...(counted && { divergence: { ahead, behind } }) };
+}
+
+/**
+ * When the local copy of origin's branch was last brought up to date, in ms:
+ * the newer of its reflog (a push or a fetch that moved it) and a FETCH_HEAD
+ * that lists the branch (a fetch that brought it, even unchanged). Undefined
+ * when neither exists.
+ */
+// shortcut: reads this worktree's and the main checkout's FETCH_HEAD only, and does not
+// tell remotes apart by URL, so a no-op fetch from another worktree is missed and one
+// from another remote with the same branch counts — read every worktree's if that matters.
+async function remoteSeenAt(worktreePath: string, branch: string): Promise<number | undefined> {
+  const ref = `refs/remotes/origin/${branch}`;
+  const read = gitReader(worktreePath);
+  const [entry, ownFetch, commonDir] = await Promise.all([
+    read(['log', '-g', '-1', '--date=unix', '--format=%gd', ref]),
+    read(['rev-parse', '--git-path', 'FETCH_HEAD']),
+    read(['rev-parse', '--git-common-dir']),
+  ]);
+  const logged = Number(/@\{(\d+)\}$/.exec(entry ?? '')?.[1]) * 1_000;
+  const fetchPaths = [ownFetch, commonDir && path.join(commonDir, 'FETCH_HEAD')];
+  const fetched = await Promise.all(
+    fetchPaths.map((file) => (file ? fetchedAt(path.resolve(worktreePath, file), branch) : 0)),
+  );
+  const newest = Math.max(logged || 0, ...fetched);
+  return newest > 0 ? Math.floor(newest) : undefined;
+}
+
+/**
+ * When a FETCH_HEAD was written, if its fetch brought the branch, else 0: a
+ * fetch of another branch, or one that failed, says nothing about this one.
+ */
+async function fetchedAt(file: string, branch: string): Promise<number> {
+  try {
+    const [stat, text] = await Promise.all([
+      fs.promises.stat(file),
+      fs.promises.readFile(file, 'utf8'),
+    ]);
+    return text.includes(`\tbranch '${branch}' of `) ? stat.mtimeMs : 0;
+  } catch (error) {
+    // No fetch has run in this checkout yet.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    logDebug('git', `Could not read ${file}: ${String(error)}`);
+    return 0;
+  }
 }
 
 /**
@@ -395,6 +452,7 @@ export async function checkMergeStatus(
     ...status,
     ...(state && { remote: state.state }),
     ...(state?.divergence && { remote_divergence: state.divergence }),
+    ...(state?.seenAt !== undefined && { remote_seen_at: state.seenAt }),
     ...(target && { target_uncommitted: target }),
     ...(divergence && { base_upstream: divergence }),
   };

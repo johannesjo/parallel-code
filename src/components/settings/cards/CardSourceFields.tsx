@@ -3,7 +3,13 @@ import { produce, type SetStoreFunction } from 'solid-js/store';
 import { BRIEF_MODELS } from '../../../../electron/shared/task-name-model';
 import { exampleCheckOutput } from '../../../lib/card-gallery';
 import { checkCard } from '../../../lib/check-card';
-import type { CardDefinition, CardSource, ModelInput, ModelTrigger } from '../../../lib/cards';
+import type {
+  CardDefinition,
+  CardSource,
+  CheckTrigger,
+  ModelInput,
+  ModelTrigger,
+} from '../../../lib/cards';
 import { allProjectChecks, store } from '../../../store/store';
 
 export interface DraftProps {
@@ -32,6 +38,12 @@ const TRIGGERS: { id: ModelTrigger; label: string }[] = [
   { id: 'after-turn', label: 'After each turn' },
   { id: 'manual', label: 'On demand' },
   { id: 'finish', label: 'At Finish' },
+];
+// Run is always on the card, so every choice includes on demand.
+const CHECK_TRIGGERS: { id: CheckTrigger; label: string }[] = [
+  { id: 'manual', label: 'On demand' },
+  { id: 'finish', label: 'On demand and when Finish opens' },
+  { id: 'after-turn', label: 'After each turn, and at Finish' },
 ];
 const WHEN: Record<ModelTrigger, string> = {
   'after-turn': 'after each turn in which something changed',
@@ -185,6 +197,21 @@ export function CardSourceFields(props: DraftProps) {
               >
                 <option value="exit-code">Pass or fail</option>
                 <option value="json">JSON with slot values</option>
+              </select>
+            </label>
+            <label class="card-editor-field">
+              <span class="card-editor-label">Runs</span>
+              <select
+                class="input-field"
+                value={check().trigger}
+                onChange={(e) =>
+                  props.setDraft('source', {
+                    ...check(),
+                    trigger: e.currentTarget.value as CheckTrigger,
+                  })
+                }
+              >
+                <For each={CHECK_TRIGGERS}>{(t) => <option value={t.id}>{t.label}</option>}</For>
               </select>
             </label>
             <Show when={check().mode === 'json'}>

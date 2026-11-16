@@ -42,15 +42,16 @@ describe('parseLayoutResponse', () => {
       kind: 'check',
       checkId: 'lint',
       mode: 'exit-code',
-      trigger: 'manual',
+      trigger: 'finish',
     });
     expect(card.slots).toEqual([{ id: 'result', type: 'status', label: 'Result' }]);
+    expect(card.showAtFinish).toBe(true);
     const json = parseLayoutResponse(
       '{"name":"Lint","source":{"kind":"check","checkId":"lint","mode":"json","trigger":"after-turn"}}',
       CONTEXT,
     );
-    // Check cards run on demand only, whatever the model asked for.
-    expect(json.source).toMatchObject({ mode: 'exit-code', trigger: 'manual' });
+    // A drafted check starts on demand and at Finish, whatever the model asked for.
+    expect(json.source).toMatchObject({ mode: 'exit-code', trigger: 'finish' });
     expect(() =>
       parseLayoutResponse('{"name":"T","source":{"kind":"check","checkId":"test"}}', CONTEXT),
     ).toThrow('The draft names a check no project has: "test".');

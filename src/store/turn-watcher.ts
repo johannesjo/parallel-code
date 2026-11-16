@@ -1,6 +1,7 @@
 import { createEffect, createRoot, untrack } from 'solid-js';
 import type { CardDefinition } from '../lib/cards';
 import { refreshBranchFacts } from './app-facts';
+import { runAfterTurnCheckCards } from './card-checks';
 import { runAfterTurnCards } from './card-models';
 import { enabledCards } from './cards';
 import { store } from './core';
@@ -64,7 +65,9 @@ export function startTurnWatcher(): () => void {
           if (isTaskWorking(taskId)) return;
           lastRun.set(taskId, Date.now());
           void refreshCodeFingerprint(taskId).then((rawDiff) => {
-            if (turnEnded) runAfterTurnCards(taskId, rawDiff);
+            if (!turnEnded) return;
+            runAfterTurnCards(taskId, rawDiff);
+            void runAfterTurnCheckCards(taskId, rawDiff);
           });
           void refreshBranchFacts(taskId);
         }, delay),

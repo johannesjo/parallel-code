@@ -62,6 +62,7 @@ export async function refreshBranchFacts(taskId: string): Promise<void> {
         base: merge.base_branch,
         ...(merge.remote && { remote: merge.remote }),
         ...(merge.remote_divergence && { remoteDivergence: merge.remote_divergence }),
+        ...(merge.remote_seen_at !== undefined && { remoteSeenAt: merge.remote_seen_at }),
         at,
       },
     }),

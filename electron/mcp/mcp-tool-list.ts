@@ -301,7 +301,7 @@ export const CARD_TOOLS: ToolDef[] = [
   {
     name: 'card_config_read',
     description:
-      "Read the card definitions of the app: every card with its source, slots and switches, in display order. Also returns your task's project, the project checks a card can run, the default AI model, and the changes still waiting for the user. " +
+      "Read the card definitions of the app: every card with its source, slots and switches, in display order. Also returns your task's project, the project checks a card can run, the default AI model, the changes still waiting for the user, and answers: what the user did with your waiting changes since your last read (applied, dismissed, not applied with the reason, or replaced by another task's request), each reported once. " +
       'Cards are app settings shared by every task and project, not only yours. Call it before card_config_save or card_config_remove.',
     inputSchema: { type: 'object', properties: {} },
   },
@@ -319,7 +319,7 @@ export const CARD_TOOLS: ToolDef[] = [
       '"slots" is 1 to 8 of {id, type: "line" | "text" | "score" | "stat" | "items" | "checklist" | "status", label, hint?: an instruction for the model, warnBelow?: for a score, limit?: for a stat, addUp?: for items}; app and exit-code check cards get their one fixed layout whatever you send. ' +
       'For the built-in card "confidence" only enabled, projects and pinned change. ' +
       'The change applies at once, and the reply holds the card as saved, with a note when that differs from what you sent. ' +
-      'Three kinds of change wait for one click from the user in the app instead, and the reply says so: one that switches on an AI card (model or agent source) where it was off or makes an agent card that is on a model card, one that gives a model card that is on another model or more inputs (a checkId counts), and one that drops slots holding values on tasks. A waiting change is applied whole, with its position, and only if the card is still as it was; sending the card again replaces it, and card_config_read lists what still waits. To save without waiting, send an AI card switched off and tell the user to switch it on.',
+      'Three kinds of change wait for one click from the user in the app instead, and the reply says so: one that switches on an AI card (model or agent source) where it was off or makes an agent card that is on a model card, one that gives a model card that is on another model or more inputs (a checkId counts), and one that drops slots holding values on tasks. A waiting change is applied whole, with its position, and only if the card is still as it was; sending the card again replaces it, and card_config_read lists what still waits and reports how the user answered. A restart of the app drops waiting changes. To save without waiting, send an AI card switched off and tell the user to switch it on. The trigger of a check card applies at once: "finish" and "after-turn" make the app run that project check by itself.',
     inputSchema: {
       type: 'object',
       properties: {

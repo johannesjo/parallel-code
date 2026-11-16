@@ -50,6 +50,8 @@ const remove = (id: string) => changeCardConfig('t1', { action: 'remove', card: 
 
 beforeEach(() => {
   for (const waiting of waitingCardChanges()) answerCardChange(waiting.cardId, false);
+  // Reading hands each task its answers once, so nothing carries over from the test before.
+  for (const taskId of Object.keys(store.tasks)) readCardConfig(taskId);
   setStore('showCards', true);
   setStore('briefModel', 'sonnet');
   setStore('projects', [{ id: 'p1', name: 'App', path: '/repo' } as unknown as Project]);
@@ -69,6 +71,7 @@ describe('readCardConfig', () => {
       checks: [{ id: 'lint', name: 'Lint' }],
       cards: [confidenceCard(false), RISKS],
       waiting: [],
+      answers: [],
     });
   });
 
@@ -274,6 +277,54 @@ describe('changeCardConfig: changes that wait for a click', () => {
     save({ ...RISKS, enabled: true });
     expect(remove('risks')).toMatchObject({ status: 'removed' });
     expect(waitingCardChanges()).toEqual([]);
+  });
+
+  it('tells the asking agent, once, that the user applied its change', () => {
+    save({ ...RISKS, enabled: true });
+    answerCardChange('risks', true);
+    expect(readCardConfig('t1').answers).toEqual([
+      {
+        card: 'risks',
+        change: expect.stringContaining('switches on an AI card'),
+        answer: 'applied',
+      },
+    ]);
+    expect(readCardConfig('t1').answers).toEqual([]);
+  });
+
+  it('tells the asking agent, and only it, that the user dismissed its change', () => {
+    save({ ...RISKS, enabled: true });
+    answerCardChange('risks', false);
+    expect(readCardConfig('t2').answers).toEqual([]);
+    expect(readCardConfig('t1').answers).toMatchObject([{ card: 'risks', answer: 'dismissed' }]);
+  });
+
+  it('tells the asking agent when the change could no longer be applied, and why', () => {
+    save({ ...RISKS, enabled: true });
+    setStore('cardDefinitions', 1, 'name', 'Renamed by the user');
+    answerCardChange('risks', true);
+    expect(readCardConfig('t1').answers).toEqual([
+      {
+        card: 'risks',
+        change: expect.any(String),
+        answer: 'not applied',
+        reason: expect.stringContaining('The cards changed since the agent asked'),
+      },
+    ]);
+  });
+
+  it('tells the asking agent when another task asked something else for the card', () => {
+    save({ ...RISKS, enabled: true });
+    changeCardConfig('t2', { action: 'save', card: { ...RISKS, enabled: true, name: 'X' } });
+    expect(readCardConfig('t1').answers).toMatchObject([{ card: 'risks', answer: 'replaced' }]);
+    expect(readCardConfig('t2').answers).toEqual([]);
+  });
+
+  it('says a waiting change is lost if the app restarts', () => {
+    expect(save({ ...RISKS, enabled: true })).toHaveProperty(
+      'message',
+      expect.stringContaining('card_config_read'),
+    );
   });
 
   it('tells the user when a change can no longer be applied', () => {

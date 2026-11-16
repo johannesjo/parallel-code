@@ -33,6 +33,8 @@ export interface TaskFacts {
     remote?: RemoteBranchState;
     /** How far the two are apart while they differ; absent when it could not be counted. */
     remoteDivergence?: RemoteDivergence;
+    /** When origin's copy was last fetched or pushed to; the card reads no fresher than that. */
+    remoteSeenAt?: number;
     at: number;
   };
   commits?: { count: number; at: number };
@@ -194,15 +196,19 @@ function divergenceRows({ ahead, behind }: RemoteDivergence): StatusRow[] {
   ].map((text): StatusRow => ({ state: 'unknown', text }));
 }
 
-function remoteRows(
-  remote: RemoteBranchState,
-  divergence?: RemoteDivergence,
-  uncommitted?: boolean,
-): StatusRow[] {
+function remoteRows(merge: NonNullable<TaskFacts['merge']>, input: AppFactInput): StatusRow[] {
+  const { remote, remoteDivergence: divergence, remoteSeenAt: seenAt } = merge;
+  if (!remote) return [];
   const rows = remote === 'differs' && divergence ? divergenceRows(divergence) : [];
   if (!rows.length) rows.push(REMOTE_ROW[remote]);
   // No push carries these, so origin is not up to date with them either.
-  if (uncommitted) rows.push({ state: 'unknown', text: 'Uncommitted changes' });
+  if (input.uncommitted) rows.push({ state: 'unknown', text: 'Uncommitted changes' });
+  // The app never fetches, so say how old origin's side is: the card's own age is only the read's.
+  if (seenAt !== undefined) {
+    const age = formatRelativeAge(seenAt, input.now);
+    const value = age === 'just now' ? age : `${age} ago`;
+    rows.push({ state: 'unknown', text: 'Last fetch or push', value });
+  }
   return rows;
 }
 
@@ -304,7 +310,7 @@ export function appFactValues(fact: AppFactId, input: AppFactInput): CardValues 
         values: {
           status: {
             type: 'status',
-            rows: remoteRows(facts.merge.remote, facts.merge.remoteDivergence, input.uncommitted),
+            rows: remoteRows(facts.merge, input),
           },
         },
       };

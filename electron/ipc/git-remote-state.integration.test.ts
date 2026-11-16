@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { checkMergeStatus } from './git.js';
 
 const directories: string[] = [];
@@ -75,6 +75,40 @@ describe('checkMergeStatus remote state', () => {
       ahead: 1,
       behind: 1,
     });
+  });
+
+  it("dates origin's copy by the last fetch or push, and not before either", async () => {
+    const child = fixture(true);
+    expect((await checkMergeStatus(child, 'main')).remote_seen_at).toBeUndefined();
+    const before = Date.now() - 1_000;
+    git(child, 'push', '-u', 'origin', 'child');
+    const pushed = (await checkMergeStatus(child, 'main')).remote_seen_at;
+    expect(pushed).toBeGreaterThanOrEqual(before);
+    expect(pushed).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('counts a fetch that changed nothing as fresh too', async () => {
+    const child = fixture(true);
+    git(child, 'push', '-u', 'origin', 'child');
+    // Back-date the push, so only the fetch can make the date recent.
+    const logs = git(child, 'rev-parse', '--git-common-dir');
+    const reflog = resolve(child, logs, 'logs/refs/remotes/origin/child');
+    writeFileSync(reflog, readFileSync(reflog, 'utf8').replace(/ \d{10} /g, ' 1000000000 '));
+    expect((await checkMergeStatus(child, 'main')).remote_seen_at).toBe(1_000_000_000_000);
+    const before = Date.now() - 1_000;
+    git(child, 'fetch', 'origin');
+    expect((await checkMergeStatus(child, 'main')).remote_seen_at).toBeGreaterThanOrEqual(before);
+  });
+
+  it('ignores a fetch that did not bring this branch', async () => {
+    const child = fixture(true);
+    git(child, 'push', '-u', 'origin', 'child');
+    git(child, 'push', 'origin', 'main');
+    const logs = git(child, 'rev-parse', '--git-common-dir');
+    const reflog = resolve(child, logs, 'logs/refs/remotes/origin/child');
+    writeFileSync(reflog, readFileSync(reflog, 'utf8').replace(/ \d{10} /g, ' 1000000000 '));
+    git(child, 'fetch', 'origin', 'main');
+    expect((await checkMergeStatus(child, 'main')).remote_seen_at).toBe(1_000_000_000_000);
   });
 
   it('reports nothing for a repository without an origin', async () => {
