@@ -133,6 +133,7 @@ export const [store, setStore] = createStore<AppStore>({
   verboseLogging: false,
   mcpOrchestrationEnabled: true,
   allowCrossProjectReads: false,
+  allowCrossProjectTasks: false,
   documentWorkspacesEnabled: false,
   documentFullWidth: false,
   activeDocumentProjectId: null,

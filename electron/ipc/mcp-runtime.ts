@@ -14,6 +14,7 @@ import {
 } from './remote-transport.js';
 import { DelegationService } from '../mcp/delegation.js';
 import type { CrossProjectReadRequest } from '../mcp/cross-project-reads.js';
+import type { CrossProjectTaskRequest, TaskProject } from '../mcp/cross-project-tasks.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { removeCanvasConfig } from '../mcp/canvas-config.js';
 import { getMCPRemoteServerUrl } from '../mcp/config.js';
@@ -39,6 +40,10 @@ export interface McpRuntimeOptions {
   ) => Promise<{ taskId: string; resumedSessionId: string | null }>;
   /** Asks the user whether a session may read another project; true allows. */
   confirmCrossProjectRead: (request: CrossProjectReadRequest) => Promise<boolean>;
+  /** The projects that take tasks, as the renderer lists them. */
+  listProjects: () => Promise<TaskProject[]>;
+  /** Asks the user whether an agent may create a task in another project; true allows. */
+  confirmCrossProjectTask: (request: CrossProjectTaskRequest) => Promise<boolean>;
 }
 
 export interface McpRuntime {
@@ -114,6 +119,8 @@ export function createMcpRuntime(opts: McpRuntimeOptions): McpRuntime {
     createIndependent: opts.createIndependentTask,
     importWorktree: opts.importWorktree,
     confirmCrossProjectRead: opts.confirmCrossProjectRead,
+    listProjects: opts.listProjects,
+    confirmCrossProjectTask: opts.confirmCrossProjectTask,
   });
 
   async function prepareDelegationParent(task: TaskAuthorityInput): Promise<void> {

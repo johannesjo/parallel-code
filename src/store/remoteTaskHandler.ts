@@ -72,6 +72,8 @@ interface CreateIndependentTaskRequest extends RendererRequest {
   name: string;
   prompt: string;
   launchId: string;
+  /** Set only for another project the user approved. */
+  projectId?: string;
 }
 
 interface ImportWorktreeRequest extends RendererRequest, ImportWorktreeInput {}
@@ -217,12 +219,16 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
   }
 }
 
-/** A top-level task an agent asked for: the creator's project, agent and sandbox, no parent. */
+/** A top-level task an agent asked for: the creator's agent and sandbox, no parent, in the
+ *  creator's project or another one the user approved. */
 async function handleCreateIndependentTask(req: CreateIndependentTaskRequest): Promise<void> {
   try {
     if (!isKnownTask(store.tasks, req.creatorTaskId)) throw new Error('Creating task not found');
     const creator = store.tasks[req.creatorTaskId];
-    const project = store.projects.find((p) => p.id === creator.projectId);
+    const project =
+      req.projectId === undefined
+        ? store.projects.find((p) => p.id === creator.projectId)
+        : codeProjects().find((p) => p.id === req.projectId);
     if (!project) throw new Error('Project not found');
     const agentDef = creator.agentIds[0] ? store.agents[creator.agentIds[0]]?.def : undefined;
     if (!agentDef) throw new Error('Creating agent not found');

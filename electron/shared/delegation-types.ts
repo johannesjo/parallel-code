@@ -67,6 +67,8 @@ export interface IndependentTaskRequest {
   prompt: string;
   /** Pass to `assertIndependentLaunch` right before the agent starts. */
   launchId: string;
+  /** Another project the user approved; without it, the creator's project. */
+  projectId?: string;
 }
 
 /** An agent's request to bring an existing worktree of its project back as a top-level
@@ -136,6 +138,7 @@ export type DelegationRequest =
   | { action: 'projectPolicy'; policy: ProjectDelegationPolicy }
   | { action: 'orchestrationSetting'; enabled: boolean }
   | { action: 'crossProjectReadSetting'; enabled: boolean }
+  | { action: 'crossProjectTaskSetting'; enabled: boolean }
   | { action: 'pause'; taskId: string; paused: boolean }
   | { action: 'childLimit'; taskId: string; limit: number }
   | { action: 'inbox'; taskId: string }

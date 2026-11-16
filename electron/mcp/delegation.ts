@@ -14,6 +14,11 @@ import {
   type CrossProjectReadAccess,
   type CrossProjectReadRequest,
 } from './cross-project-reads.js';
+import {
+  resolveTaskProject,
+  type CrossProjectTaskRequest,
+  type TaskProject,
+} from './cross-project-tasks.js';
 import { isProjectPageAgentTaskId } from '../shared/project-page-agents.js';
 import {
   getAgentPromptReadiness,
@@ -77,6 +82,8 @@ const CROSS_PROJECT_REFUSALS: Record<Exclude<CrossProjectReadAccess, 'allowed'>,
   denied:
     'The user denied this session access to project "{project}". Do not retry; ask the user if you need it.',
 };
+const CROSS_PROJECT_TASKS_OFF =
+  'Creating tasks in other projects is off. Only the user can turn on "Allow agents to create tasks in other projects" in Settings > Agents; tell the user what the task would be instead.';
 // Shown on a queued message, so a delivery that cannot happen yet says why.
 const WAITING_FOR_PROMPT: Record<AgentPromptReadinessReason, string | undefined> = {
   ready: undefined,
@@ -211,6 +218,9 @@ export class DelegationService {
   private readonly readyMessages = new Map<string, number>();
   private readonly closes = new Map<string, Promise<{ detachedChildIds: string[] }>>();
   private readonly crossProject: ReturnType<typeof createCrossProjectReads>;
+  private crossProjectTasksEnabled = false;
+  // One confirmation at a time, so several agents asking at once don't stack native dialogs.
+  private crossProjectTaskQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly options: {
@@ -228,6 +238,10 @@ export class DelegationService {
       ) => Promise<{ taskId: string; resumedSessionId: string | null }>;
       /** Asks the user; resolves true to allow. Agents never wait on it. */
       confirmCrossProjectRead: (request: CrossProjectReadRequest) => Promise<boolean>;
+      /** The projects that take tasks, to resolve the project an agent names. */
+      listProjects: () => Promise<TaskProject[]>;
+      /** Asks the user before each task an agent creates in another project; true allows. */
+      confirmCrossProjectTask: (request: CrossProjectTaskRequest) => Promise<boolean>;
     },
   ) {
     this.orchestrationEnabled = options.orchestrationEnabled ?? true;
@@ -560,14 +574,17 @@ export class DelegationService {
     };
     if (Buffer.byteLength(request.prompt) > MAX_PROMPT_BYTES)
       throw new DelegationError('Prompt too large');
+    const project = params.project === undefined ? undefined : text(params.project, 'project');
     const key = `${creatorTaskId}:${requestId}`;
-    const payload = JSON.stringify(request);
+    const payload = JSON.stringify({ ...request, project });
     const previous = this.independentRequests.get(key);
     if (previous) {
       if (previous.payload !== payload)
         throw new DelegationError('Request ID reused with a different assignment');
       return previous.promise;
     }
+    if (project !== undefined && !this.crossProjectTasksEnabled)
+      throw new DelegationError(CROSS_PROJECT_TASKS_OFF, 403);
     const prefix = `${creatorTaskId}:`;
     const open = [...this.openIndependent.keys()].filter((k) => k.startsWith(prefix));
     if (open.length >= this.maxIndependentPerCreator)
@@ -583,8 +600,17 @@ export class DelegationService {
       this.creationGuard(creatorTaskId, caller, true);
     });
     this.openIndependent.set(key, undefined);
-    const promise = this.options
-      .createIndependent({ ...request, launchId })
+    const launch = (projectId?: string) =>
+      this.options.createIndependent({
+        ...request,
+        launchId,
+        ...(projectId !== undefined && { projectId }),
+      });
+    const promise = (
+      project === undefined
+        ? launch()
+        : this.confirmCrossProjectTask(creatorTaskId, project, request, epoch, caller).then(launch)
+    )
       .then(({ taskId }) => {
         // A task closed before its launch resolved never comes back to free the slot.
         if (this.openIndependent.has(key) && !this.tasks.get(taskId)?.closed)
@@ -599,6 +625,50 @@ export class DelegationService {
       .finally(() => this.independentLaunches.delete(launchId));
     this.independentRequests.set(key, { payload, promise });
     return promise;
+  }
+
+  /**
+   * Resolves the project an agent named and, when it is not the creator's own, asks the user
+   * before the task starts there. Unlike reads, creation waits for the answer: the agent needs
+   * the result, and every task it starts in another project is one the user approved.
+   * Resolves to the target project's id, or undefined for the creator's own project.
+   */
+  private async confirmCrossProjectTask(
+    creatorTaskId: string,
+    ref: string,
+    request: { name: string; prompt: string },
+    epoch: number,
+    caller: SessionCaller,
+  ): Promise<string | undefined> {
+    const creator = this.requireTask(creatorTaskId);
+    const target = resolveTaskProject(await this.options.listProjects(), ref);
+    if (typeof target === 'string') throw new DelegationError(target);
+    if (target.id === creator.projectId) return undefined;
+    // Anything that changed while the agent waited (setting, pause, orchestration, session)
+    // is checked again both before the dialog opens and after the user answers.
+    const recheck = () => {
+      if (!this.crossProjectTasksEnabled) throw new DelegationError(CROSS_PROJECT_TASKS_OFF, 403);
+      this.assertOrchestrationEnabled(epoch);
+      this.creationGuard(creatorTaskId, caller, true);
+    };
+    const answer = this.crossProjectTaskQueue.then(() => {
+      recheck();
+      return this.options.confirmCrossProjectTask({
+        creatorTaskName: creator.name,
+        projectName: this.projectOf(creator).projectName,
+        targetProjectName: target.name,
+        name: request.name,
+        prompt: request.prompt,
+      });
+    });
+    this.crossProjectTaskQueue = answer.catch(() => undefined);
+    if (!(await answer))
+      throw new DelegationError(
+        `The user declined creating this task in project "${target.name}". Do not retry; ask the user if you still need it.`,
+        403,
+      );
+    recheck();
+    return target.id;
   }
 
   /** Brings a worktree back as a top-level task the user reviews, open to the same sessions
@@ -695,6 +765,10 @@ export class DelegationService {
         return this.createIndependent(task.taskId, params, caller);
       if (params.relation !== 'child')
         throw new DelegationError("relation must be 'child' or 'independent'");
+      if (params.project !== undefined)
+        throw new DelegationError(
+          "Children stay in your project; use relation 'independent' to create a task in another project",
+        );
       this.creationGuard(task.taskId, caller);
       const requestId = id(params.requestId, 'requestId');
       const previous = this.requests.get(`${task.taskId}:${requestId}`);
@@ -1281,6 +1355,11 @@ export class DelegationService {
         if (typeof request.enabled !== 'boolean')
           throw new DelegationError('Invalid cross-project read setting');
         this.crossProject.setEnabled(request.enabled);
+        return { enabled: request.enabled };
+      case 'crossProjectTaskSetting':
+        if (typeof request.enabled !== 'boolean')
+          throw new DelegationError('Invalid cross-project task setting');
+        this.crossProjectTasksEnabled = request.enabled;
         return { enabled: request.enabled };
       case 'unregister': {
         const taskId = id(request.taskId);

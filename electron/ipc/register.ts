@@ -725,6 +725,27 @@ export function registerAllHandlers(win: BrowserWindow): void {
       });
       return response === 0;
     },
+    listProjects: async () =>
+      (
+        await callRenderer<Array<{ id: string; name: string }>>(IPC.Remote_GetProjectsRequest, {})
+      ).map(({ id, name }) => ({ id, name })),
+    confirmCrossProjectTask: async (request) => {
+      if (win.isDestroyed()) throw new Error('Desktop app is not available');
+      const prompt =
+        request.prompt.length > 600 ? `${request.prompt.slice(0, 600)}…` : request.prompt;
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        title: 'Create a task in another project?',
+        message: `An agent in project "${request.projectName}" wants to create a task in project "${request.targetProjectName}".`,
+        // Names and prompts come from agents, so they stay out of the headline the user acts on.
+        detail: `Asking task: ${request.creatorTaskName.slice(0, 80)}\nNew task: ${request.name.slice(0, 80)}\n\nPrompt:\n${prompt}\n\nIf you allow it, the task starts in "${request.targetProjectName}" with the asking agent, its sandbox and its permission settings, and you review it like any other task.`,
+        buttons: ['Create task', 'Deny'],
+        // Deny is the default: Enter or Escape on an unexpected dialog must not start work.
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0;
+    },
   });
   const { transport, delegation, pendingSpawns, canvasOwners, wideBindAgents, needsWideBind } = mcp;
   const taskNames = new Map<string, string>();
