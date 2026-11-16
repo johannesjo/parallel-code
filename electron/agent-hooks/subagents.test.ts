@@ -107,6 +107,49 @@ describe('createSubagentGate', () => {
     expect(own[2]?.state).toBe('done');
   });
 
+  it('releases a handed-back sub-agent that Claude keeps listing as running', () => {
+    // Recorded from Claude Code 2.1.326: after its hand-back and stop, the
+    // sub-agent stays in every later `background_tasks` list as running.
+    const listed = [{ id: 'a1', type: 'subagent', status: 'running' }];
+    const handback = { ...bash('a1'), tool_name: 'SubagentHandback' };
+    const reply = { hook_event_name: 'PreToolUse', tool_name: 'Read' };
+    const out = replay([
+      start('a1'),
+      { ...turnEnd, background_tasks: listed },
+      handback,
+      { ...stop('a1'), background_tasks: listed },
+      reply,
+      { ...turnEnd, background_tasks: listed },
+      { hook_event_name: 'UserPromptSubmit', prompt: 'commit' },
+      { ...turnEnd, background_tasks: listed },
+    ]);
+    expect(out[5]?.state).toBe('done');
+    expect(out[7]?.state).toBe('done');
+  });
+
+  it('holds a stopped sub-agent again once it restarts or works on', () => {
+    // Captured from Claude Code 2.1.326: the hand-back can also come between two stops.
+    const listed = [{ id: 'a1', type: 'subagent', status: 'running' }];
+    const handback = { ...bash('a1'), tool_name: 'SubagentHandback' };
+    const prompt = { hook_event_name: 'UserPromptSubmit', prompt: 'result' };
+    const listedStop = { ...stop('a1'), background_tasks: listed };
+    const listedEnd = { ...turnEnd, background_tasks: listed };
+    const live = replay([
+      start('a1'),
+      listedEnd,
+      listedStop,
+      handback,
+      prompt,
+      listedStop,
+      listedEnd,
+    ]);
+    expect(live[6]?.state).toBe('done');
+    const restarted = replay([start('a1'), listedStop, start('a1'), listedEnd]);
+    const resumed = replay([start('a1'), listedEnd, listedStop, bash('a1'), listedEnd]);
+    expect(restarted[3]).toMatchObject({ state: 'working', event: 'SubagentRunning' });
+    expect(resumed[4]).toMatchObject({ state: 'working', event: 'SubagentRunning' });
+  });
+
   it('flags only a lead that ended its turn, so Esc can still interrupt a live one', () => {
     const leadTool = { hook_event_name: 'PreToolUse', tool_name: 'Read' };
     const out = replay([

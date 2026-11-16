@@ -20,9 +20,14 @@ const MCP_TASK = 'MCP task';
  *  and cloud-session tasks are left out: they run until stopped or outlive the turn. */
 const HELD_TASK_TYPES: ReadonlySet<string> = new Set(['subagent', 'workflow', 'shell', MCP_TASK]);
 const WORKFLOW_AGENT = 'workflow-subagent';
+/** The tool a background sub-agent reports its result with, around its stop. */
+const HANDBACK = 'SubagentHandback';
 
 interface LaunchWork {
   open: Set<string>;
+  /** Sub-agents that stopped but that Claude may still list as running: since
+   *  2.1.326 a handed-back sub-agent stays listed until the session ends. */
+  stopped: Set<string>;
   /** Names of the running workflows, as Claude last listed them. */
   workflows: string[];
   /** The running shell commands and MCP tool calls, as Claude last listed them. */
@@ -102,7 +107,9 @@ function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
   // Claude's own list wins when present, healing a stop we never saw. A
   // sub-agent's stop still lists itself, so its own event applies after.
   const ids = listed?.map((task) => field(task, 'id')).filter((v) => v !== undefined);
-  const open = new Set(ids ?? prev?.open);
+  // Forget stops once Claude drops the id, so the set stays small.
+  const stopped = new Set(ids ? ids.filter((v) => prev?.stopped.has(v)) : prev?.stopped);
+  const open = new Set(ids ? ids.filter((v) => !stopped.has(v)) : prev?.open);
   const workflows = listed
     ? listed
         .filter((task) => field(task, 'type') === 'workflow')
@@ -120,24 +127,38 @@ function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
   let agentsDone = fresh ? 0 : (prev?.agentsDone ?? 0);
   if (event === 'SubagentStart' && id) {
     open.add(id);
+    stopped.delete(id);
     if (field(payload, 'agent_type') === WORKFLOW_AGENT) agents.add(id);
   }
   if (event === 'SubagentStop' && id) {
     open.delete(id);
+    stopped.add(id);
     if (agents.delete(id)) agentsDone += 1;
+  } else if (id && event !== 'SubagentStart' && field(payload, 'tool_name') !== HANDBACK) {
+    // A stopped sub-agent that works again was resumed; its hand-back is not work.
+    if (stopped.delete(id)) open.add(id);
   }
   // A new session starts with no sub-agents; a lost stop must not pin `working`.
-  if (event === 'SessionStart' && field(payload, 'source') !== 'compact') open.clear();
+  if (event === 'SessionStart' && field(payload, 'source') !== 'compact') {
+    open.clear();
+    stopped.clear();
+  }
   const leadIdle = prev?.leadIdle ?? false;
   const { leadMessage, prompt } = prev ?? {};
   const counts = { agents, agentsDone };
-  return { open, workflows, shells, monitors, ...counts, leadIdle, leadMessage, prompt };
+  return { open, stopped, workflows, shells, monitors, ...counts, leadIdle, leadMessage, prompt };
 }
 
-/** What a launch with no open work still has to remember: its watchers. */
-function settled(monitors: readonly string[]): LaunchWork {
+/** What a launch with no open work still has to remember: its watchers and stopped sub-agents. */
+function settled(work: LaunchWork): LaunchWork {
   const none = { open: new Set<string>(), workflows: [], shells: [], agents: new Set<string>() };
-  return { ...none, monitors, agentsDone: 0, leadIdle: false };
+  return {
+    ...none,
+    stopped: work.stopped,
+    monitors: work.monitors,
+    agentsDone: 0,
+    leadIdle: false,
+  };
 }
 
 /** The status shown while the lead idles at its prompt, waiting on background work. */
@@ -196,9 +217,9 @@ function ownerStopped(
  * occur (Claude's own helpers), so sub-agents are tracked by id.
  */
 export function createSubagentGate(): SubagentGate {
-  // shortcut: entries of a launch that dies mid-sub-agent or with a Monitor
-  // running are never removed — a few ids or commands per crashed launch; hook
-  // retireAgentLaunch if that ever matters.
+  // shortcut: entries of a launch that dies mid-sub-agent, with a Monitor
+  // running or with stopped sub-agents still listed are never removed — a few
+  // ids or commands per launch; hook retireAgentLaunch if that ever matters.
   const launches = new Map<string, LaunchWork>();
   return (launchId, payload, mapped) => {
     const previous = launches.get(launchId);
@@ -208,8 +229,8 @@ export function createSubagentGate(): SubagentGate {
     // it is working again, and Esc can interrupt it.
     const leadIdle = work.leadIdle && (!update || field(payload, 'agent_id') !== undefined);
     if (work.open.size === 0) {
-      if (work.monitors.length === 0) launches.delete(launchId);
-      else launches.set(launchId, settled(work.monitors));
+      if (work.monitors.length === 0 && work.stopped.size === 0) launches.delete(launchId);
+      else launches.set(launchId, settled(work));
       // The last sub-agent's stop can end its own dialog while the lead still idles.
       return update && leadIdle ? { ...update, background: true } : update;
     }
