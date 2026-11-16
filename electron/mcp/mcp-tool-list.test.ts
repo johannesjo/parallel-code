@@ -21,6 +21,7 @@ import {
   GITHUB_LIST_TOOLS,
   hasCanvasTools,
   APP_TASK_INSTRUCTIONS,
+  CONFIDENCE_INSTRUCTIONS,
   serverInstructions,
   GITHUB_AGENT_INSTRUCTIONS,
   sessionInstructions,
@@ -474,6 +475,24 @@ describe('serverInstructions', () => {
     expect(
       serverInstructions({ taskId: 'task', coordinatorId: '', canvasOnly: true }),
     ).not.toContain(GITHUB_AGENT_INSTRUCTIONS);
+  });
+
+  it('tells task agents to publish ratings, right after the role and app guidance', () => {
+    // Clients defer MCP tool descriptions, so only the instructions reach the agent.
+    // Not held to CLIENT_LIMIT: role and app guidance already fill it for a top-level
+    // task with peers, and current Claude Code delivers instructions well past it.
+    expect(CONFIDENCE_INSTRUCTIONS).toContain('confidence_publish');
+    for (const profile of ['ordinary', 'child-review', 'child-automatic'] as const) {
+      const sessionCapabilities = { profile, canCreate: true, peers: true };
+      const text = serverInstructions({
+        taskId: 'task',
+        coordinatorId: '',
+        canvasOnly: false,
+        sessionCapabilities,
+      });
+      const essential = `${sessionInstructions(sessionCapabilities)}\n\n${APP_TASK_INSTRUCTIONS}`;
+      expect(text.startsWith(`${essential}\n\n${CONFIDENCE_INSTRUCTIONS}`)).toBe(true);
+    }
   });
 
   it('still includes app and canvas guidance', () => {
