@@ -5,6 +5,7 @@ import { TaskRowShell } from './Sidebar';
 import { store, setStore } from '../store/core';
 import { bringTaskToFront, isTaskBackgrounded } from '../store/background-tasks';
 import { invoke } from '../lib/ipc';
+import { removePrChecks, setPrChecks } from '../store/pr-checks-state';
 import type { Task } from '../store/types';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(), fireAndForget: vi.fn() }));
@@ -61,6 +62,7 @@ afterEach(() => {
   dispose();
   container.remove();
   setStore('pendingAction', null);
+  removePrChecks('one');
 });
 
 const rightClick = () =>
@@ -116,4 +118,54 @@ it('confirms Close without activating the row', () => {
   expect(dialog).not.toBeNull();
   dialog?.click();
   expect(onClick).not.toHaveBeenCalled();
+});
+
+const row = () => container.querySelector<HTMLElement>('.task-item');
+
+it('quiets a row that has nothing for the user to do', () => {
+  expect(row()?.dataset.quiet).toBe('true');
+});
+
+it('keeps a row at full strength while it waits for review', () => {
+  setStore('tasks', 'one', 'needsReview', true);
+  expect(row()?.dataset.quiet).toBeUndefined();
+});
+
+it('keeps a row at full strength once its agent signalled done', () => {
+  setStore('tasks', 'one', 'signalDoneReceived', true);
+  expect(row()?.dataset.quiet).toBeUndefined();
+});
+
+it('keeps a row at full strength while its landing waits for review', () => {
+  setStore('tasks', 'one', 'landingState', 'landed_pending_review');
+  expect(row()?.dataset.quiet).toBeUndefined();
+});
+
+it('keeps a row at full strength when its PR checks failed', () => {
+  setPrChecks('one', {
+    overall: 'failure',
+    passing: 3,
+    pending: 0,
+    failing: 1,
+    checks: [],
+    checkedAt: '2026-11-17T10:00:00Z',
+  });
+  expect(row()?.dataset.quiet).toBeUndefined();
+});
+
+it('keeps a row at full strength while the Needs you tray lists a failed integration', () => {
+  setStore('tasks', 'one', 'landingState', 'landing_failed');
+  expect(row()?.dataset.quiet).toBeUndefined();
+});
+
+it('keeps a row at full strength once a check fails while others still run', () => {
+  setPrChecks('one', {
+    overall: 'pending',
+    passing: 2,
+    pending: 2,
+    failing: 1,
+    checks: [],
+    checkedAt: '2026-11-17T10:00:00Z',
+  });
+  expect(row()?.dataset.quiet).toBeUndefined();
 });

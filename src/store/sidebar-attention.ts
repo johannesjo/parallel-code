@@ -142,6 +142,11 @@ function taskAttentionEntries(taskId: string): TaskReason[] {
   return entries;
 }
 
+/** The task has at least one entry in the Needs you tray. */
+export function hasTrayEntry(taskId: string): boolean {
+  return taskAttentionEntries(taskId).length > 0;
+}
+
 /** Independent unresolved reasons, including tasks in hidden projects or the background. */
 export function computeAttentionEntries(): AttentionEntry[] {
   const entries = [...new Set([...store.taskOrder, ...store.collapsedTaskOrder])].flatMap(

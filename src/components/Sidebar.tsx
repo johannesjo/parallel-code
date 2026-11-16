@@ -67,6 +67,9 @@ import type { ImportableWorktree } from '../ipc/types';
 import { prefersMotion } from '../lib/reducedMotion';
 import { withViewTransition } from '../lib/viewTransition';
 import { isTaskBackgrounded } from '../store/background-tasks';
+import { hasTrayEntry } from '../store/sidebar-attention';
+import { getCiGlyphState } from '../store/pr-checks-state';
+import { taskLeadWatchId } from '../store/task-prs';
 
 const DRAG_THRESHOLD = 5;
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -266,6 +269,27 @@ function taskAttentionStyles(
   };
 }
 
+/** Nothing on this row is the user's move: an agent is working, only a shell is
+ *  printing, or the task sits idle. Quieting these lets rows that need a
+ *  decision (questions, errors, failed CI, reviews, ready to land, unread
+ *  output) stand out in a long list without reordering anything. */
+function isTaskQuiet(taskId: string): boolean {
+  const task = store.tasks[taskId];
+  if (!task || task.signalDoneReceived || task.landingState === 'landed_pending_review') {
+    return false;
+  }
+  const attention = getTaskAttentionState(taskId);
+  if (attention !== 'active' && attention !== 'shell_busy' && attention !== 'idle') return false;
+  // Failed CI and tray entries (failed landings, launches, deliveries) leave the
+  // attention state at idle, yet the glyph or the tray already flags them.
+  // A check failing mid-run already turns the glyph red, so it counts too.
+  const ci = getCiGlyphState(taskLeadWatchId(taskId));
+  if (ci && (ci.state === 'failed' || ci.failing > 0)) return false;
+  if (hasTrayEntry(taskId) || isTaskUnread(taskId)) return false;
+  // A working agent scrolled off-screen gets an accent tint; a dimmed name would contradict it.
+  return getOffscreenAttentionInfo(taskId) === null;
+}
+
 export function TaskRowShell(props: {
   taskId: string;
   class: string;
@@ -303,6 +327,7 @@ export function TaskRowShell(props: {
       tabIndex={props.tabIndex}
       aria-current={store.activeTaskId === props.taskId ? 'true' : undefined}
       data-attention={getTaskAttentionState(props.taskId)}
+      data-quiet={isTaskQuiet(props.taskId) ? 'true' : undefined}
       data-kbd-focused={
         store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId ? 'true' : undefined
       }
