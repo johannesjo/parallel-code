@@ -99,7 +99,7 @@ export function confidenceCard(enabled: boolean): CardDefinition {
   return {
     id: CONFIDENCE_CARD_ID,
     name: 'Confidence',
-    description: 'Ratings from the agent, a rating skill such as /cf, or the Finish review.',
+    description: 'Ratings from the agent or the Finish review.',
     builtIn: 'confidence',
     source: { kind: 'agent' },
     slots: [],

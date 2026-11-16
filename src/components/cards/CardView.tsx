@@ -100,9 +100,7 @@ function ConfidenceBody(props: { task: Task }) {
     <Show
       when={scores()}
       fallback={
-        <p class="card-empty">
-          Ask the agent to rate its confidence, run a rating skill such as /cf, or review at Finish.
-        </p>
+        <p class="card-empty">Ask the agent to rate its confidence, or review at Finish.</p>
       }
     >
       {(rated) => <ConfidenceScores scores={rated()} />}

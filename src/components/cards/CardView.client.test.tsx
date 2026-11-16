@@ -55,7 +55,9 @@ describe('CardView for the Confidence card', () => {
   it('says how to get a rating before there is one', () => {
     show({ id: 't1' });
     expect(document.body.textContent).toContain('waiting for a rating');
-    expect(document.body.textContent).toContain('run a rating skill such as /cf');
+    expect(document.body.textContent).toContain(
+      'Ask the agent to rate its confidence, or review at Finish.',
+    );
   });
 
   it('shows the published scores, with a summary on the closed line', () => {

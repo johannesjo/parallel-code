@@ -132,7 +132,7 @@ As built: `src/store/card-models.ts` runs model cards; prompt and parsing are in
 - Touchpoints: the tool definitions, the MCP handler, a route in the remote server's route regex and `CanvasRoute` type (`electron/remote/server.ts`), a named IPC channel (manifest + preload allowlist + `electron/preload-allowlist.test.ts`), and the renderer handler in `src/store/remoteTaskHandler.ts`. Card definitions live in the renderer, so `card_list` and validation ask the renderer over that channel.
 - Each card's payload cap is derived from its slots' limits, with 32 KB as the overall ceiling (as `CONFIDENCE_LIMITS.payloadBytes`). A rejected payload is returned to the caller as an error, listing which slot failed; the card keeps its previous values.
 - Values carry the current code fingerprint at publish time, so they show as outdated once the code moves on.
-- `/cf` (the user's confidence skill) changes to publish to the Confidence card. The skill lives outside this repository, so that edit is made there.
+- Agents and rating skills publish to the Confidence card through `confidence_publish`; nothing in the app depends on a particular skill.
 
 ### `check`: non-AI, a project check
 
@@ -213,14 +213,14 @@ As built: the popover footer reads "N cards · M use a model" and shows **Update
 
 ### States
 
-| State                      | Shows                                                                                                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fresh                      | Values; top line "source · age"                                                                                                                                            |
-| Updating                   | Previous values stay; top line "updating" with the `spinnerSpin` keyframe                                                                                                  |
-| Failed                     | Previous values stay; top line shows the error in error colour, plus Retry. For checks: failed, timed out, or cancelled (`VerificationRun` status)                         |
-| Doesn't cover current code | Check result kept; top line says the code changed during the run                                                                                                           |
-| Outdated                   | Values faded, no warning colour; top line "outdated · age"                                                                                                                 |
-| Never filled               | The final layout with placeholders ("–" under a label, "Nothing yet" for a slot shown without one); top line says what fills it ("waiting for /cf", "after the next turn") |
+| State                      | Shows                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fresh                      | Values; top line "source · age"                                                                                                                                                 |
+| Updating                   | Previous values stay; top line "updating" with the `spinnerSpin` keyframe                                                                                                       |
+| Failed                     | Previous values stay; top line shows the error in error colour, plus Retry. For checks: failed, timed out, or cancelled (`VerificationRun` status)                              |
+| Doesn't cover current code | Check result kept; top line says the code changed during the run                                                                                                                |
+| Outdated                   | Values faded, no warning colour; top line "outdated · age"                                                                                                                      |
+| Never filled               | The final layout with placeholders ("–" under a label, "Nothing yet" for a slot shown without one); top line says what fills it ("waiting for a rating", "after the next turn") |
 
 A rejected `card_publish` payload does not change the card; the error goes back to the agent.
 
@@ -255,13 +255,13 @@ A new `'cards'` tab (`SettingsTab` in `src/store/types.ts`) between AI and Exper
 
 Briefs were off by default because they sent prompts and diffs to a model provider. Cards keep that rule:
 
-| Card                     | Default                                        | Why                                                              |
-| ------------------------ | ---------------------------------------------- | ---------------------------------------------------------------- |
-| Branch health, Diff size | On                                             | Free and local                                                   |
-| Confidence               | On                                             | Free; only fills when the agent, `/cf` or the reviewer writes it |
-| Check                    | Offered when the project has checks; on demand | Free, but can be slow                                            |
-| AI cards                 | Off until opted in                             | Sends task content to a provider                                 |
-| Pins                     | None                                           | The pin row costs terminal height                                |
+| Card                     | Default                                        | Why                                                            |
+| ------------------------ | ---------------------------------------------- | -------------------------------------------------------------- |
+| Branch health, Diff size | On                                             | Free and local                                                 |
+| Confidence               | On                                             | Free; only fills when the agent or the Finish review writes it |
+| Check                    | Offered when the project has checks; on demand | Free, but can be slow                                          |
+| AI cards                 | Off until opted in                             | Sends task content to a provider                               |
+| Pins                     | None                                           | The pin row costs terminal height                              |
 
 These defaults apply to new installs. Existing users keep their current header: the free cards start off, and the app offers them once ("Cards are here: turn on Diff size, Branch health and Confidence?"). This keeps the rule that the header only changes when the user changes a setting. Users who had briefs on get no replacement until they add a card.
 
@@ -288,7 +288,7 @@ Each step lands on its own and is verified before the next.
 
 1. **Foundation**: removing the task brief, card definitions and the `task.cards` store, the fingerprint tracker, the card line and popover rendering slots, the Cards tab.
    → verify: task-context and confidence-staleness tests pass; confidence goes outdated after a code change while any card is on; restore tests for card definitions and values, including a dropped Brief entry; header height changes only when settings change.
-2. **Confidence card and `card_publish`**: the Confidence card around the existing payload, `card_publish`/`card_list` with their route and IPC channel, `confidence_publish` as an alias, `/cf` publishing.
+2. **Confidence card and `card_publish`**: the Confidence card around the existing payload, `card_publish`/`card_list` with their route and IPC channel, `confidence_publish` as an alias.
    → verify: a `confidence_publish` call and a `card_publish` call both show up; a coordinator session can publish; an oversized payload is rejected with a slot-level error; `npm run test:unit -- electron/preload-allowlist.test.ts`.
 3. **Non-AI cards**: app facts, checks shown as cards (exit-code, then JSON via `PC_OUT_FILE`), the pin row.
    → verify: a check in JSON mode fills its slots and noisy stderr doesn't break it; a run during a code change is marked as not covering it; temp files are gone after the run; the pin row never toggles from values alone.
