@@ -36,6 +36,11 @@ export async function setAllowCrossProjectReads(enabled: boolean): Promise<void>
   setStore('allowCrossProjectReads', enabled);
 }
 
+export async function setAllowCrossProjectTasks(enabled: boolean): Promise<void> {
+  await delegationRequest({ action: 'crossProjectTaskSetting', enabled });
+  setStore('allowCrossProjectTasks', enabled);
+}
+
 export function taskAuthorityInput(
   task: Task | PersistedTask,
   project: Project,

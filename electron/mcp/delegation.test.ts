@@ -15,6 +15,7 @@ import type {
 import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../shared/coordinator-limits.js';
 import { setProjectWorktreeSettings } from '../ipc/project-worktree.js';
 import type { CrossProjectReadRequest } from './cross-project-reads.js';
+import type { CrossProjectTaskRequest, TaskProject } from './cross-project-tasks.js';
 
 const mocks = vi.hoisted(() => ({
   git: vi.fn(),
@@ -99,6 +100,10 @@ let importWorktree: Mock<
 let confirmCrossProjectRead: Mock<(request: CrossProjectReadRequest) => Promise<boolean>>;
 /** Answers the oldest open cross-project confirmation. */
 let answers: Array<(allowed: boolean) => void>;
+let listProjects: Mock<() => Promise<TaskProject[]>>;
+let confirmCrossProjectTask: Mock<(request: CrossProjectTaskRequest) => Promise<boolean>>;
+/** Answers the oldest open cross-project task confirmation. */
+let taskAnswers: Array<(allowed: boolean) => void>;
 
 function task(taskId: string, extra: Partial<TaskAuthorityInput> = {}): TaskAuthorityInput {
   return {
@@ -231,6 +236,14 @@ beforeEach(() => {
   createIndependent = vi.fn(async () => ({ taskId: 'sibling' }));
   importWorktree = vi.fn(async () => ({ taskId: 'imported', resumedSessionId: null }));
   answers = [];
+  taskAnswers = [];
+  listProjects = vi.fn(async () => [
+    { id: 'project', name: 'Project' },
+    { id: 'phpstan-id', name: 'phpstan' },
+  ]);
+  confirmCrossProjectTask = vi.fn(
+    () => new Promise<boolean>((resolveAnswer) => taskAnswers.push(resolveAnswer)),
+  );
   confirmCrossProjectRead = vi.fn(
     () => new Promise<boolean>((resolveAnswer) => answers.push(resolveAnswer)),
   );
@@ -244,6 +257,8 @@ beforeEach(() => {
     createIndependent,
     importWorktree,
     confirmCrossProjectRead,
+    listProjects,
+    confirmCrossProjectTask,
   });
 });
 afterEach(() => {
@@ -2223,5 +2238,150 @@ describe('cross-project reads', () => {
       'unavailable',
     );
     expect(confirmCrossProjectRead).not.toHaveBeenCalled();
+  });
+});
+
+describe('cross-project tasks', () => {
+  const setting = (enabled: boolean) =>
+    service.request({ action: 'crossProjectTaskSetting', enabled });
+  const create = (caller: SessionCaller, project: string, requestId = 'bug') =>
+    service.callTool(caller, 'create_task', {
+      requestId,
+      relation: 'independent',
+      name: 'Fix generics bug',
+      prompt: 'Reproduce with this snippet, then fix it',
+      project,
+    });
+  const asked = (count: number) =>
+    vi.waitFor(() => expect(confirmCrossProjectTask).toHaveBeenCalledTimes(count));
+  async function parent() {
+    await register('parent');
+    policy();
+    return session('parent');
+  }
+
+  it('refuses another project while the setting is off, without asking', async () => {
+    const caller = await parent();
+    await expect(create(caller, 'phpstan')).rejects.toThrow(
+      'Allow agents to create tasks in other projects',
+    );
+    expect(listProjects).not.toHaveBeenCalled();
+    expect(confirmCrossProjectTask).not.toHaveBeenCalled();
+    expect(createIndependent).not.toHaveBeenCalled();
+  });
+
+  it('asks the user, waits, and creates the task in the project named', async () => {
+    const caller = await parent();
+    await setting(true);
+    const created = create(caller, 'PHPStan');
+    await asked(1);
+    expect(confirmCrossProjectTask).toHaveBeenCalledWith({
+      creatorTaskName: 'parent',
+      projectName: 'Project',
+      targetProjectName: 'phpstan',
+      name: 'Fix generics bug',
+      prompt: 'Reproduce with this snippet, then fix it',
+    });
+    expect(createIndependent).not.toHaveBeenCalled();
+    taskAnswers.shift()?.(true);
+    await expect(created).resolves.toEqual({ taskId: 'sibling', relation: 'independent' });
+    expect(createIndependent).toHaveBeenCalledWith({
+      creatorTaskId: 'parent',
+      name: 'Fix generics bug',
+      prompt: 'Reproduce with this snippet, then fix it',
+      launchId: expect.any(String),
+      projectId: 'phpstan-id',
+    });
+    // A retry of the same request answers again without a second dialog or task.
+    await expect(create(caller, 'PHPStan')).resolves.toMatchObject({ taskId: 'sibling' });
+    expect(confirmCrossProjectTask).toHaveBeenCalledOnce();
+    expect(createIndependent).toHaveBeenCalledOnce();
+    // The same request ID for another project is a different assignment.
+    await expect(create(caller, 'Project')).rejects.toThrow('Request ID reused');
+  });
+
+  it('creates nothing when the user denies it', async () => {
+    const caller = await parent();
+    await setting(true);
+    const created = create(caller, 'phpstan-id');
+    await asked(1);
+    taskAnswers.shift()?.(false);
+    await expect(created).rejects.toThrow('declined creating this task in project "phpstan"');
+    expect(createIndependent).not.toHaveBeenCalled();
+  });
+
+  it('treats its own project as an ordinary independent task', async () => {
+    const caller = await parent();
+    await setting(true);
+    await expect(create(caller, 'project')).resolves.toMatchObject({ relation: 'independent' });
+    expect(confirmCrossProjectTask).not.toHaveBeenCalled();
+    expect(createIndependent).toHaveBeenCalledWith(
+      expect.not.objectContaining({ projectId: expect.anything() }),
+    );
+  });
+
+  it('lists the projects when the name is unknown or ambiguous', async () => {
+    const caller = await parent();
+    await setting(true);
+    await expect(create(caller, 'psalm', 'a')).rejects.toThrow(
+      'No project is named "psalm". Projects: "Project", "phpstan"',
+    );
+    listProjects.mockResolvedValue([
+      { id: 'one', name: 'Lib' },
+      { id: 'two', name: 'lib' },
+    ]);
+    await expect(create(caller, 'LIB', 'b')).rejects.toThrow(
+      'pass the id of one of them as project: "Lib" (id one), "lib" (id two)',
+    );
+    expect(confirmCrossProjectTask).not.toHaveBeenCalled();
+    expect(createIndependent).not.toHaveBeenCalled();
+  });
+
+  it('refuses after approval when the setting or creation was switched off meanwhile', async () => {
+    const caller = await parent();
+    await setting(true);
+    const created = create(caller, 'phpstan');
+    await asked(1);
+    await setting(false);
+    taskAnswers.shift()?.(true);
+    await expect(created).rejects.toThrow('Allow agents to create tasks in other projects');
+
+    await setting(true);
+    const paused = create(caller, 'phpstan', 'paused');
+    await asked(2);
+    await service.request({ action: 'pause', taskId: 'parent', paused: true });
+    taskAnswers.shift()?.(true);
+    await expect(paused).rejects.toThrow('Task creation is paused');
+    expect(createIndependent).not.toHaveBeenCalled();
+  });
+
+  it('shows one dialog at a time', async () => {
+    const caller = await parent();
+    await setting(true);
+    const first = create(caller, 'phpstan', 'first');
+    const second = create(caller, 'phpstan', 'second');
+    await asked(1);
+    await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+    expect(confirmCrossProjectTask).toHaveBeenCalledOnce();
+    taskAnswers.shift()?.(false);
+    await expect(first).rejects.toThrow('declined');
+    await asked(2);
+    taskAnswers.shift()?.(true);
+    await expect(second).resolves.toMatchObject({ relation: 'independent' });
+  });
+
+  it('keeps children in the creator project', async () => {
+    const caller = await parent();
+    await setting(true);
+    await expect(
+      service.callTool(caller, 'create_task', {
+        requestId: 'child',
+        relation: 'child',
+        name: 'Child',
+        prompt: 'Do it',
+        project: 'phpstan',
+      }),
+    ).rejects.toThrow("use relation 'independent'");
+    expect(core.createTask).not.toHaveBeenCalled();
   });
 });

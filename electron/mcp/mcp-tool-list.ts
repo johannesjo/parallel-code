@@ -706,6 +706,13 @@ const ARCHIVE_TOOL: ToolDef = {
   },
 };
 
+/** Shared by every create_task that offers independent tasks. */
+const CROSS_PROJECT_PROJECT_PARAM = {
+  type: 'string',
+  description:
+    "relation 'independent' only: create the task in another Parallel Code project, given by name (for example the library whose bug you found) or id. Needs the user's setting \"Allow agents to create tasks in other projects\", and the user confirms each task, so the call waits for their answer. The task starts from that project's main branch with no access to your worktree: put everything it needs, such as the reproduction, in prompt. An unknown name lists the projects. Omit it for your own project.",
+};
+
 const SUPERVISION_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
   (tool) => !['merge_task', 'close_task'].includes(tool.name),
 ).map((tool) => {
@@ -721,6 +728,7 @@ const SUPERVISION_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
           prompt: { type: 'string' },
           relation: { type: 'string', enum: ['child', 'independent'] },
           requestId: { type: 'string' },
+          project: CROSS_PROJECT_PROJECT_PARAM,
           expectedBranch: { type: 'string' },
           expectedHeadSha: { type: 'string' },
           useLastCommit: { type: 'boolean', default: false },
@@ -788,6 +796,7 @@ const PAGE_TOOLS: ToolDef[] = [
         prompt: { type: 'string' },
         relation: { type: 'string', enum: ['independent'] },
         requestId: { type: 'string' },
+        project: CROSS_PROJECT_PROJECT_PARAM,
       },
       required: ['name', 'prompt', 'relation', 'requestId'],
     },

@@ -258,6 +258,74 @@ it('creates an agent-requested independent task with the creator agent and sandb
   expect(missing).toMatchObject({ ok: false, error: 'Creating task not found' });
 });
 
+it('creates an approved task in another project with the creator agent and sandbox', async () => {
+  const agentDef = {
+    id: 'codex',
+    name: 'Codex',
+    command: 'codex',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: '',
+  };
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/tmp/project', color: '', defaultBaseBranch: 'main' },
+    { id: 'lib', name: 'Lib', path: '/tmp/lib', color: '', defaultBaseBranch: 'main' },
+    {
+      id: 'notes',
+      name: 'Notes',
+      path: '/tmp/notes',
+      color: '',
+      kind: 'document',
+      documentPath: 'notes.md',
+    },
+  ]);
+  setStore('agents', 'agent', {
+    id: 'agent',
+    taskId: 'task',
+    def: agentDef,
+    resumed: false,
+    status: 'running',
+    exitCode: null,
+  });
+  setStore('tasks', 'task', { dockerMode: true, dockerImage: 'sandbox:1' });
+  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+    if (channel === IPC.GetGitignoredDirs) return [];
+    if (channel === IPC.CreateTask)
+      return { id: 'lib-task', branch_name: 'task/lib', worktree_path: '/tmp/lib-task' };
+    return undefined;
+  });
+
+  const reply = await phoneRequest(IPC.MCP_CreateIndependentTaskRequest, {
+    creatorTaskId: 'task',
+    name: 'Fix the library',
+    prompt: 'Fix the bug',
+    launchId: 'launch-lib',
+    projectId: 'lib',
+  });
+
+  expect(reply).toMatchObject({ ok: true, data: { taskId: 'lib-task' } });
+  expect(store.tasks['lib-task']).toMatchObject({
+    projectId: 'lib',
+    dockerMode: true,
+    dockerImage: 'sandbox:1',
+  });
+  expect(store.agents[store.tasks['lib-task']?.agentIds[0] ?? '']?.def).toMatchObject({
+    id: 'codex',
+  });
+
+  // Document projects take no tasks, whatever main resolved.
+  vi.mocked(invoke).mockClear();
+  const refused = await phoneRequest(IPC.MCP_CreateIndependentTaskRequest, {
+    creatorTaskId: 'task',
+    name: 'Notes',
+    prompt: 'Do it',
+    launchId: 'launch-notes',
+    projectId: 'notes',
+  });
+  expect(refused).toMatchObject({ ok: false, error: 'Project not found' });
+});
+
 it('brings an agent-requested worktree back as a background task resuming its session', async () => {
   const claude = {
     id: 'claude-code',

@@ -2849,6 +2849,7 @@ describe('MCP orchestration policy persistence', () => {
     expect(actions).toEqual([
       'orchestrationSetting',
       'crossProjectReadSetting',
+      'crossProjectTaskSetting',
       'projectPolicy',
       'register',
     ]);
@@ -2871,6 +2872,25 @@ describe('MCP orchestration policy persistence', () => {
     await saveState();
     const persisted = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
     expect(JSON.parse(persisted?.[1].json).allowCrossProjectReads).toBe(expected || undefined);
+  });
+
+  it.each([
+    [true, true],
+    [undefined, false],
+    ['yes', false],
+  ])('restores cross-project tasks (%s) in the main process and store', async (saved, expected) => {
+    const state = JSON.parse(stateJson());
+    state.allowCrossProjectTasks = saved;
+    mockInvoke.mockResolvedValueOnce(JSON.stringify(state));
+    await loadState();
+    expect(store.allowCrossProjectTasks).toBe(expected);
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.DelegationRequest, {
+      action: 'crossProjectTaskSetting',
+      enabled: expected,
+    });
+    await saveState();
+    const persisted = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
+    expect(JSON.parse(persisted?.[1].json).allowCrossProjectTasks).toBe(expected || undefined);
   });
 
   it.each([undefined, true, 'invalid'])(
