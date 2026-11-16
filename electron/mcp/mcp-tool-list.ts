@@ -816,9 +816,10 @@ export function sessionInstructions(capabilities: SessionCapabilities): string {
 }
 
 /**
- * Server instructions, most specific first: Claude Code truncates them at 2048 characters
- * (observed in 2.1.x), so role guidance must not trail the generic app and canvas text
- * (the canvas text is also sent with chat prompts that mention a canvas).
+ * Server instructions, most specific first: Claude Code truncated them at 2048 characters
+ * (observed in 2.1.x; later versions deliver more), so role guidance must not trail the
+ * generic app and canvas text (the canvas text is also sent with chat prompts that mention
+ * a canvas). The confidence line already falls past 2048 for a top-level task with peers.
  */
 export function serverInstructions(options: {
   taskId: string;
