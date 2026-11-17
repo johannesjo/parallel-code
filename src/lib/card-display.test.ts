@@ -285,4 +285,14 @@ describe('shownCards', () => {
   it('keeps a card that fills only when run, since hiding it would leave no way to run it', () => {
     expect(shownCards([manual], {})).toEqual([manual]);
   });
+
+  it('leaves out Confidence until the task has a rating', () => {
+    const confidence = confidenceCard(true);
+    expect(shownCards([confidence, CARD], {})).toEqual([CARD]);
+    const rating = {
+      publishedAt: 1_000,
+      scores: [{ label: 'Correct', score: 90, why: '' }],
+    } as TaskConfidence;
+    expect(shownCards([confidence, CARD], { confidence: rating })).toEqual([confidence, CARD]);
+  });
 });

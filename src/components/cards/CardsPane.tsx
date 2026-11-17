@@ -46,7 +46,7 @@ export function CardsPane(props: { task: Task }) {
         </>
       }
     >
-      {/* Only cards set to hide until they have values can leave the list empty. */}
+      {/* Only an unrated Confidence card or cards set to hide until they have values can leave the list empty. */}
       <For each={shown()} fallback={<p class="cards-pane-empty">Cards fill in as you work</p>}>
         {(card) => <CardView card={card} task={props.task} now={now()} />}
       </For>

@@ -65,7 +65,7 @@ export interface CardDefinition {
   /** Shows the card's one-line summary in the pin row, below the task title bar. Not for Confidence, whose pin already is one. */
   mini?: boolean;
   showAtFinish?: boolean;
-  /** Leaves the card out of the cards pane and popover until it has values. Opt in; not for Confidence or cards that fill only when run. */
+  /** Leaves the card out of the cards pane and popover until it has values. Opt in; not for cards that fill only when run. Confidence always hides until rated. */
   hideEmpty?: boolean;
 }
 

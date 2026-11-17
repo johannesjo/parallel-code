@@ -65,7 +65,7 @@ interface CardDefinition {
   pinned?: string[]; // slot ids shown in the pin row (global, not per project)
   mini?: boolean; // "Card summary": the card's one-line summary in the pin row; not for Confidence
   showAtFinish?: boolean;
-  hideEmpty?: boolean; // "Hide until it has values": left out of the pane and popover while empty; opt in, not for Confidence or manual cards
+  hideEmpty?: boolean; // "Hide until it has values": left out of the pane and popover while empty; opt in, not for manual cards; Confidence always stays out until the task has a rating
 }
 
 type CardSource =
@@ -185,7 +185,7 @@ What the brief shared with other features stays: the code fingerprint (now the [
 
 ### Confidence card
 
-`confidence_publish` and the app's own reviewer (`src/store/task-review.ts`) write ratings today. The Confidence card is a built-in card with a **fixed typed payload**, today's `ConfidencePayload` (`scores`, `findings`, `verified`, `changes` with `before`/`tested`, `keyLine`, `asked`, `source`, `axis`), shown in full by `ReviewScoreCard` in the Finish review. The card itself is a glance (`ConfidenceScores.tsx`): every score on one row, correctness always first, then the lowest, drawn larger since it stands for the whole. Its card line and pins use the same order (`inConfidenceOrder`, `src/lib/task-confidence.ts`). Why a score is not higher and what the rater checked open in a popover on hover or keyboard focus of that score. Only a rating below the bar keeps one line of its lowest score's reason in the card, cut short with the rest in the popover. The card's top line already names who rated, how long ago, and whether the code changed since, so the body repeats none of it. It is not expressed in generic slots.
+`confidence_publish` and the app's own reviewer (`src/store/task-review.ts`) write ratings today. The Confidence card is a built-in card with a **fixed typed payload**, today's `ConfidencePayload` (`scores`, `findings`, `verified`, `changes` with `before`/`tested`, `keyLine`, `asked`, `source`, `axis`), shown in full by `ReviewScoreCard` in the Finish review. The card itself is a glance (`ConfidenceScores.tsx`): every score on one row, correctness always first, then the lowest, drawn larger since it stands for the whole. Its card line and pins use the same order (`inConfidenceOrder`, `src/lib/task-confidence.ts`). Why a score is not higher and what the rater checked open in a popover on hover or keyboard focus of that score. Only a rating below the bar keeps one line of its lowest score's reason in the card, cut short with the rest in the popover. The card's top line already names who rated, how long ago, and whether the code changed since, so the body repeats none of it. It is not expressed in generic slots. The pane and popover leave it out until the task has a rating, since an empty Confidence card only says how to get one (`shownCards`, `src/lib/card-display.ts`).
 
 - Two writers, as today: the agent (`card_publish` with `card: "confidence"`, or the `confidence_publish` alias) and the app reviewer, which keeps `origin: 'review'` and `headSha` for the local-merge check (`src/lib/local-merge-readiness.ts`).
 - `confidence_publish` is a shipped MCP tool that agents and other people's skills may call. It stays as an alias that writes into the Confidence card, retired only once nothing depends on it.
@@ -229,7 +229,7 @@ A rejected `card_publish` payload does not change the card; the error goes back 
 
 Cards with `showAtFinish` appear in the Finish dialog. The Confidence card keeps its current place.
 
-Cards with `hideEmpty` (editor: **While empty › Hide until it has values**, off by default) stay out of the cards pane and popover until the task has values for them (`shownCards`, `src/lib/card-display.ts`); the card line already names only filled cards. A hidden card still shows while its run is going or after it failed, so a first run's progress or error is not hidden with it; when every card is hidden, the pane and popover say the cards fill in as you work. They still run, count toward Update now, and keep their pins: the pin row follows settings, never values. A card whose trigger is `manual` ignores it, since hiding it would hide its Run button; the editor does not offer it there. Confidence has no editor, so it has no such setting yet.
+Cards with `hideEmpty` (editor: **While empty › Hide until it has values**, off by default) stay out of the cards pane and popover until the task has values for them (`shownCards`, `src/lib/card-display.ts`); the card line already names only filled cards. A hidden card still shows while its run is going or after it failed, so a first run's progress or error is not hidden with it; when every card is hidden, the pane and popover say the cards fill in as you work. They still run, count toward Update now, and keep their pins: the pin row follows settings, never values. A card whose trigger is `manual` ignores it, since hiding it would hide its Run button; the editor does not offer it there. Confidence needs no such setting: it always stays out until the task has a rating.
 
 As built: they show open after the review, among the follow-ups (`FinishCards.tsx`), and only while they are on for the task's project.
 

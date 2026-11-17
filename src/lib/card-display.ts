@@ -253,20 +253,21 @@ export function readCard(
 }
 
 /**
- * The cards to draw on a task, leaving out those set to hide until they have
- * values and still have none. `inRun` keeps a card whose run is going or
- * failed, so a first run's progress or error is not hidden with it. Returns
- * the same objects, so <For> keeps each view.
+ * The cards to draw on a task, leaving out Confidence until the task has a
+ * rating, and cards set to hide until they have values while they have none.
+ * `inRun` keeps a card whose run is going or failed, so a first run's progress
+ * or error is not hidden with it. Returns the same objects, so <For> keeps
+ * each view.
  */
 export function shownCards(
   cards: CardDefinition[],
   task: CardTaskState,
   inRun: (card: CardDefinition) => boolean = () => false,
 ): CardDefinition[] {
-  return cards.filter(
-    (card) =>
-      !card.hideEmpty || !fillsOnItsOwn(card.source) || !!task.cards?.[card.id] || inRun(card),
-  );
+  return cards.filter((card) => {
+    if (card.builtIn === 'confidence') return !!task.confidence;
+    return !card.hideEmpty || !fillsOnItsOwn(card.source) || !!task.cards?.[card.id] || inRun(card);
+  });
 }
 
 /** One pinned value in the pin row. */
