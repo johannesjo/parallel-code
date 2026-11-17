@@ -111,10 +111,16 @@ interface TaskPanelProps {
 // Panels that auto-grow to their content share one ceiling so a long body
 // can't take over the column: never taller than the panel's own px cap, and
 // never taller than 33vh. User drag pins intentionally bypass this.
-const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
+// Applied only in the split column with shells (elsewhere changed files absorb), where it
+// also stays within a share of the column so the shells keep room.
+const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh, 20%)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
 const CARDS_PANEL_AUTO_MAX = '45%';
-const NOTES_SPLIT_DEFAULT = 'min(240px, 25vh)';
+const NOTES_SPLIT_DEFAULT = 'min(240px, 25vh, 15%)';
+// The split side column's shells take only what the panes above leave, so with
+// shells cards, changed files and notes together start at most ~60% of it
+// (more only on a short column, where their minimum heights take over).
+const CARDS_PANEL_AUTO_MAX_WITH_SHELLS = 'min(25%, 300px)';
 // Last agent-tour revision shown per task. Collapsing and expanding a task
 // remounts its panel, which must not reopen a tour the user already dismissed.
 const shownAgentTourRevisions = new WeakMap<Task, number>();
@@ -865,7 +871,12 @@ export function TaskPanel(props: TaskPanelProps) {
     id: 'cards',
     resizeLabel: 'Resize cards panel',
     minSize: 80,
-    maxAutoSize: CARDS_PANEL_AUTO_MAX,
+    get maxAutoSize() {
+      // Cards show only in the split column.
+      return props.task.shellAgentIds.length > 0
+        ? CARDS_PANEL_AUTO_MAX_WITH_SHELLS
+        : CARDS_PANEL_AUTO_MAX;
+    },
     content: () => <CardsPane task={props.task} />,
   };
 

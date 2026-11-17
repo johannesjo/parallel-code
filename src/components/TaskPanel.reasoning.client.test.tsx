@@ -391,6 +391,31 @@ function agentTask(): Task {
   };
 }
 
+it('caps the cards pane lower when shell terminals share the column, so they keep room', () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  try {
+    toggleFocusMode(true);
+    const container = document.createElement('div');
+    document.body.append(container);
+    dispose = render(
+      () => (
+        <TaskPanel
+          task={{ ...agentTask(), gitIsolation: 'worktree', shellAgentIds: ['shell-1'] }}
+          isActive
+        />
+      ),
+      container,
+    );
+    const cardsCell = expectDefined(
+      container.querySelector('.test-cards-pane')?.closest<HTMLElement>('.rp-cell'),
+    );
+    expect(cardsCell.style.maxHeight).toBe('min(25%, 300px)');
+  } finally {
+    toggleFocusMode(false);
+    width.mockRestore();
+  }
+});
+
 it('shows the cards as a pane above the changed files in the split view, not in the header', () => {
   const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   try {

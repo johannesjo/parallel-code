@@ -54,14 +54,46 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Who fills the card waits for the pointer or the keyboard. Its room is kept,
-   so the age beside it does not move when it shows. A touch screen has no
-   pointer to wait for, so there it stays in view. */
+/* Who fills the card rarely changes, so with a pointer it waits in a small
+   popover beside the age and takes no room on the line: the age and the
+   Confidence scores never move for it. It stays in the head's row, so the
+   pane's scrolling never cuts it off or grows for it, and it is positioned
+   against the head, so the meta's clipping doesn't either. A touch screen has
+   no pointer to wait for, so there it stays inline. */
 @media (hover: hover) {
-  .card-meta-source {
-    opacity: 0;
+  .card-head {
+    position: relative;
   }
-  .card:hover .card-meta-source,
+  /* Only the age in this card's head is in reach of the popover, so each card finds its own. */
+  .card-meta-state {
+    anchor-name: --card-age;
+  }
+  .card-meta-source {
+    position: absolute;
+    position-anchor: --card-age;
+    top: anchor(center);
+    right: calc(anchor(left) + 4px);
+    transform: translateY(-50%);
+    z-index: 1;
+    padding: 4px 8px;
+    background: var(--bg-elevated);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* Still read aloud between source and age, just not drawn in the popover. */
+  .card-meta-dot {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .card-meta:hover .card-meta-source,
   .card:has(:focus-visible) .card-meta-source {
     opacity: 1;
   }
@@ -73,21 +105,27 @@
   gap: 8px;
   min-width: 0;
 }
-/* Unnamed, so its meta joins the scores line instead of standing alone on one;
-   the scores wrap beside it rather than under it. */
+/* Unnamed, so its meta joins the scores line instead of standing alone on one.
+   The scores keep the line: when both don't fit, the meta wraps below, right-aligned,
+   instead of pushing a score onto a second row. */
 .card-confidence {
-  flex-direction: row;
+  flex-flow: row wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 12px;
+}
+/* Like the low-score reason, the empty-state hint is sized by the card, so the meta stays beside it. */
+.card-confidence .card-empty {
+  contain: inline-size;
 }
 .card-confidence .card-body {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .card-confidence .card-head {
   order: 1;
-  flex-shrink: 0;
-  max-width: 40%;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .card-confidence .card-meta {
   max-width: 100%;
@@ -318,6 +356,8 @@ li[data-state='warn'] .slot-mark {
   color: var(--fg);
 }
 .confidence-why {
+  /* Sized by the card, not its sentence, so a long reason never pushes the meta off the scores line. */
+  contain: inline-size;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;

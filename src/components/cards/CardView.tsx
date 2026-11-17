@@ -19,14 +19,17 @@ interface CardViewProps {
 
 /**
  * The right end of a card's top line: "Sonnet · 4m". Who fills the card rarely
- * changes, so it waits for the pointer or the keyboard and is the first to give up
- * its room on a short line. Still part of the text, so it is read aloud as before.
+ * changes, so with a pointer it waits in a popover beside the age (see cards.css);
+ * on touch screens it stays inline. Still part of the text, so it is read aloud.
  */
 export function CardMetaText(props: { source?: string; state: string }) {
   return (
     <span class="card-meta-text">
       <Show when={props.source}>
-        <span class="card-meta-source">{`${props.source} · `}</span>
+        <span class="card-meta-source">
+          {props.source}
+          <span class="card-meta-dot"> · </span>
+        </span>
       </Show>
       <span class="card-meta-state">{props.state}</span>
     </span>
