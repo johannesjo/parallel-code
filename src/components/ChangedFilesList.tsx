@@ -24,6 +24,7 @@ import {
 } from './CommitNavBar';
 import type { UnderstandingTourState } from '../lib/create-understanding-tour';
 import { TourHint } from './understanding/TourHint';
+import { isBinaryPath } from './file-link-menu';
 import type { ChangedFile, CoverageFileSummary, CoverageSummary, NestedRepo } from '../ipc/types';
 
 interface ChangedFilesListProps {
@@ -1194,7 +1195,13 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       onOpenInEditorClick={props.onOpenInEditorClick}
                     />
                   </Show>
-                  <Show when={!!props.onUnderstandClick && row().node.file?.status !== 'D'}>
+                  <Show
+                    when={
+                      !!props.onUnderstandClick &&
+                      row().node.file?.status !== 'D' &&
+                      !isBinaryPath(row().node.file?.path ?? row().node.path)
+                    }
+                  >
                     <UnderstandFileButton
                       filePath={row().node.file?.path ?? row().node.path}
                       understanding={props.understanding}

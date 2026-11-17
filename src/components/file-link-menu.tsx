@@ -50,7 +50,12 @@ export type FileLinkKind = 'folder' | 'markdown' | 'html' | 'binary' | 'executab
 
 // shortcut: known extensions only — unknown binaries count as text and go to the editor
 const BINARY_RE =
-  /\.(png|jpe?g|gif|webp|bmp|ico|svg|pdf|zip|tar|gz|tgz|7z|mp3|mp4|mov|wav|webm|woff2?|ttf|otf|sqlite|db)$/i;
+  /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg|pdf|zip|tar|gz|tgz|7z|mp3|mp4|m4v|mov|avi|mkv|wav|webm|woff2?|ttf|otf|sqlite|db)$/i;
+
+/** True for media, archives, fonts and other files that can't be read as source. */
+export function isBinaryPath(filePath: string): boolean {
+  return BINARY_RE.test(filePath);
+}
 
 // shortcut: only a trailing slash marks a folder — a stat over IPC would catch the rest
 export function fileLinkKind(filePath: string): FileLinkKind {
@@ -59,7 +64,7 @@ export function fileLinkKind(filePath: string): FileLinkKind {
   if (/\.html?$/i.test(filePath)) return 'html';
   // The default app would run these, so they only open in the editor.
   if (isExecutablePath(filePath)) return 'executable';
-  return BINARY_RE.test(filePath) ? 'binary' : 'text';
+  return isBinaryPath(filePath) ? 'binary' : 'text';
 }
 
 /** The worktree-relative path the side panel and line jumps need, or undefined outside it. */

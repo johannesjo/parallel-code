@@ -172,6 +172,8 @@ describe('ChangedFilesList understand button', () => {
   const files: ChangedFile[] = [
     { path: 'src/example.ts', status: 'M', lines_added: 1, lines_removed: 0, committed: false },
     { path: 'src/gone.ts', status: 'D', lines_added: 0, lines_removed: 4, committed: false },
+    { path: 'docs/shot.png', status: 'A', lines_added: 0, lines_removed: 0, committed: false },
+    { path: 'docs/demo.MP4', status: 'M', lines_added: 0, lines_removed: 0, committed: false },
   ];
 
   function showHint(button: HTMLElement): HTMLElement {
@@ -210,14 +212,14 @@ describe('ChangedFilesList understand button', () => {
     return container;
   }
 
-  /** Only src/example.ts survives the D-status filter, so it owns the only button. */
+  /** Only src/example.ts survives the deleted and binary filters, so it owns the only button. */
   const understandButton = (container: HTMLElement) => {
     const button = container.querySelector<HTMLButtonElement>('.changed-files-understand-btn');
     if (!button) throw new Error('Understand button is missing');
     return button;
   };
 
-  it('offers a tour on existing files only and does not open the diff', async () => {
+  it('offers a tour on existing text files only and does not open the diff', async () => {
     const onUnderstandClick = vi.fn();
     const onFileClick = vi.fn();
     const container = mountList({ onUnderstandClick, onFileClick });
