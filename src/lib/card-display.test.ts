@@ -173,10 +173,9 @@ describe('pinGroups', () => {
   const confidence: CardDefinition = { ...confidenceCard(true), pinned: ['scores'] };
   const unpinned: CardDefinition = { ...CARD, id: 'other' };
 
-  it('shows "–" before a value, and the same pins once filled', () => {
+  it('shows "–" before a value, and the same pins once filled; Confidence not until rated', () => {
     const empty = pinGroups([confidence, pinned, unpinned], {});
     expect(empty.map((group) => group.pins.map((pin) => [pin.label, pin.text]))).toEqual([
-      [['Confidence', '–']],
       [
         ['', '–'],
         ['Quality', '–'],
@@ -186,6 +185,17 @@ describe('pinGroups', () => {
     expect(filled[0].pins.map((pin) => [pin.label, pin.text, pin.warn])).toEqual([
       ['', 'Ship the fix', false],
       ['Quality', '90', false],
+    ]);
+  });
+
+  it('leaves out pinned Confidence until the task has a rating', () => {
+    expect(pinGroups([confidence], {})).toEqual([]);
+    const rating = {
+      publishedAt: 1,
+      scores: [{ label: 'Correct', score: 80, why: '' }],
+    } as TaskConfidence;
+    expect(pinGroups([confidence], { confidence: rating })[0].pins.map((pin) => pin.text)).toEqual([
+      '80',
     ]);
   });
 

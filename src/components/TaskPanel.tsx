@@ -62,7 +62,7 @@ import { TaskCanvasPanel } from './TaskCanvasPanel';
 import { CardLine } from './cards/CardLine';
 import { CardsPane } from './cards/CardsPane';
 import { PinRow } from './cards/PinRow';
-import { showsInPinRow } from '../lib/card-display';
+import { showsInPinRowOn } from '../lib/card-display';
 import { TaskAITerminal } from './TaskAITerminal';
 import { isAgentChat } from '../store/agent-chat';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
@@ -223,8 +223,11 @@ export function TaskPanel(props: TaskPanelProps) {
   const cardsOn = () =>
     props.task.agentIds.length > 0 && enabledCards(props.task.projectId).length > 0;
   const showCardLine = () => cardsOn() && !useSplit();
-  // Pins are settings, so the pin row never comes and goes with values.
-  const showPinRow = () => cardsOn() && enabledCards(props.task.projectId).some(showsInPinRow);
+  // Pins are settings, so the pin row never comes and goes with values; the one
+  // exception is Confidence, whose pins wait for a rating, so a row holding only
+  // them appears once, when the first rating arrives.
+  const showPinRow = () =>
+    cardsOn() && enabledCards(props.task.projectId).some(showsInPinRowOn(props.task));
 
   const finishTour = () => {
     const basis = tour.basis();

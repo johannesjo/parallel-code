@@ -6,7 +6,8 @@ import './cards.css';
 
 /**
  * The pin row: mini views and pinned slots of the task's cards, as neutral text. Its height
- * is fixed and it shows by settings alone; a value only changes its text.
+ * is fixed and it shows by settings, except that Confidence waits for a rating; otherwise a
+ * value only changes its text.
  */
 export function PinRow(props: { task: Task }) {
   // Keeps relative times ("Last prompt 3 min ago") current, as the popover does.

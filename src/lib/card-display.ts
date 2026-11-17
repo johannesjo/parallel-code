@@ -289,7 +289,7 @@ export interface PinGroup {
   pins: Pin[];
 }
 
-/** The slots a card pins that still exist. Settings only, so the row never toggles from values. */
+/** The slots a card pins that still exist, from settings alone. */
 export function pinnedSlotIds(card: CardDefinition): string[] {
   const ids = card.builtIn === 'confidence' ? [CONFIDENCE_PIN] : card.slots.map((slot) => slot.id);
   return ids.filter((id) => card.pinned?.includes(id));
@@ -298,6 +298,15 @@ export function pinnedSlotIds(card: CardDefinition): string[] {
 /** Whether a card shows in the pin row: its mini view or a pinned slot. Settings only, like the pins. */
 export function showsInPinRow(card: CardDefinition): boolean {
   return (card.mini === true && !card.builtIn) || pinnedSlotIds(card).length > 0;
+}
+
+/**
+ * Whether a card shows in the pin row on a task: by settings, except that
+ * Confidence waits for a rating, like its card.
+ */
+export function showsInPinRowOn(task: Pick<CardTaskState, 'confidence'>) {
+  return (card: CardDefinition): boolean =>
+    showsInPinRow(card) && (card.builtIn !== 'confidence' || !!task.confidence);
 }
 
 /** The mini view: the card's name and the summary its card line would show. */
@@ -314,9 +323,7 @@ function miniPin(card: CardDefinition, task: CardTaskState): Pin {
   };
 }
 
-function confidencePins(card: CardDefinition, task: CardTaskState): Pin[] {
-  const rating = task.confidence;
-  if (!rating) return [{ key: card.id, label: card.name, text: '–', warn: false, faded: false }];
+function confidencePins(card: CardDefinition, rating: TaskConfidence, task: CardTaskState): Pin[] {
   const faded = isConfidenceOutdated(rating, task.codeFingerprint);
   return inConfidenceOrder(rating.scores).map((entry, index) => ({
     key: `${card.id}:${index}`,
@@ -351,13 +358,16 @@ function slotPins(card: CardDefinition, task: CardTaskState): Pin[] {
     });
 }
 
-/** Each card's pinned values, for the pin row. */
+/**
+ * Each card's pinned values, for the pin row. Confidence is left out until the
+ * task has a rating, like its card; other cards show "–" while empty.
+ */
 export function pinGroups(cards: readonly CardDefinition[], task: CardTaskState): PinGroup[] {
-  return cards.filter(showsInPinRow).map((card) => ({
+  return cards.filter(showsInPinRowOn(task)).map((card) => ({
     card,
     pins:
-      card.builtIn === 'confidence'
-        ? confidencePins(card, task)
+      card.builtIn === 'confidence' && task.confidence
+        ? confidencePins(card, task.confidence, task)
         : [...(card.mini ? [miniPin(card, task)] : []), ...slotPins(card, task)],
   }));
 }
