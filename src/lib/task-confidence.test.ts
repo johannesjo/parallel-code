@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfidencePayload } from '../../electron/shared/task-confidence';
-import { isConfidenceOutdated, restoreTaskConfidence } from './task-confidence';
+import { inConfidenceOrder, isConfidenceOutdated, restoreTaskConfidence } from './task-confidence';
 
 describe('parseConfidencePayload', () => {
   it('accepts named scores, findings and a source', () => {
@@ -117,5 +117,40 @@ describe('isConfidenceOutdated', () => {
   it('counts as current when there is nothing to compare', () => {
     expect(isConfidenceOutdated(rating, undefined)).toBe(false);
     expect(isConfidenceOutdated({ publishedAt: 100 }, { at: 200, fingerprint: 'b' })).toBe(false);
+  });
+});
+
+describe('inConfidenceOrder', () => {
+  const labels = (scores: { label: string; score: number }[]) =>
+    inConfidenceOrder(scores).map((entry) => entry.label);
+
+  it('puts correctness first, then the lowest, then the rest as published', () => {
+    expect(
+      labels([
+        { label: 'Minimal', score: 90 },
+        { label: 'Tested', score: 95 },
+        { label: 'Complete', score: 70 },
+        { label: 'Correct', score: 85 },
+      ]),
+    ).toEqual(['Correct', 'Complete', 'Minimal', 'Tested']);
+  });
+
+  it('keeps correctness first when it is also the lowest', () => {
+    expect(
+      labels([
+        { label: 'Minimal', score: 90 },
+        { label: 'correctness', score: 40 },
+        { label: 'Complete', score: 80 },
+      ]),
+    ).toEqual(['correctness', 'Minimal', 'Complete']);
+  });
+
+  it('leads with the lowest when nothing rates correctness', () => {
+    expect(
+      labels([
+        { label: 'Confidence', score: 80 },
+        { label: 'Incorrect edge cases', score: 50 },
+      ]),
+    ).toEqual(['Incorrect edge cases', 'Confidence']);
   });
 });

@@ -128,6 +128,21 @@ describe('the Confidence card', () => {
     expect(reading.pending).toBe('waiting for a rating');
   });
 
+  it('summarises correctness first, then the lowest score', () => {
+    const confidence = {
+      scores: [
+        { label: 'Minimal', score: 90, why: '' },
+        { label: 'Complete', score: 70, why: '' },
+        { label: 'Correctness', score: 85, why: '' },
+      ],
+      findings: [],
+      publishedAt: 1_000,
+    };
+    expect(readCard(card, { confidence }, 'sonnet').summary).toBe(
+      'Correctness 85 · Complete 70 · Minimal 90',
+    );
+  });
+
   it('summarises the scores and asks for attention below 60 while current', () => {
     const low = readCard(card, { confidence: rating(45) }, 'sonnet');
     expect(low).toMatchObject({
@@ -195,18 +210,20 @@ describe('pinGroups', () => {
     expect(old[0].pins[1]).toMatchObject({ warn: false, faded: true });
   });
 
-  it('pins each Confidence score, warning below 60', () => {
+  it('pins each Confidence score, correctness then the lowest first, warning below 60', () => {
     const rating = {
       publishedAt: 1,
       scores: [
         { label: 'Minimal', score: 88, why: '' },
         { label: 'Complete', score: 55, why: '' },
+        { label: 'Correct', score: 80, why: '' },
       ],
     } as TaskConfidence;
     const [group] = pinGroups([confidence], { confidence: rating });
     expect(group.pins.map((pin) => [pin.label, pin.text, pin.warn])).toEqual([
-      ['Minimal', '88', false],
+      ['Correct', '80', false],
       ['Complete', '55', true],
+      ['Minimal', '88', false],
     ]);
   });
 });

@@ -13,7 +13,12 @@ import {
   type CardSource,
   type CardValues,
 } from './cards';
-import { LOW_CONFIDENCE_SCORE, isConfidenceOutdated, type TaskConfidence } from './task-confidence';
+import {
+  LOW_CONFIDENCE_SCORE,
+  inConfidenceOrder,
+  isConfidenceOutdated,
+  type TaskConfidence,
+} from './task-confidence';
 
 /** Whether a value is past the threshold its slot sets: the only reason for colour. */
 export function slotWarns(slot: SlotDefinition, value: SlotValue): boolean {
@@ -220,7 +225,9 @@ function readConfidence(rating: TaskConfidence | undefined, task: CardTaskState)
     at: rating.publishedAt,
     outdated,
     urgent: !outdated && rating.scores.some((entry) => entry.score < LOW_CONFIDENCE_SCORE),
-    summary: rating.scores.map((entry) => `${entry.label} ${entry.score}`).join(' · '),
+    summary: inConfidenceOrder(rating.scores)
+      .map((entry) => `${entry.label} ${entry.score}`)
+      .join(' · '),
     source: rating.source ?? (rating.origin === 'review' ? 'review' : 'agent'),
     pending,
   };
@@ -310,7 +317,7 @@ function confidencePins(card: CardDefinition, task: CardTaskState): Pin[] {
   const rating = task.confidence;
   if (!rating) return [{ key: card.id, label: card.name, text: '–', warn: false, faded: false }];
   const faded = isConfidenceOutdated(rating, task.codeFingerprint);
-  return rating.scores.map((entry, index) => ({
+  return inConfidenceOrder(rating.scores).map((entry, index) => ({
     key: `${card.id}:${index}`,
     label: entry.label,
     text: String(entry.score),

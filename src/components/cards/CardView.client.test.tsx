@@ -158,6 +158,26 @@ describe('the open Confidence card', () => {
     expect(hint()).toBeNull();
   });
 
+  it('always shows correctness first, even when another score is the lowest', () => {
+    show({
+      id: 't1',
+      confidence: {
+        scores: [
+          { label: 'Minimal', score: 90, why: 'Small diff.' },
+          { label: 'Complete', score: 70, why: 'One case untested.' },
+          { label: 'Correctness', score: 85, why: 'Tested.' },
+        ],
+        findings: [],
+        publishedAt: 0,
+      },
+    });
+    const labels = [...document.body.querySelectorAll<HTMLElement>('.confidence-score')].map(
+      (entry) => entry.textContent,
+    );
+    expect(labels).toEqual(['Correctness 85%', '70% Complete', 'Minimal 90%']);
+    expect(score('Complete').classList.contains('confidence-lead')).toBe(true);
+  });
+
   it('says why a score is not higher, and what backs it, in a popover on focus', () => {
     show({ id: 't1', confidence: rated(72) });
     const correct = score('Correct');

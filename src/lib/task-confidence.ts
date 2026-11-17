@@ -40,6 +40,20 @@ export function restoreTaskConfidence(value: unknown): TaskConfidence | undefine
 export const LOW_CONFIDENCE_SCORE = 60;
 
 /**
+ * The order the Confidence card shows scores in: correctness first, so the
+ * score that matters most is always in the same place; then the lowest, which
+ * stands for the whole; then the rest as published.
+ */
+export function inConfidenceOrder<T extends { label: string; score: number }>(scores: T[]): T[] {
+  const lowest = scores.reduce<T | undefined>(
+    (low, entry) => (!low || entry.score < low.score ? entry : low),
+    undefined,
+  );
+  const rank = (entry: T) => (/^correct/i.test(entry.label) ? 0 : entry === lowest ? 1 : 2);
+  return [...scores].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
  * Whether the code moved on since the rating: the newest diff fingerprint was
  * read after it and differs. Without both fingerprints there is nothing to
  * compare, so it counts as current.

@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from 'solid-js';
 import type { ReviewScore, ReviewScores } from '../../lib/review-summary';
-import { LOW_CONFIDENCE_SCORE } from '../../lib/task-confidence';
+import { LOW_CONFIDENCE_SCORE, inConfidenceOrder } from '../../lib/task-confidence';
 import { HoverHint } from '../understanding/HoverHint';
 
 /** Why a score is not higher, and what the rater checked to back it. */
@@ -45,30 +45,31 @@ function Score(props: { entry: ReviewScore; lead?: boolean; children: JSX.Elemen
 }
 
 /**
- * The rating as a glance: the weakest score stands for the whole and leads,
- * the others follow on the same row. Reasons and evidence wait in each score's
- * popover; only a low rating keeps one line of its reason in the card, since
- * that is the one thing to act on. The Finish review shows the rating in full.
+ * The rating as a glance, every score on one row with correctness first. The
+ * weakest score stands for the whole and is drawn larger. Reasons and evidence
+ * wait in each score's popover; only a low rating keeps one line of its reason
+ * in the card, since that is the one thing to act on. The Finish review shows
+ * the rating in full.
  */
 export function ConfidenceScores(props: { scores: ReviewScores }) {
   const weakest = () => props.scores.weakest;
-  const others = () => props.scores.all.filter((entry) => entry !== weakest());
   return (
     <div class="confidence">
       <div class="confidence-scores" role="group" aria-label="Scores">
-        <Show when={weakest()}>
+        <For each={inConfidenceOrder(props.scores.all)}>
           {(entry) => (
-            <Score entry={entry()} lead>
-              <span class="confidence-number">{entry().score}%</span>{' '}
-              <strong>{entry().label}</strong>
-            </Score>
-          )}
-        </Show>
-        <For each={others()}>
-          {(entry) => (
-            <Score entry={entry}>
-              {entry.label} <span class="confidence-number">{entry.score}%</span>
-            </Score>
+            <Show
+              when={entry === weakest()}
+              fallback={
+                <Score entry={entry}>
+                  {entry.label} <span class="confidence-number">{entry.score}%</span>
+                </Score>
+              }
+            >
+              <Score entry={entry} lead>
+                <span class="confidence-number">{entry.score}%</span> <strong>{entry.label}</strong>
+              </Score>
+            </Show>
           )}
         </For>
       </div>
