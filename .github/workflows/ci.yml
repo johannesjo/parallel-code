@@ -104,6 +104,7 @@ jobs:
           --exclude electron/documents/refinement.integration.test.ts
           --exclude electron/documents/runs.integration.test.ts
           --exclude electron/documents/setup.test.ts
+          --exclude electron/ipc/card-check.test.ts
           --exclude electron/ipc/coverage.test.ts
           --exclude electron/ipc/docker-config.test.ts
           --exclude electron/ipc/git-base-upstream.integration.test.ts
