@@ -6,6 +6,7 @@ import {
   pinGroups,
   readCard,
   showsInPinRow,
+  shownCards,
   showsSlotLabel,
   slotSummary,
   slotWarns,
@@ -243,5 +244,28 @@ describe('showsSlotLabel', () => {
     expect(only({ id: 'v', type: 'line', label: 'Verdict' })).toBe(true);
     expect(only({ id: 'q', type: 'score', label: 'Quality' })).toBe(true);
     expect(only({ id: 'f', type: 'stat', label: 'Files' })).toBe(true);
+  });
+});
+
+describe('shownCards', () => {
+  const hidden: CardDefinition = { ...CARD, id: 'hidden', hideEmpty: true };
+  const manual: CardDefinition = {
+    ...CARD,
+    id: 'manual',
+    hideEmpty: true,
+    source: { kind: 'check', checkId: 'lint', mode: 'json', trigger: 'manual' },
+  };
+
+  it('leaves out a card set to hide until it has values, until it has some', () => {
+    expect(shownCards([CARD, hidden], {})).toEqual([CARD]);
+    expect(shownCards([CARD, hidden], { cards: { hidden: values(90) } })).toEqual([CARD, hidden]);
+  });
+
+  it('keeps a card without values while its run is going or failed', () => {
+    expect(shownCards([hidden], {}, (card) => card.id === 'hidden')).toEqual([hidden]);
+  });
+
+  it('keeps a card that fills only when run, since hiding it would leave no way to run it', () => {
+    expect(shownCards([manual], {})).toEqual([manual]);
   });
 });

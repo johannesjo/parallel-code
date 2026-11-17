@@ -6,7 +6,13 @@
 import { BRIEF_MODELS, type BriefModelId } from '../../electron/shared/task-name-model';
 import { SLOT_LIMITS, parseSlotValue, type SlotDefinition, type SlotValue } from './card-slots';
 import { appFactPending } from './app-facts';
-import { CONFIDENCE_PIN, type CardDefinition, type CardSource, type CardValues } from './cards';
+import {
+  CONFIDENCE_PIN,
+  fillsOnItsOwn,
+  type CardDefinition,
+  type CardSource,
+  type CardValues,
+} from './cards';
 import { LOW_CONFIDENCE_SCORE, isConfidenceOutdated, type TaskConfidence } from './task-confidence';
 
 /** Whether a value is past the threshold its slot sets: the only reason for colour. */
@@ -237,6 +243,23 @@ export function readCard(
     source: sourceLabel(card.source, defaultModel),
     pending: fillHint(card.source),
   };
+}
+
+/**
+ * The cards to draw on a task, leaving out those set to hide until they have
+ * values and still have none. `inRun` keeps a card whose run is going or
+ * failed, so a first run's progress or error is not hidden with it. Returns
+ * the same objects, so <For> keeps each view.
+ */
+export function shownCards(
+  cards: CardDefinition[],
+  task: CardTaskState,
+  inRun: (card: CardDefinition) => boolean = () => false,
+): CardDefinition[] {
+  return cards.filter(
+    (card) =>
+      !card.hideEmpty || !fillsOnItsOwn(card.source) || !!task.cards?.[card.id] || inRun(card),
+  );
 }
 
 /** One pinned value in the pin row. */

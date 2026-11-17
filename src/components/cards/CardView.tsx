@@ -63,6 +63,14 @@ function cardRun(card: CardDefinition, task: Task): { state: RunState; label: st
   return undefined;
 }
 
+/** Whether a card's run on `task` is going or failed, which the card shows even before it has values. */
+export function inRunOn(task: Task): (card: CardDefinition) => boolean {
+  return (card) => {
+    const state = cardRun(card, task)?.state;
+    return !!state && (!!state.running || !!state.error);
+  };
+}
+
 /** A run's state, which replaces the age while it matters. */
 function RunMeta(props: { run: RunState; label: string; fallback: JSX.Element }) {
   const run = () => props.run;

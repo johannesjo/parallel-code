@@ -65,6 +65,8 @@ export interface CardDefinition {
   /** Shows the card's one-line summary in the pin row, below the task title bar. Not for Confidence, whose pin already is one. */
   mini?: boolean;
   showAtFinish?: boolean;
+  /** Leaves the card out of the cards pane and popover until it has values. Opt in; not for Confidence or cards that fill only when run. */
+  hideEmpty?: boolean;
 }
 
 /** One run's output for a card on a task. */
@@ -76,6 +78,14 @@ export interface CardValues {
   fingerprint?: string;
   /** Model cards: the agent reply the run read, so a new reply counts as news. */
   replyFingerprint?: string;
+}
+
+/**
+ * Whether a card fills without the user pressing Run, so hiding it until it
+ * has values cannot leave it hidden for good.
+ */
+export function fillsOnItsOwn(source: CardSource): boolean {
+  return !('trigger' in source) || source.trigger !== 'manual';
 }
 
 /** AI cards send task content to a provider; non-AI ones stay on this machine. */
@@ -249,6 +259,7 @@ function restoreCard(raw: Record<string, unknown>, id: string): CardDefinition |
     ...(pinned && { pinned }),
     ...(raw.mini === true && { mini: true }),
     ...(raw.showAtFinish === true && { showAtFinish: true }),
+    ...(raw.hideEmpty === true && { hideEmpty: true }),
   };
 }
 

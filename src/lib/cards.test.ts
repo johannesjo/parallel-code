@@ -64,6 +64,15 @@ describe('restoreCardDefinitions', () => {
     expect(restored.map((card) => card.mini)).toEqual([undefined, true, undefined]);
   });
 
+  it('keeps hiding a card until it has values only when switched on', () => {
+    const restored = restoreCardDefinitions([
+      { ...confidenceCard(true), hideEmpty: true },
+      { ...CI_CARD, hideEmpty: true },
+      { ...CI_CARD, id: 'ci-2', hideEmpty: 'yes' },
+    ]);
+    expect(restored.map((card) => card.hideEmpty)).toEqual([undefined, true, undefined]);
+  });
+
   it('keeps Confidence where the user put it, with its on/off and project overrides', () => {
     const notes: CardDefinition = {
       id: 'notes',

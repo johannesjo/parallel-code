@@ -1,10 +1,11 @@
 import { For, type JSX } from 'solid-js';
-import { enabledCards, openSettingsTab } from '../../store/store';
+import { shownCards } from '../../lib/card-display';
+import { cardTaskState, enabledCards, openSettingsTab } from '../../store/store';
 import type { Task } from '../../store/types';
 import { sf } from '../../lib/fontScale';
 import { IconButton } from '../IconButton';
 import { PencilIcon } from '../icons';
-import { CardView } from './CardView';
+import { CardView, inRunOn } from './CardView';
 import { UpdateCardsButton, createNow } from './CardsPopover';
 import './cards.css';
 
@@ -31,6 +32,7 @@ export function CardsPane(props: { task: Task }) {
   // Display order, not urgency first as in the popover: a pane that stays on
   // screen must not reshuffle as values change.
   const cards = () => enabledCards(props.task.projectId);
+  const shown = () => shownCards(cards(), cardTaskState(props.task), inRunOn(props.task));
   return (
     <CardsPaneFrame
       actions={
@@ -44,7 +46,10 @@ export function CardsPane(props: { task: Task }) {
         </>
       }
     >
-      <For each={cards()}>{(card) => <CardView card={card} task={props.task} now={now()} />}</For>
+      {/* Only cards set to hide until they have values can leave the list empty. */}
+      <For each={shown()} fallback={<p class="cards-pane-empty">Cards fill in as you work</p>}>
+        {(card) => <CardView card={card} task={props.task} now={now()} />}
+      </For>
     </CardsPaneFrame>
   );
 }

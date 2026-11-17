@@ -428,6 +428,12 @@ li[data-state='warn'] .slot-mark {
   min-height: 0;
   overflow: hidden auto;
 }
+.cards-pane-empty {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
 .cards-pane .card {
   padding: 10px 12px;
 }

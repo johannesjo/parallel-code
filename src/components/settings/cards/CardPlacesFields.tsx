@@ -1,6 +1,6 @@
-import { For } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { produce } from 'solid-js/store';
-import { withProjectSetting } from '../../../lib/cards';
+import { fillsOnItsOwn, withProjectSetting } from '../../../lib/cards';
 import { store } from '../../../store/store';
 import { CardBarPins } from './CardBarPins';
 import type { DraftProps } from './CardSourceFields';
@@ -63,6 +63,22 @@ export function CardPlacesFields(props: DraftProps) {
           </label>
         </span>
       </div>
+      {/* A card that fills only when run would stay hidden, its Run button with it. */}
+      <Show when={fillsOnItsOwn(props.draft.source)}>
+        <div class="card-editor-field" role="group" aria-label="While empty">
+          <span class="card-editor-label">While empty</span>
+          <span class="card-editor-inputs">
+            <label>
+              <input
+                type="checkbox"
+                checked={!!props.draft.hideEmpty}
+                onChange={(e) => props.setDraft('hideEmpty', e.currentTarget.checked || undefined)}
+              />
+              Hide until it has values
+            </label>
+          </span>
+        </div>
+      </Show>
     </>
   );
 }

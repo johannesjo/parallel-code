@@ -105,6 +105,34 @@ describe('Removing a card', () => {
   });
 });
 
+describe('Hiding a card until it has values', () => {
+  const box = () =>
+    [...document.body.querySelectorAll('label')]
+      .find((l) => l.textContent?.trim() === 'Hide until it has values')
+      ?.querySelector('input');
+
+  it('is off by default and saved once ticked', () => {
+    click('Edit Risks');
+    const input = box();
+    if (!input) throw new Error('No "Hide until it has values" checkbox');
+    expect(input.checked).toBe(false);
+    input.click();
+    click('Save');
+    expect(store.cardDefinitions[0].hideEmpty).toBe(true);
+  });
+
+  it('is not offered for a card that fills only when run', () => {
+    setStore('cardDefinitions', 0, 'source', {
+      kind: 'check',
+      checkId: 'lint',
+      mode: 'json',
+      trigger: 'manual',
+    });
+    click('Edit Risks');
+    expect(box()).toBeUndefined();
+  });
+});
+
 describe('Dragging a card', () => {
   const rows = () => [...document.body.querySelectorAll<HTMLElement>('.cards-row')];
   const fire = (row: HTMLElement, type: string) =>

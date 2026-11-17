@@ -309,7 +309,7 @@ export const CARD_TOOLS: ToolDef[] = [
     name: 'card_config_save',
     description:
       'Add or change one card definition. Send the whole card as card_config_read returns it; an id no card has adds a new one. "position" moves it in the display order, counted from 0. ' +
-      `A card is {id: lower-case letters, digits and dashes; name; description; source; slots; enabled: its default in every project; projects?: {projectId: boolean} overrides; pinned?: slot ids shown in the bar below the task title; mini?: its summary in that bar; showAtFinish?}. ` +
+      `A card is {id: lower-case letters, digits and dashes; name; description; source; slots; enabled: its default in every project; projects?: {projectId: boolean} overrides; pinned?: slot ids shown in the bar below the task title; mini?: its summary in that bar; showAtFinish?; hideEmpty?: left out of the cards pane until it has values, opt in, ignored when its trigger is manual}. ` +
       `"source" is one of {kind: "model", model: "default" | ${Object.keys(BRIEF_MODELS)
         .map((id) => `"${id}"`)
         .join(

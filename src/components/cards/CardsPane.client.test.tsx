@@ -70,3 +70,21 @@ it('opens Settings › Cards from an icon-only Edit cards button', () => {
   expect(store.showSettingsDialog).toBe(true);
   expect(store.settingsTabRequest).toBe('cards');
 });
+
+it('leaves out a card set to hide until it has values, then shows it once it has some', () => {
+  const names = () =>
+    [...document.body.querySelectorAll('section.card')].map((c) => c.getAttribute('aria-label'));
+  setStore('cardDefinitions', 0, 'hideEmpty', true);
+  expect(names()).toEqual(['Loud']);
+  setStore('tasks', 't1', 'cards', 'quiet', {
+    values: { score: { type: 'score', score: 90, why: 'Fine.' } },
+    at: 2,
+  });
+  expect(names()).toEqual(['Quiet', 'Loud']);
+});
+
+it('says the cards fill in when every card is hidden until it has values', () => {
+  setStore('cardDefinitions', [{ ...card('quiet', 'Quiet'), hideEmpty: true }]);
+  expect(document.body.querySelector('section.card')).toBeNull();
+  expect(document.body.textContent).toContain('Cards fill in as you work');
+});

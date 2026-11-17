@@ -65,6 +65,7 @@ interface CardDefinition {
   pinned?: string[]; // slot ids shown in the pin row (global, not per project)
   mini?: boolean; // "Card summary": the card's one-line summary in the pin row; not for Confidence
   showAtFinish?: boolean;
+  hideEmpty?: boolean; // "Hide until it has values": left out of the pane and popover while empty; opt in, not for Confidence or manual cards
 }
 
 type CardSource =
@@ -227,6 +228,8 @@ A rejected `card_publish` payload does not change the card; the error goes back 
 ### Finish dialog
 
 Cards with `showAtFinish` appear in the Finish dialog. The Confidence card keeps its current place.
+
+Cards with `hideEmpty` (editor: **While empty › Hide until it has values**, off by default) stay out of the cards pane and popover until the task has values for them (`shownCards`, `src/lib/card-display.ts`); the card line already names only filled cards. A hidden card still shows while its run is going or after it failed, so a first run's progress or error is not hidden with it; when every card is hidden, the pane and popover say the cards fill in as you work. They still run, count toward Update now, and keep their pins: the pin row follows settings, never values. A card whose trigger is `manual` ignores it, since hiding it would hide its Run button; the editor does not offer it there. Confidence has no editor, so it has no such setting yet.
 
 As built: they show open after the review, among the follow-ups (`FinishCards.tsx`), and only while they are on for the task's project.
 

@@ -1,6 +1,6 @@
 import { For, Show, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { readCard, type CardTaskState } from '../../lib/card-display';
+import { readCard, shownCards, type CardTaskState } from '../../lib/card-display';
 import { createAnchorEffect, placeBelow } from '../../lib/floating';
 import { theme } from '../../lib/theme';
 import { sf } from '../../lib/fontScale';
@@ -16,7 +16,7 @@ import type { CardDefinition } from '../../lib/cards';
 import type { Task } from '../../store/types';
 import { IconButton } from '../IconButton';
 import { SyncIcon } from '../icons';
-import { CardView } from './CardView';
+import { CardView, inRunOn } from './CardView';
 import './cards.css';
 
 const POPOVER_WIDTH = 480;
@@ -32,12 +32,12 @@ function needsAttention(state: CardTaskState, card: CardDefinition): boolean {
 }
 
 /**
- * The enabled cards, the ones needing attention first. Returns the store's
+ * The enabled cards the task shows, the ones needing attention first. Returns the store's
  * own card objects, so <For> keeps each CardView as values change.
  */
 function orderedCards(task: Task): CardDefinition[] {
-  const cards = enabledCards(task.projectId);
   const state = cardTaskState(task);
+  const cards = shownCards(enabledCards(task.projectId), state, inRunOn(task));
   const urgent = cards.filter((card) => needsAttention(state, card));
   return [...urgent, ...cards.filter((card) => !urgent.includes(card))];
 }
@@ -111,7 +111,10 @@ function CardsPanel(props: CardsPanelProps & { onClose: () => void }) {
       >
         <span style={{ 'font-size': sf(14), 'font-weight': '600' }}>{props.task.name}</span>
       </div>
-      <Show when={cards().length > 0}>
+      <Show
+        when={cards().length > 0}
+        fallback={<p class="cards-pane-empty">Cards fill in as you work</p>}
+      >
         <div style={{ 'border-top': `1px solid ${theme.borderSubtle}` }}>
           <For each={cards()}>
             {(card) => <CardView card={card} task={props.task} now={now()} />}
@@ -121,7 +124,8 @@ function CardsPanel(props: CardsPanelProps & { onClose: () => void }) {
       <div class="cards-foot">
         <span class="cards-foot-note">{footNote()}</span>
         {/* Stays open, so the cards can be watched updating. */}
-        <UpdateCardsButton task={props.task} cards={cards()} />
+        {/* Every enabled card, as in the pane: a model card hidden until it has values still updates. */}
+        <UpdateCardsButton task={props.task} cards={enabledCards(props.task.projectId)} />
         <Show when={props.onWalkThrough}>
           {(walk) => (
             <button
