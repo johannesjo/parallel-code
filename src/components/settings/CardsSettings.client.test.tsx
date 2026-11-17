@@ -49,9 +49,27 @@ const askToRemove = () => {
 };
 
 describe('Removing a card', () => {
-  it('is offered in the editor, not on the row', () => {
+  it('is offered on the row, asking first and removing once confirmed', () => {
+    click('Remove Risks');
+    expect(dialogs()).toHaveLength(1);
+    expect(question()?.textContent).toContain('Remove "Risks"?');
+    expect(store.cardDefinitions).toHaveLength(1);
+    click('Remove', question());
+    expect(dialogs()).toHaveLength(0);
+    expect(store.cardDefinitions).toEqual([]);
+    expect(store.tasks.t1.cards).not.toHaveProperty('risks');
+  });
+
+  it('keeps the card when asked from the row and cancelled', () => {
+    click('Remove Risks');
+    click('Cancel', question());
+    expect(dialogs()).toHaveLength(0);
+    expect(store.cardDefinitions.map((card) => card.id)).toEqual(['risks']);
+  });
+
+  it('is not offered for the built-in card, which is only switched off', () => {
+    setStore('cardDefinitions', 0, 'builtIn', 'confidence');
     expect(() => click('Remove Risks')).toThrow('No button "Remove Risks"');
-    expect(() => click('Remove')).toThrow('No button "Remove"');
   });
 
   it('asks first, naming the card and what goes with it', () => {

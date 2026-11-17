@@ -40,15 +40,15 @@
 .cards-row-line {
   display: grid;
   /* Fixed tracks: each row is its own grid, so sized-to-content columns would
-     not line up from row to row. Type, pins, Edit, on/off. */
-  grid-template-columns: 14px minmax(0, 1fr) 52px 60px 26px 16px;
+     not line up from row to row. Type, pins, Edit, Remove, on/off. */
+  grid-template-columns: 14px minmax(0, 1fr) 52px 60px 26px 44px 16px;
   gap: 10px;
   align-items: center;
   padding: 8px 12px;
   font-size: 13px;
   color: var(--fg);
 }
-/* Built-in cards have no Edit; their switch keeps the last column. */
+/* Built-in cards have no Edit or Remove; their switch keeps the last column. */
 .cards-row-line > input[type='checkbox'] {
   grid-column: -2;
   margin: 0;

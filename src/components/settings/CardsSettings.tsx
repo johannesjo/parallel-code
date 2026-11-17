@@ -77,6 +77,7 @@ function CardRow(props: {
   index: number;
   drag: ReturnType<typeof createCardDrag>;
   onEdit: () => void;
+  onRemove: () => void;
 }) {
   // The summary counts as a pin: both are things the card shows in the bar below the title.
   const pins = () => (props.card.mini ? 1 : 0) + (props.card.pinned?.length ?? 0);
@@ -149,6 +150,14 @@ function CardRow(props: {
           >
             Edit
           </button>
+          <button
+            type="button"
+            class="cards-edit"
+            aria-label={`Remove ${props.card.name}`}
+            onClick={() => props.onRemove()}
+          >
+            Remove
+          </button>
         </Show>
         <input
           type="checkbox"
@@ -218,6 +227,7 @@ export function CardsSettings() {
                 index={index()}
                 drag={drag}
                 onEdit={() => setEditing({ card, isNew: false })}
+                onRemove={() => setRemoving(card)}
               />
             )}
           </For>
@@ -256,7 +266,7 @@ export function CardsSettings() {
         message={`Remove "${removing()?.name ?? ''}"? The values it shows on your tasks are deleted with it.`}
         confirmLabel="Remove"
         danger
-        // Asked from the editor (1200), so it sits above it.
+        // Also asked from the editor (1200), so it sits above it.
         zIndex={1300}
         onConfirm={() => {
           const card = removing();
