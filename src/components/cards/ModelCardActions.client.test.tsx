@@ -73,7 +73,9 @@ describe('model card actions', () => {
     expect(mockRequest).not.toHaveBeenCalled();
     const { runModelCard } = await import('../../store/card-models');
     await runModelCard('t1', 'next', { force: true });
-    await vi.waitFor(() => expect(document.body.textContent).toContain('failed: Rate limited'));
+    await vi.waitFor(() =>
+      expect(document.querySelector('.card-error-detail')?.textContent).toBe('Rate limited'),
+    );
     button('Retry')?.click();
     await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
   });

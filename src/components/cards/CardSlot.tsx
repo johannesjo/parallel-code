@@ -2,12 +2,13 @@ import { For, Show, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { ChecklistState, SlotDefinition, SlotValue, StatusState } from '../../lib/card-slots';
 import { isEmptyList, slotWarns } from '../../lib/card-display';
 import { errMessage, warn as logWarn } from '../../lib/log';
+import { createFlashOnChange } from './flash';
 
-const STATUS_MARK: Record<StatusState, string> = {
+/** A running row spins instead, as the card's head does while it runs. */
+const STATUS_MARK: Record<Exclude<StatusState, 'running'>, string> = {
   ok: '✓',
   warn: '!',
   fail: '✕',
-  running: '…',
   unknown: '?',
 };
 const CHECKLIST_MARK: Record<ChecklistState, string> = { done: '✓', current: '▸', todo: '·' };
@@ -44,7 +45,7 @@ function TextBlock(props: { text: string }) {
     <>
       <pre class="slot-text">{props.text}</pre>
       <div>
-        <button type="button" class="cards-btn btn-secondary" onClick={copy}>
+        <button type="button" class="cards-btn btn-secondary slot-copy" onClick={copy}>
           {copied() ? 'Copied' : 'Copy'}
         </button>
       </div>
@@ -76,10 +77,10 @@ function ItemsList(props: { value: Extract<SlotValue, { type: 'items' }>; addUp?
           </li>
         )}
       </For>
-      <Show when={hidden() > 0}>
+      <Show when={props.addUp && props.value.items.length > ADD_UP_SHOWN}>
         <li>
-          <button type="button" class="cards-btn btn-secondary" onClick={() => setAll(true)}>
-            + {hidden()} earlier
+          <button type="button" class="cards-btn btn-secondary" onClick={() => setAll(!all())}>
+            {all() ? 'Show fewer' : `+ ${hidden()} earlier`}
           </button>
         </li>
       </Show>
@@ -118,7 +119,14 @@ function StatusRows(props: { value: Extract<SlotValue, { type: 'status' }> }) {
       <For each={props.value.rows}>
         {(row) => (
           <li data-state={row.state}>
-            <span class="slot-mark">{STATUS_MARK[row.state]}</span>
+            <span class="slot-mark">
+              <Show
+                when={row.state !== 'running' && row.state}
+                fallback={<span class="status-glyph-spinner card-spinner" aria-hidden="true" />}
+              >
+                {(state) => STATUS_MARK[state()]}
+              </Show>
+            </span>
             <span class="slot-row-text">{row.text}</span>
             <Show when={row.value}>
               <span class="slot-row-value">{row.value}</span>
@@ -186,8 +194,14 @@ interface CardSlotProps {
 /** One slot with its label; the final layout with a placeholder while it has no value. */
 export function CardSlot(props: CardSlotProps) {
   const warn = () => !!props.value && slotWarns(props.slot, props.value);
+  let el: HTMLDivElement | undefined;
+  // A run often returns the same value again; only a different one is news.
+  createFlashOnChange(
+    () => el,
+    () => (props.value ? JSON.stringify(props.value) : ''),
+  );
   return (
-    <div class="slot" data-type={props.slot.type} data-warn={warn() ? '' : undefined}>
+    <div ref={el} class="slot" data-type={props.slot.type} data-warn={warn() ? '' : undefined}>
       <Show when={props.showLabel ?? true}>
         <span class="slot-label">{props.slot.label}</span>
       </Show>

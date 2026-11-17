@@ -59,7 +59,8 @@ import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
 import { TaskShellSection, shellSectionMinHeight } from './TaskShellSection';
 import { TaskCanvasPanel } from './TaskCanvasPanel';
-import { CardLine } from './cards/CardLine';
+import { CardLine, type CardLineHandle } from './cards/CardLine';
+import { revealCard } from './cards/flash';
 import { CardsPane } from './cards/CardsPane';
 import { PinRow } from './cards/PinRow';
 import { showsInPinRowOn } from '../lib/card-display';
@@ -228,6 +229,9 @@ export function TaskPanel(props: TaskPanelProps) {
   // them appears once, when the first rating arrives.
   const showPinRow = () =>
     cardsOn() && enabledCards(props.task.projectId).some(showsInPinRowOn(props.task));
+  // A pinned value opens its card: in the popover in the stacked view, in the pane in the split view.
+  const openCard = (cardId: string) =>
+    showCardLine() ? cardLineHandle?.openCard(cardId) : revealCard(panelRef, cardId);
 
   const finishTour = () => {
     const basis = tour.basis();
@@ -444,6 +448,7 @@ export function TaskPanel(props: TaskPanelProps) {
   let mainRef!: HTMLDivElement;
   let promptRef: HTMLTextAreaElement | undefined;
   let titleEditHandle: EditableTextHandle | undefined;
+  let cardLineHandle: CardLineHandle | undefined;
   let promptHandle: PromptInputHandle | undefined;
 
   const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
@@ -1072,6 +1077,7 @@ export function TaskPanel(props: TaskPanelProps) {
           <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
             <CardLine
               task={props.task}
+              onHandle={(handle) => (cardLineHandle = handle)}
               onWalkThrough={openOrGenerateTour}
               walkThroughDisabled={changedFileCount() === 0}
             />
@@ -1079,7 +1085,7 @@ export function TaskPanel(props: TaskPanelProps) {
         </Show>
         <Show when={showPinRow()}>
           <div style={{ flex: '0 0 24px', overflow: 'hidden' }}>
-            <PinRow task={props.task} />
+            <PinRow task={props.task} onOpenCard={openCard} />
           </div>
         </Show>
         <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>

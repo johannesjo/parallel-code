@@ -71,12 +71,21 @@ describe('a check card', () => {
       finished({ status: 'timed_out', exitCode: null, message: 'Timed out after 10 min' }),
     );
     await clickRun();
-    expect(meta()).toContain('failed: Timed out after 10 min');
+    expect(meta()).toContain('failed');
+    // In full under the head, where a long message wraps instead of being cut off.
+    expect(document.querySelector('.card-error-detail')?.textContent).toBe(
+      'Timed out after 10 min',
+    );
     expect(button()?.textContent).toBe('Retry');
     expect(document.querySelector('.card-check-output pre')?.textContent).toBe('all good');
 
-    mockInvoke.mockResolvedValueOnce(finished({ dirtyAfter: true }));
-    await clickRun();
+    let finishRun: (value: unknown) => void = () => {};
+    mockInvoke.mockReturnValueOnce(new Promise((resolve) => (finishRun = resolve)));
+    button()?.click();
+    // A re-run hides the old error: the head says it is running again.
+    await vi.waitFor(() => expect(document.querySelector('.card-error-detail')).toBeNull());
+    finishRun(finished({ dirtyAfter: true }));
+    await vi.waitFor(() => expect(button()?.disabled).toBe(false));
     expect(meta()).toContain('code changed during the run');
     expect(document.body.textContent).toContain('Passed');
     expect(button()?.textContent).toBe('Run again');

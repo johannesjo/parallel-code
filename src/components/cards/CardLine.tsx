@@ -1,14 +1,21 @@
-import { Show } from 'solid-js';
+import { Show, onMount } from 'solid-js';
 import { readCard } from '../../lib/card-display';
 import { cardTaskState, enabledCards, store } from '../../store/store';
 import type { Task } from '../../store/types';
 import { createPopover } from '../create-popover';
 import { DisclosureChevronIcon } from '../icons';
 import { CardsPopover } from './CardsPopover';
+import { revealCard } from './flash';
 import './cards.css';
+
+/** Lets the pin row open the popover on one card. */
+export interface CardLineHandle {
+  openCard: (cardId: string) => void;
+}
 
 interface CardLineProps {
   task: Task;
+  onHandle?: (handle: CardLineHandle) => void;
   onWalkThrough?: () => void;
   walkThroughDisabled?: boolean;
 }
@@ -35,6 +42,7 @@ function useCardsPopover() {
     popover,
     setAnchor: (el: HTMLButtonElement) => (anchor = el),
     anchor: () => anchor,
+    panel: () => panel,
     setPanel: (el: HTMLDivElement) => (panel = el),
   };
 }
@@ -43,8 +51,17 @@ function useCardsPopover() {
  * The line under the title while cards are on: one card's summary at a fixed height, opening every card in a popover.
  */
 export function CardLine(props: CardLineProps) {
-  const { popover, setAnchor, anchor, setPanel } = useCardsPopover();
+  const { popover, setAnchor, anchor, panel, setPanel } = useCardsPopover();
   const line = () => lineCard(props.task);
+  onMount(() =>
+    props.onHandle?.({
+      openCard: (cardId) => {
+        popover.setShown(true);
+        // Once the popover has placed itself and focused its first button.
+        requestAnimationFrame(() => revealCard(panel(), cardId));
+      },
+    }),
+  );
   return (
     <>
       <button

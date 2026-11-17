@@ -31,4 +31,15 @@ describe('PinRow', () => {
     vi.advanceTimersByTime(5 * 60_000);
     expect(document.querySelector('.pin-row')?.textContent).not.toBe(before);
   });
+
+  it('opens a card from its pinned values', () => {
+    setStore('cardDefinitions', [{ ...appFactCard('activity', true), pinned: ['last'] }]);
+    setStore('tasks', {
+      t1: { id: 't1', projectId: 'p1', agentIds: [], shellAgentIds: [] } as unknown as Task,
+    });
+    const onOpenCard = vi.fn();
+    dispose = render(() => <PinRow task={store.tasks.t1} onOpenCard={onOpenCard} />, document.body);
+    document.querySelector<HTMLButtonElement>('.pin-row button')?.click();
+    expect(onOpenCard).toHaveBeenCalledWith('activity');
+  });
 });

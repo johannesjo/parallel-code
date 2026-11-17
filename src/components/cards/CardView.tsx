@@ -83,17 +83,28 @@ function RunMeta(props: { run: RunState; label: string; fallback: JSX.Element })
         </span>
       }
     >
+      {/* The message itself waits in the body (`RunError`): cut off here it could not be read. */}
       <Show
         when={run().error}
         fallback={run().changed ? 'code changed during the run' : props.fallback}
       >
-        {(error) => (
-          <span class="card-error" title={error()}>
-            failed: {error()}
-          </span>
-        )}
+        <span class="card-error">failed</span>
       </Show>
     </Show>
+  );
+}
+
+/**
+ * A failed run's message in full, wrapping, so keyboard and touch users can read it too. Last in
+ * the card, so it coming and going moves nothing above it; gone while a re-run is going.
+ */
+function RunError(props: { card: CardDefinition; task: Task }) {
+  const error = () => {
+    const state = cardRun(props.card, props.task)?.state;
+    return state && !state.running ? state.error : undefined;
+  };
+  return (
+    <Show when={error()}>{(error) => <p class="card-error card-error-detail">{error()}</p>}</Show>
   );
 }
 
@@ -130,6 +141,9 @@ export function CardView(props: CardViewProps) {
       class="card"
       classList={{ 'card-confidence': confidence() }}
       aria-label={props.card.name}
+      data-card-id={props.card.id}
+      // Focusable by script only: a pinned value opens its card here (`revealCard`).
+      tabindex="-1"
       data-outdated={reading().outdated ? '' : undefined}
     >
       <div class="card-head">
@@ -169,6 +183,7 @@ export function CardView(props: CardViewProps) {
           <Show when={props.card.source.kind === 'model'}>
             <ModelCardActions card={props.card} task={props.task} />
           </Show>
+          <RunError card={props.card} task={props.task} />
         </Show>
       </div>
     </section>

@@ -395,6 +395,19 @@ li[data-state='warn'] .slot-mark {
   font-family: inherit;
   cursor: pointer;
 }
+/* Sized for "Copied" from the start, so confirming a copy never nudges what is beside it.
+   Hidden content is left out of the button's accessible name. */
+.slot-copy {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.slot-copy::after {
+  content: 'Copied';
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
 .cards-btn:disabled {
   opacity: 0.5;
   cursor: default;
@@ -522,6 +535,18 @@ li[data-state='warn'] .slot-mark {
   display: inline-flex;
   gap: 8px;
 }
+/* Opens its card: routine, so it stays plain text and gains emphasis only on hover. */
+button.pin-group {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button.pin-group:hover .pin:not([data-warn]) b {
+  color: var(--fg);
+}
 .pin b {
   font-weight: 600;
   color: var(--fg-muted);
@@ -602,6 +627,13 @@ li[data-state='warn'] .slot-mark {
 .card-error {
   color: var(--error);
 }
+.card-error-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .card-check {
   display: flex;
   align-items: center;
@@ -629,6 +661,28 @@ li[data-state='warn'] .slot-mark {
   white-space: pre-wrap;
   color: var(--fg-subtle);
 }
+/* A value swapped while in view gets a brief neutral highlight, so a pane left
+   open shows what changed. Longer than an entrance: it is caught out of the
+   corner of the eye, nothing waits on it, and it never delays the new value. */
+.slot[data-flash],
+.confidence[data-flash],
+.card[data-flash] {
+  animation: cardFlash 800ms var(--ease-out);
+}
+.slot[data-flash],
+.confidence[data-flash] {
+  border-radius: var(--radius-sm);
+}
+@keyframes cardFlash {
+  from {
+    background-color: color-mix(in srgb, var(--fg) 12%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--fg) 12%, transparent);
+  }
+  to {
+    background-color: transparent;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
 .card-spinner {
   width: 8px;
   height: 8px;
@@ -638,5 +692,10 @@ li[data-state='warn'] .slot-mark {
 @media (prefers-reduced-motion: reduce) {
   .card-line-chevron {
     transition: none;
+  }
+  .slot[data-flash],
+  .confidence[data-flash],
+  .card[data-flash] {
+    animation: none;
   }
 }
