@@ -1,6 +1,6 @@
 /**
  * How cards read at a glance: which values need attention, the one-line
- * summary a quiet card collapses to, and the source label on its top line.
+ * summary the card line and the bar show, and the source label on its top line.
  */
 
 import { BRIEF_MODELS, type BriefModelId } from '../../electron/shared/task-name-model';

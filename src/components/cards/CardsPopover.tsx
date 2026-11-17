@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, untrack } from 'solid-js';
+import { For, Show, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { readCard, type CardTaskState } from '../../lib/card-display';
 import { createAnchorEffect, placeBelow } from '../../lib/floating';
@@ -33,7 +33,7 @@ function needsAttention(state: CardTaskState, card: CardDefinition): boolean {
 
 /**
  * The enabled cards, the ones needing attention first. Returns the store's
- * own card objects, so each CardView keeps its open state as values change.
+ * own card objects, so <For> keeps each CardView as values change.
  */
 function orderedCards(task: Task): CardDefinition[] {
   const cards = enabledCards(task.projectId);
@@ -114,14 +114,7 @@ function CardsPanel(props: CardsPanelProps & { onClose: () => void }) {
       <Show when={cards().length > 0}>
         <div style={{ 'border-top': `1px solid ${theme.borderSubtle}` }}>
           <For each={cards()}>
-            {(card) => {
-              // A lone card has nothing to compete with, so it starts open. Read once,
-              // as a plain value: a card doesn't fold under the reader as its urgency changes.
-              const expanded = untrack(
-                () => needsAttention(cardTaskState(props.task), card) || cards().length < 2,
-              );
-              return <CardView card={card} task={props.task} expanded={expanded} now={now()} />;
-            }}
+            {(card) => <CardView card={card} task={props.task} now={now()} />}
           </For>
         </div>
       </Show>

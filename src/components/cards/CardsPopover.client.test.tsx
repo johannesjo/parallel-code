@@ -112,7 +112,7 @@ it('greys the icon-only Update now while the cards update, then offers it again'
   disposeIcon();
 });
 
-it('keeps a card as it opened while its urgency changes, so one click still opens it', () => {
+it('shows every card open, the ones needing attention first', () => {
   const score: CardDefinition = {
     id: 'score',
     name: 'Score',
@@ -122,15 +122,16 @@ it('keeps a card as it opened while its urgency changes, so one click still open
     enabled: true,
   };
   setStore('cardDefinitions', [NOTE, score]);
-  const card = () => document.body.querySelector('section[aria-label="Score"]');
-  const toggle = () => card()?.querySelector<HTMLButtonElement>('.card-toggle');
-  expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
   setStore('tasks', 't1', 'cards', {
+    note: { values: { text: { type: 'text', text: 'Retries back off.' } }, at: 1 },
     score: { values: { q: { type: 'score', score: 10, why: 'Low.' } }, at: 1 },
   });
-  expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
-  expect(toggle()?.textContent).toContain('Quality 10');
-  toggle()?.click();
-  expect(toggle()?.getAttribute('aria-expanded')).toBe('true');
-  expect(card()?.textContent).toContain('Low.');
+  const names = [...document.body.querySelectorAll('.cards-popover section.card')].map((c) =>
+    c.getAttribute('aria-label'),
+  );
+  expect(names).toEqual(['Score', 'Release note']);
+  expect(document.body.querySelector('.cards-popover [aria-expanded]')).toBeNull();
+  const popover = document.body.querySelector('.cards-popover');
+  expect(popover?.textContent).toContain('Low.');
+  expect(popover?.textContent).toContain('Retries back off.');
 });

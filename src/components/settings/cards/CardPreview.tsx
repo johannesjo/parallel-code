@@ -1,6 +1,5 @@
 import { For, Show } from 'solid-js';
 import {
-  cardSummary,
   pinGroups,
   showsInPinRow,
   showsSlotLabel,
@@ -15,7 +14,7 @@ import { IconButton } from '../../IconButton';
 import { PencilIcon, SyncIcon } from '../../icons';
 import { CardSlot } from '../../cards/CardSlot';
 import { CardsPaneFrame } from '../../cards/CardsPane';
-import { CardChevron, CardMetaText } from '../../cards/CardView';
+import { CardMetaText } from '../../cards/CardView';
 import { PinGroups } from '../../cards/PinRow';
 import '../../cards/cards.css';
 
@@ -50,9 +49,8 @@ function SampleActions(props: { card: CardDefinition }) {
 
 /**
  * The draft filled with sample values, where a task shows it: in the cards
- * pane, open and then closed to its summary, and in the bar below the title
- * when it is there. Built from the pane's own frame and the card styles, so the
- * preview can't drift.
+ * pane and in the bar below the title when it is there. Built from the pane's
+ * own frame and the card styles, so the preview can't drift.
  */
 export function CardPreview(props: { card: CardDefinition }) {
   const values = (): CardValues => ({
@@ -83,12 +81,11 @@ export function CardPreview(props: { card: CardDefinition }) {
           }
         >
           <div class="card">
-            <div class="card-toggle">
+            <div class="card-head">
               <span class="card-name">{name()}</span>
               <span class="card-meta">
                 <CardMetaText source={source()} state={SAMPLE_AGE} />
               </span>
-              <CardChevron open />
             </div>
             <div class="card-body">
               <For each={props.card.slots}>
@@ -101,16 +98,6 @@ export function CardPreview(props: { card: CardDefinition }) {
                 )}
               </For>
               <SampleActions card={props.card} />
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-toggle">
-              <span class="card-name">{name()}</span>
-              <span class="card-summary">{cardSummary(props.card, values())}</span>
-              <span class="card-meta">
-                <CardMetaText source={source()} state={SAMPLE_AGE} />
-              </span>
-              <CardChevron open={false} />
             </div>
           </div>
         </CardsPaneFrame>

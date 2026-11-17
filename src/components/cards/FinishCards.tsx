@@ -19,9 +19,7 @@ export function FinishCards(props: { task: Task }) {
   return (
     <Show when={cards().length > 0}>
       <div class="finish-cards">
-        <For each={cards()}>
-          {(card) => <CardView card={card} task={props.task} expanded now={now()} />}
-        </For>
+        <For each={cards()}>{(card) => <CardView card={card} task={props.task} now={now()} />}</For>
       </div>
     </Show>
   );

@@ -233,10 +233,6 @@ describe('Edit card', () => {
     expect(preview()?.querySelector('[aria-label="Bar below title"]')?.textContent).toBe(
       'Risks 2 items',
     );
-    // Collapsed: the first two values, the risks and the Old note line.
-    expect(preview()?.querySelector('.card-summary')?.textContent).toBe(
-      '2 items · Retries now back off before the third attempt.',
-    );
     expect(store.cardDefinitions[0].name).toBe('Risks');
   });
 
@@ -245,13 +241,9 @@ describe('Edit card', () => {
     const pane = document.body.querySelector('[aria-label="Preview"] .cards-pane');
     if (!pane) throw new Error('No pane in the preview');
     expect(pane.querySelector('.task-pane-heading')?.textContent).toBe('Cards');
-    // The card twice, as a pane lists cards: open, then closed to its summary.
+    // Once, open, as a task's pane shows every card.
     const rows = [...pane.querySelectorAll('.card')];
-    expect(rows.map((row) => row.querySelector('.card-name')?.textContent)).toEqual([
-      'Risks',
-      'Risks',
-    ]);
-    expect(rows.map((row) => row.querySelector('.card-summary') !== null)).toEqual([false, true]);
+    expect(rows.map((row) => row.querySelector('.card-name')?.textContent)).toEqual(['Risks']);
     // The age a task would show for a card filled a minute ago.
     expect(rows[0].querySelector('.card-meta-state')?.textContent).toBe('1m');
     // Filled after each turn: no button of its own on a task, so none here.

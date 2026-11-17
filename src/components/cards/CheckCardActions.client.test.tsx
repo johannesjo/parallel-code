@@ -61,7 +61,7 @@ async function clickRun(): Promise<void> {
 describe('a check card', () => {
   it('runs on demand, shows a failed run, then a result the code changed under', async () => {
     dispose = render(
-      () => <CardView card={CARD} task={store.tasks.t1} expanded now={Date.now()} />,
+      () => <CardView card={CARD} task={store.tasks.t1} now={Date.now()} />,
       document.body,
     );
     expect(button()?.textContent).toBe('Run');

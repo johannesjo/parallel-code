@@ -1,11 +1,10 @@
-import { For, Show, createSignal, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { readCard, showsSlotLabel, valueFor, type CardReading } from '../../lib/card-display';
 import type { CardDefinition } from '../../lib/cards';
 import { formatRelativeAge } from '../../lib/relativeAge';
 import { buildReviewSummary } from '../../lib/review-summary';
 import { cardTaskState, getCheckCardRun, getModelCardRun, store } from '../../store/store';
 import type { Task } from '../../store/types';
-import { DisclosureChevronIcon } from '../icons';
 import { CardSlot } from './CardSlot';
 import { CheckCardActions } from './CheckCardActions';
 import { ConfidenceScores } from './ConfidenceScores';
@@ -14,8 +13,6 @@ import { ModelCardActions } from './ModelCardActions';
 interface CardViewProps {
   card: CardDefinition;
   task: Task;
-  /** Open until the user toggles it; a quiet card among several shows its one-line summary. */
-  expanded: boolean;
   /** Keeps the age current while the card is shown. */
   now: number;
 }
@@ -108,37 +105,27 @@ function ConfidenceBody(props: { task: Task }) {
   );
 }
 
-/** The open or closed mark ending a card's top line; the editor's preview draws the same one. */
-export function CardChevron(props: { open: boolean }) {
-  return (
-    <DisclosureChevronIcon
-      size={14}
-      class={props.open ? 'card-chevron' : 'card-chevron card-chevron-closed'}
-    />
-  );
-}
-
-/** One card in the popover or the cards pane: its top line, then each slot in its final layout. */
+/**
+ * One card in the popover, the cards pane or Finish: a quiet top line, then each slot in its final
+ * layout. Always open: the pin row already is the compact view, so folding cards only hid what the
+ * user came to read.
+ */
 export function CardView(props: CardViewProps) {
-  // Follows `expanded` until the user toggles it, so a card the user opened stays open as values change.
-  const [chosen, setChosen] = createSignal<boolean>();
-  const open = () => chosen() ?? props.expanded;
   const state = () => cardTaskState(props.task, props.now);
   const reading = () => readCard(props.card, state(), store.briefModel);
+  const confidence = () => props.card.builtIn === 'confidence';
   return (
     <section
       class="card"
+      classList={{ 'card-confidence': confidence() }}
       aria-label={props.card.name}
       data-outdated={reading().outdated ? '' : undefined}
     >
-      <button
-        type="button"
-        class="card-toggle"
-        aria-expanded={open()}
-        onClick={() => setChosen(!open())}
-      >
-        <span class="card-name">{props.card.name}</span>
-        <span class="card-summary">{open() ? '' : reading().summary}</span>
+      <div class="card-head">
+        {/* Confidence goes unnamed: its scores already say what it is. */}
+        <Show when={!confidence()}>
+          <span class="card-name">{props.card.name}</span>
+        </Show>
         <span class="card-meta">
           <Show
             when={cardRun(props.card, props.task)}
@@ -153,32 +140,26 @@ export function CardView(props: CardViewProps) {
             )}
           </Show>
         </span>
-        <CardChevron open={open()} />
-      </button>
-      <Show when={open()}>
-        <div class="card-body">
-          <Show
-            when={props.card.builtIn !== 'confidence'}
-            fallback={<ConfidenceBody task={props.task} />}
-          >
-            <For each={props.card.slots}>
-              {(slot) => (
-                <CardSlot
-                  slot={slot}
-                  value={valueFor(slot, state().cards?.[props.card.id])}
-                  showLabel={showsSlotLabel(props.card, slot)}
-                />
-              )}
-            </For>
-            <Show when={props.card.source.kind === 'check'}>
-              <CheckCardActions card={props.card} task={props.task} />
-            </Show>
-            <Show when={props.card.source.kind === 'model'}>
-              <ModelCardActions card={props.card} task={props.task} />
-            </Show>
+      </div>
+      <div class="card-body">
+        <Show when={!confidence()} fallback={<ConfidenceBody task={props.task} />}>
+          <For each={props.card.slots}>
+            {(slot) => (
+              <CardSlot
+                slot={slot}
+                value={valueFor(slot, state().cards?.[props.card.id])}
+                showLabel={showsSlotLabel(props.card, slot)}
+              />
+            )}
+          </For>
+          <Show when={props.card.source.kind === 'check'}>
+            <CheckCardActions card={props.card} task={props.task} />
           </Show>
-        </div>
-      </Show>
+          <Show when={props.card.source.kind === 'model'}>
+            <ModelCardActions card={props.card} task={props.task} />
+          </Show>
+        </Show>
+      </div>
     </section>
   );
 }

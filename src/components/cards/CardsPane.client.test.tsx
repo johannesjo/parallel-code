@@ -39,18 +39,11 @@ afterEach(() => {
   setStore('cardDefinitions', []);
 });
 
-it('keeps display order even when a later card needs attention, opening each once filled', () => {
+it('keeps display order even when a later card needs attention, every card open', () => {
   const cards = () => [...document.body.querySelectorAll('section.card')];
-  const open = () =>
-    cards().map((c) => c.querySelector('.card-toggle')?.getAttribute('aria-expanded'));
   expect(cards().map((c) => c.getAttribute('aria-label'))).toEqual(['Quiet', 'Loud']);
-  expect(open()).toEqual(['false', 'true']);
+  expect(document.body.querySelector('[aria-expanded]')).toBeNull();
   expect(cards()[1].textContent).toContain('Low.');
-  setStore('tasks', 't1', 'cards', 'quiet', {
-    values: { score: { type: 'score', score: 90, why: 'Fine.' } },
-    at: 2,
-  });
-  expect(open()).toEqual(['true', 'true']);
 });
 
 it('offers an icon-only Update now only while a model card is enabled', () => {

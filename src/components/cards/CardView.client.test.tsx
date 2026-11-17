@@ -1,4 +1,3 @@
-import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it } from 'vitest';
 import { appFactCard } from '../../lib/app-facts';
@@ -13,41 +12,34 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function show(task: Partial<Task>, expanded = true): void {
+function show(task: Partial<Task>): void {
   dispose = render(
     () => (
-      <CardView
-        card={confidenceCard(true)}
-        task={{ agentIds: [], ...task } as Task}
-        expanded={expanded}
-        now={60_000}
-      />
+      <CardView card={confidenceCard(true)} task={{ agentIds: [], ...task } as Task} now={60_000} />
     ),
     document.body,
   );
 }
 
-describe('CardView open state', () => {
-  it('follows whether it should start open until the user toggles it', () => {
-    const [expanded, setExpanded] = createSignal(false);
-    dispose = render(
-      () => (
-        <CardView
-          card={confidenceCard(true)}
-          task={{ id: 't1', agentIds: [] } as unknown as Task}
-          expanded={expanded()}
-          now={60_000}
-        />
-      ),
-      document.body,
-    );
-    const toggle = () => document.body.querySelector<HTMLButtonElement>('.card-toggle');
-    setExpanded(true);
-    expect(toggle()?.getAttribute('aria-expanded')).toBe('true');
-    toggle()?.click();
-    setExpanded(false);
-    setExpanded(true);
-    expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
+describe('CardView top line', () => {
+  it('is a label, not a toggle: the card always shows its content', () => {
+    const card: CardDefinition = {
+      id: 'note',
+      name: 'Release note',
+      description: '',
+      source: { kind: 'agent' },
+      slots: [{ id: 'text', type: 'text', label: 'Text' }],
+      enabled: true,
+    };
+    const task = {
+      id: 't1',
+      agentIds: [],
+      cards: { note: { values: { text: { type: 'text', text: 'Retries back off.' } }, at: 0 } },
+    } as unknown as Task;
+    dispose = render(() => <CardView card={card} task={task} now={60_000} />, document.body);
+    expect(document.body.querySelector('[aria-expanded]')).toBeNull();
+    expect(document.body.querySelector('.card-name')?.textContent).toBe('Release note');
+    expect(document.body.textContent).toContain('Retries back off.');
   });
 });
 
@@ -60,7 +52,7 @@ describe('CardView for the Confidence card', () => {
     );
   });
 
-  it('shows the published scores, with a summary on the closed line', () => {
+  it('shows the published scores without a name, its scores already say what it is', () => {
     const confidence = {
       scores: [
         { label: 'Correct', score: 82, why: 'Tested.' },
@@ -70,11 +62,9 @@ describe('CardView for the Confidence card', () => {
       source: '/cf',
       publishedAt: 0,
     };
-    show({ id: 't1', confidence }, false);
-    const toggle = document.body.querySelector('.card-toggle');
-    expect(toggle?.textContent).toContain('Correct 82 · Complete 45');
-    expect(toggle?.textContent).toContain('/cf');
-    (toggle as HTMLButtonElement).click();
+    show({ id: 't1', confidence });
+    expect(document.body.querySelector('.card-name')).toBeNull();
+    expect(document.body.querySelector('.card-meta')?.textContent).toContain('/cf');
     const scores = document.body.querySelector('.confidence-scores');
     expect(scores?.textContent).toContain('82%');
     expect(scores?.textContent).toContain('45%');
@@ -121,7 +111,6 @@ describe('the right end of a card top line', () => {
         <CardView
           card={appFactCard('diff-size', true)}
           task={{ id: 't1', agentIds: [] } as unknown as Task}
-          expanded
           now={60_000}
         />
       ),
@@ -218,7 +207,6 @@ describe('CardView slot labels', () => {
             enabled: true,
           }}
           task={{ id: 't1', agentIds: [] } as unknown as Task}
-          expanded
           now={60_000}
         />
       ),

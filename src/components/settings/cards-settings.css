@@ -445,13 +445,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
 }
-/* Not a button here: no pointer, no hover fill. */
-.card-editor-live-views .card-toggle {
-  cursor: default;
-}
-.card-editor-live-views .card-toggle:hover {
-  background: transparent;
-}
 /* The heading's icons set their own pointer; out of the pointer's reach, they show none. */
 .card-editor-live-views .icon-btn {
   pointer-events: none;

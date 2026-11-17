@@ -1,7 +1,5 @@
 import { For, type JSX } from 'solid-js';
-import { readCard } from '../../lib/card-display';
-import type { CardDefinition } from '../../lib/cards';
-import { cardTaskState, enabledCards, openSettingsTab, store } from '../../store/store';
+import { enabledCards, openSettingsTab } from '../../store/store';
 import type { Task } from '../../store/types';
 import { sf } from '../../lib/fontScale';
 import { IconButton } from '../IconButton';
@@ -33,9 +31,6 @@ export function CardsPane(props: { task: Task }) {
   // Display order, not urgency first as in the popover: a pane that stays on
   // screen must not reshuffle as values change.
   const cards = () => enabledCards(props.task.projectId);
-  // An empty card's slots would only show dashes, so it stays one line until filled.
-  const filled = (card: CardDefinition) =>
-    readCard(card, cardTaskState(props.task), store.briefModel).at !== undefined;
   return (
     <CardsPaneFrame
       actions={
@@ -49,9 +44,7 @@ export function CardsPane(props: { task: Task }) {
         </>
       }
     >
-      <For each={cards()}>
-        {(card) => <CardView card={card} task={props.task} expanded={filled(card)} now={now()} />}
-      </For>
+      <For each={cards()}>{(card) => <CardView card={card} task={props.task} now={now()} />}</For>
     </CardsPaneFrame>
   );
 }

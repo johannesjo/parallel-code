@@ -16,20 +16,14 @@
   opacity: 0.55;
 }
 
+/* A quiet label in the slot-label style: the content speaks first. */
 .card-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg);
   flex-shrink: 0;
-}
-.card-summary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
 }
 /* Shrinks last and ends in an ellipsis, so a long run error never widens the card. */
 .card-meta {
@@ -73,35 +67,30 @@
   }
 }
 
-/* The top line opens and closes the card, so a quiet one can stay one line. */
-.card-toggle {
+.card-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  box-sizing: border-box;
-  /* Reaches into the card's padding, so the hover fill has room around the text. */
-  width: calc(100% + 12px);
   min-width: 0;
-  margin: -4px -6px;
-  padding: 4px 6px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
 }
-.card-toggle:hover {
-  background: var(--bg-hover);
+/* Unnamed, so its meta joins the scores line instead of standing alone on one;
+   the scores wrap beside it rather than under it. */
+.card-confidence {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
 }
-.card-chevron {
+.card-confidence .card-body {
+  flex: 1;
+  min-width: 0;
+}
+.card-confidence .card-head {
+  order: 1;
   flex-shrink: 0;
-  align-self: center;
-  color: var(--fg-muted);
+  max-width: 40%;
 }
-.card-chevron-closed {
-  transform: rotate(-90deg);
+.card-confidence .card-meta {
+  max-width: 100%;
 }
 
 /* Stats sit side by side, so a card of numbers stays short; everything else takes a full row. */

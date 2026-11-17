@@ -39,7 +39,7 @@ afterEach(() => {
 function show(definition: CardDefinition): void {
   setStore('cardDefinitions', [definition]);
   dispose = render(
-    () => <CardView card={definition} task={store.tasks.t1} expanded now={0} />,
+    () => <CardView card={definition} task={store.tasks.t1} now={0} />,
     document.body,
   );
 }
