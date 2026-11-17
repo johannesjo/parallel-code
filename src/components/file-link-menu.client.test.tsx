@@ -339,3 +339,21 @@ it('keeps the usual menu for files the task did not change', () => {
   fileLinkMenu('/repo/wt/docs/plan.md', undefined, ctx).open?.();
   expect(ctx.openDialog).toHaveBeenCalledWith('/repo/wt/docs/plan.md');
 });
+
+it('opens a changed image, video or PDF with the default app, keeping its diff in the menu', () => {
+  const open = vi.fn();
+  const ctx = { ...context(), changes: { has: () => true, open } };
+  for (const filePath of ['/repo/wt/docs/shot.PNG', '/repo/wt/demo.mp4', '/repo/wt/spec.pdf']) {
+    const menu = fileLinkMenu(filePath, undefined, ctx);
+    expect(menu.actions.map((a) => a.label)).toEqual([
+      'Open with default app',
+      'Open in changes',
+      'Show in folder',
+      'Copy path',
+    ]);
+    expect(menu.actions[1]?.title).toBeUndefined();
+    menu.open?.();
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC.OpenPath, { filePath });
+  }
+  expect(open).not.toHaveBeenCalled();
+});

@@ -193,8 +193,10 @@ export function fileLinkMenu(
         ? undefined
         : defaultApp;
   const openChanges = kind === 'folder' ? undefined : changesOpener(filePath, ctx);
+  // Images, videos and other binaries open in their viewer even when changed: a diff can't show them.
+  const changesLeads = openChanges && kind !== 'binary';
   const open =
-    openChanges ??
+    (changesLeads ? openChanges : undefined) ??
     {
       folder: defaultApp,
       markdown: () => (ctx.openMarkdown ?? ctx.openDialog)(filePath),
@@ -238,7 +240,9 @@ export function fileLinkMenu(
     ? [
         {
           label: 'Open in changes',
-          title: `What ${shortcut} does: this file's diff in the changes dialog`,
+          title: changesLeads
+            ? `What ${shortcut} does: this file's diff in the changes dialog`
+            : undefined,
           icon: () => <DiffIcon size={14} />,
           run: openChanges,
         },
@@ -246,8 +250,9 @@ export function fileLinkMenu(
     : [];
   return {
     actions: [
-      ...changesItems,
+      ...(changesLeads ? changesItems : []),
       ...primary,
+      ...(changesLeads ? [] : changesItems),
       ...revealItems,
       ...(kind === 'markdown'
         ? [
