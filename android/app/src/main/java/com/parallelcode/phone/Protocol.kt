@@ -49,6 +49,8 @@ sealed interface ServerMessage {
     data class Output(val agentId: String, val data: ByteArray) : ServerMessage
     data class Scrollback(val agentId: String, val data: ByteArray, val cols: Int, val rows: Int) :
         ServerMessage
+    /** The PTY took a new size, e.g. the desktop pane was resized; later output is wrapped for it. */
+    data class TerminalSize(val agentId: String, val cols: Int, val rows: Int) : ServerMessage
     data class Status(val agentId: String, val running: Boolean, val exitCode: Int?) : ServerMessage
     data class InputResult(val requestId: String, val ok: Boolean, val error: String?) :
         ServerMessage
@@ -83,6 +85,7 @@ fun parseServerMessage(raw: String): ServerMessage? = try {
             msg.getInt("cols"),
             msg.optInt("rows", 24),
         )
+        "terminal-size" -> ServerMessage.TerminalSize(msg.getString("agentId"), msg.getInt("cols"), msg.getInt("rows"))
         "status" -> ServerMessage.Status(
             msg.getString("agentId"),
             msg.getString("status") == "running",

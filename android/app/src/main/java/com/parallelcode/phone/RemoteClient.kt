@@ -905,6 +905,8 @@ class RemoteClient(
                 viewSize?.let { (agentId, cols, rows) -> if (agentId == msg.agentId && viewSizeSent) buffer.resize(cols, rows) }
                 terminalListeners[msg.agentId]?.toList()?.forEach { it.onScrollback(msg.data, msg.cols, msg.rows) }
             }
+            // Without this the phone keeps the old width and garbles everything written after a resize.
+            is ServerMessage.TerminalSize -> terminalBuffers[msg.agentId]?.resize(msg.cols, msg.rows)
             is ServerMessage.Output -> {
                 terminalBuffers[msg.agentId]?.onOutput(msg.data)
                 terminalListeners[msg.agentId]?.toList()?.forEach { it.onOutput(msg.data) }

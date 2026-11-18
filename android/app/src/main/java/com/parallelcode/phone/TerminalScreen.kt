@@ -7,8 +7,17 @@ import java.nio.charset.CodingErrorAction
 /** A run of characters sharing one [CellStyle]-encoded style. */
 data class StyledSpan(val text: String, val style: Long)
 
-/** A row scrolled into history: its style runs, whether it continues the row above, and its width. */
-private class PastLine(val spans: List<StyledSpan>, val wrapped: Boolean, val width: Int)
+/**
+ * A row scrolled into history: its style runs, whether it continues the row above, and how many
+ * blank cells were trimmed from its end (they matter when the next row continues it).
+ */
+private class PastLine(val spans: List<StyledSpan>, val wrapped: Boolean, val trailingBlanks: Int)
+
+/** An empty cell. */
+private const val BLANK = " "
+
+/** The second cell of a two-cell character; it shows nothing of its own. */
+private const val WIDE_TAIL = ""
 
 /**
  * VT100 screen for an agent's PTY stream. Agent TUIs redraw with cursor movement, so stripping
@@ -32,17 +41,39 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     val alternateScreen: Boolean
         get() = savedMainGrid != null
 
+    // Each cell holds what it shows: one character, a surrogate pair, a character with its
+    // combining marks, or nothing for the second half of a wide character.
     private class Line(cols: Int, style: Long) {
-        val chars = CharArray(cols) { ' ' }
+        val chars = Array(cols) { BLANK }
         val styles = LongArray(cols) { style }
 
         /** Continues the row above: autowrap filled that one, no line break ended it. */
         var wrapped = false
 
         fun fill(from: Int, to: Int, style: Long) {
-            chars.fill(' ', from, to)
+            chars.fill(BLANK, from, to)
             styles.fill(style, from, to)
+            dropSplitWide(style)
         }
+
+        /**
+         * Blanks each half of a wide character whose other half was shifted, erased or cut off,
+         * in [eraseStyle] when an erase split it, as xterm.js does.
+         */
+        fun dropSplitWide(eraseStyle: Long? = null) {
+            for (c in chars.indices) {
+                val cell = chars[c]
+                val split = if (cell == WIDE_TAIL) c == 0 || !isWide(chars[c - 1])
+                else isWide(cell) && chars.getOrNull(c + 1) != WIDE_TAIL
+                if (split) {
+                    chars[c] = BLANK
+                    if (eraseStyle != null) styles[c] = eraseStyle
+                }
+            }
+        }
+
+        private fun isWide(cell: String) =
+            cell.isNotEmpty() && CharWidth.of(cell.codePointAt(0)) == 2
     }
 
     private var grid = blankGrid()
@@ -66,6 +97,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         .onMalformedInput(CodingErrorAction.REPLACE)
         .onUnmappableCharacter(CodingErrorAction.REPLACE)
     private var undecoded = ByteArray(0)
+    private var highSurrogate: Char? = null
 
     private enum class State { GROUND, ESCAPE, ESCAPE_CHARSET, CSI, STRING, STRING_ESCAPE }
 
@@ -90,6 +122,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         sequence.clear()
         decoder.reset()
         undecoded = ByteArray(0)
+        highSurrogate = null
         feed(data)
     }
 
@@ -115,6 +148,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
                 src.styles.copyInto(line.styles, 0, 0, n)
                 // Without reflow, a row of another width no longer continues the one above.
                 line.wrapped = src.wrapped && src.chars.size == newCols
+                line.dropSplitWide()
             }
             line
         }
@@ -175,7 +209,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         rows.forEachIndexed { i, row ->
             val text = row.spans.joinToString("") { it.text }
             // A row the next one continues keeps its trailing blanks: they sit between two words.
-            val cell = if (rows.getOrNull(i + 1)?.wrapped == true) text.padEnd(row.width) else text.trimEnd()
+            val cell = if (rows.getOrNull(i + 1)?.wrapped == true) text + BLANK.repeat(row.trailingBlanks) else text.trimEnd()
             if (row.wrapped && lines.isNotEmpty()) lines.last().append(cell) else lines.add(StringBuilder(cell))
         }
         while (lines.lastOrNull()?.isBlank() == true) lines.removeAt(lines.lastIndex)
@@ -184,18 +218,27 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         return if (text.firstOrNull()?.isLowSurrogate() == true) text.drop(1) else text
     }
 
-    private fun pastLine(line: Line) = PastLine(spans(line), line.wrapped, line.chars.size)
+    private fun pastLine(line: Line): PastLine {
+        val end = contentEnd(line)
+        return PastLine(spans(line, end), line.wrapped, line.chars.size - end)
+    }
 
-    private fun spans(line: Line): List<StyledSpan> {
-        // Trailing blanks only matter when they are painted with a background color.
+    /** Trailing blanks only matter when they are painted with a background color. */
+    private fun contentEnd(line: Line): Int {
         var end = line.chars.size
-        while (end > 0 && line.chars[end - 1] == ' ' && CellStyle.bg(line.styles[end - 1]) == CellStyle.DEFAULT_COLOR) end--
+        while (end > 0 && line.chars[end - 1] == BLANK && CellStyle.bg(line.styles[end - 1]) == CellStyle.DEFAULT_COLOR) end--
+        return end
+    }
+
+    private fun spans(line: Line, end: Int = contentEnd(line)): List<StyledSpan> {
         val spans = ArrayList<StyledSpan>()
         var start = 0
         while (start < end) {
             var stop = start + 1
             while (stop < end && line.styles[stop] == line.styles[start]) stop++
-            spans.add(StyledSpan(String(line.chars, start, stop - start), line.styles[start]))
+            val text = StringBuilder()
+            for (c in start until stop) text.append(line.chars[c])
+            spans.add(StyledSpan(text.toString(), line.styles[start]))
             start = stop
         }
         return spans
@@ -241,7 +284,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
                 wrapPending = false
                 col = minOf(cols - 1, (col / 8 + 1) * 8)
             }
-            else -> if (c >= ' ' && c != '\u007f') put(c)
+            else -> if (c >= ' ' && c != '\u007f') printable(c)
         }
     }
 
@@ -266,15 +309,52 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         }
     }
 
-    private fun put(c: Char) {
-        if (wrapPending) {
+    /** Joins a surrogate pair into one character before it takes its cells. */
+    private fun printable(c: Char) {
+        val high = highSurrogate
+        highSurrogate = null
+        when {
+            c.isHighSurrogate() -> highSurrogate = c
+            c.isLowSurrogate() && high != null -> put("$high$c", CharWidth.of(Character.toCodePoint(high, c)))
+            else -> put(c.toString(), CharWidth.of(c.code))
+        }
+    }
+
+    /** Writes [text] into [width] cells as xterm does: marks join the cell before, wide ones wrap whole. */
+    private fun put(text: String, width: Int) {
+        if (width == 0) {
+            // The last character written sits under the cursor while a wrap is pending, else left of it.
+            val at = if (wrapPending) col else col - 1
+            if (at >= 0) {
+                val target = if (grid[row].chars[at] == WIDE_TAIL && at > 0) at - 1 else at
+                grid[row].chars[target] += text
+            }
+            return
+        }
+        // A wide character that would not fit in the last column wraps whole, leaving it blank.
+        if (wrapPending || (width == 2 && col == cols - 1 && cols > 1)) {
+            if (!wrapPending) grid[row].fill(col, cols, style)
             carriageReturn()
             lineFeed()
             grid[row].wrapped = true
         }
-        grid[row].chars[col] = c
-        grid[row].styles[col] = style
-        if (col == cols - 1) wrapPending = true else col++
+        val line = grid[row]
+        // Overwriting half of a wide character blanks its other half, in the current style.
+        if (line.chars[col] == WIDE_TAIL && col > 0) line.fill(col - 1, col, style)
+        val last = col + width - 1
+        if (last + 1 < cols && line.chars[last + 1] == WIDE_TAIL) line.fill(last + 1, last + 2, style)
+        line.chars[col] = text
+        line.styles[col] = style
+        if (width == 2 && last < cols) {
+            line.chars[last] = WIDE_TAIL
+            line.styles[last] = style
+        }
+        if (last >= cols - 1) {
+            col = cols - 1
+            wrapPending = true
+        } else {
+            col = last + 1
+        }
     }
 
     private fun carriageReturn() {

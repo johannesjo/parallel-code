@@ -119,6 +119,22 @@ class TerminalScreenTest {
     }
 
     @Test
+    fun erasingHalfAWideCharacterPaintsBothHalves() {
+        val s = screen(cols = 6, rows = 1, data = "中ab\u001b[44m\u001b[2G\u001b[1X\u001b[0m")
+        val spans = s.styledLines().single()
+        assertEquals(listOf("  ", "ab"), spans.map { it.text })
+        assertEquals(4, CellStyle.bg(spans[0].style))
+    }
+
+    @Test
+    fun overwritingHalfAWideCharacterPaintsTheOtherHalf() {
+        val s = screen(cols = 6, rows = 1, data = "中ab\u001b[2G\u001b[44mx\u001b[0m")
+        val spans = s.styledLines().single()
+        assertEquals(listOf(" x", "ab"), spans.map { it.text })
+        assertEquals(4, CellStyle.bg(spans[0].style))
+    }
+
+    @Test
     fun retainsUpTo20000LinesOfHistory() {
         val s = screen(rows = 2)
         // Feed 20,050 lines
@@ -151,6 +167,14 @@ class TerminalScreenTest {
         assertEquals("abc", s.text())
         s.feed("\u001b[4;1Hz".toByteArray())
         assertEquals("abc\n\n\nz", s.text())
+    }
+
+    @Test
+    fun narrowingThroughAWideCharacterBlanksIt() {
+        // Half a wide character would still draw two cells and overflow the narrower row.
+        val s = screen(cols = 4, rows = 1, data = "ab日")
+        s.resize(3, 1)
+        assertEquals("ab", s.text())
     }
 
     @Test

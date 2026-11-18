@@ -1,0 +1,466 @@
+[
+  {
+    "cols": 5,
+    "rows": 3,
+    "lines": ["abcde", "f"],
+    "copy": "abcde\nf",
+    "name": "exact-width line then newline",
+    "data": "YWJjZGUNCmY="
+  },
+  {
+    "cols": 5,
+    "rows": 3,
+    "lines": ["abcde", "f"],
+    "copy": "abcde\nf",
+    "name": "exact-width line then newline (snapshot)",
+    "data": "YWJjZGUNCmY="
+  },
+  {
+    "cols": 4,
+    "rows": 4,
+    "lines": ["abcd", "efgh", "ij", "k"],
+    "copy": "abcdefghij\nk",
+    "name": "long line wraps",
+    "data": "YWJjZGVmZ2hpag0Kaw=="
+  },
+  {
+    "cols": 4,
+    "rows": 4,
+    "lines": ["abcd", "efgh", "ij", "k"],
+    "copy": "abcdefghij\nk",
+    "name": "long line wraps (snapshot)",
+    "data": "YWJjZGVmZ2hpag0Kaw=="
+  },
+  {
+    "cols": 6,
+    "rows": 3,
+    "lines": ["one tw", "o thre", "e"],
+    "copy": "one two three",
+    "name": "wrapped words keep their spaces",
+    "data": "b25lIHR3byB0aHJlZQ=="
+  },
+  {
+    "cols": 6,
+    "rows": 3,
+    "lines": ["one tw", "o thre", "e"],
+    "copy": "one two three",
+    "name": "wrapped words keep their spaces (snapshot)",
+    "data": "b25lIHR3byB0aHJlZQ=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["1", "2", "3", "4", "5"],
+    "copy": "1\n2\n3\n4\n5",
+    "name": "history scrolls off the top",
+    "data": "MQ0KMg0KMw0KNA0KNQ=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["1", "2", "3", "4", "5"],
+    "copy": "1\n2\n3\n4\n5",
+    "name": "history scrolls off the top (snapshot)",
+    "data": "MQ0KMg0KMw0KNA0KNQ=="
+  },
+  {
+    "cols": 20,
+    "rows": 2,
+    "lines": ["red ok"],
+    "copy": "red ok",
+    "name": "colors leave text alone",
+    "data": "G1sxOzMxbXJlZBtbMG0gG1szODs1OzQybW9rG1tt"
+  },
+  {
+    "cols": 20,
+    "rows": 2,
+    "lines": ["red ok"],
+    "copy": "red ok",
+    "name": "colors leave text alone (snapshot)",
+    "data": "G1szMTsxbXJlZBtbMG0gG1szODs1OzQybW9rG1swbQ=="
+  },
+  {
+    "cols": 10,
+    "rows": 3,
+    "lines": ["jello", "wo"],
+    "copy": "jello\nwo",
+    "name": "cursor moves and erase",
+    "data": "aGVsbG8NCndvcmxkG1sxOzFIahtbMjszSBtbSw=="
+  },
+  {
+    "cols": 10,
+    "rows": 3,
+    "lines": ["jello", "wo"],
+    "copy": "jello\nwo",
+    "name": "cursor moves and erase (snapshot)",
+    "data": "amVsbG8NCndv"
+  },
+  {
+    "cols": 8,
+    "rows": 3,
+    "lines": ["aaaa", "bb"],
+    "copy": "aaaa\nbb",
+    "name": "erase display",
+    "data": "YWFhYQ0KYmJiYg0KY2NjYxtbMjszSBtbSg=="
+  },
+  {
+    "cols": 8,
+    "rows": 3,
+    "lines": ["aaaa", "bb"],
+    "copy": "aaaa\nbb",
+    "name": "erase display (snapshot)",
+    "data": "YWFhYQ0KYmI="
+  },
+  {
+    "cols": 20,
+    "rows": 2,
+    "lines": ["a       b       c"],
+    "copy": "a       b       c",
+    "name": "tabs",
+    "data": "YQliCWM="
+  },
+  {
+    "cols": 20,
+    "rows": 2,
+    "lines": ["a       b       c"],
+    "copy": "a       b       c",
+    "name": "tabs (snapshot)",
+    "data": "YRtbN0NiG1s3Q2M="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["aXc"],
+    "copy": "aXc",
+    "name": "backspace",
+    "data": "YWJjCAhY"
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["aXc"],
+    "copy": "aXc",
+    "name": "backspace (snapshot)",
+    "data": "YVhjG1sxRA=="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["a bef"],
+    "copy": "a bef",
+    "name": "insert and delete characters",
+    "data": "YWJjZGVmG1sxOzNIG1syUBtbMTsySBtbMUA="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["a bef"],
+    "copy": "a bef",
+    "name": "insert and delete characters (snapshot)",
+    "data": "YRtbMUNiZWYbWzRE"
+  },
+  {
+    "cols": 6,
+    "rows": 4,
+    "lines": ["1", "", "2"],
+    "copy": "1\n\n2",
+    "name": "insert and delete lines",
+    "data": "MQ0KMg0KMw0KNBtbMjsxSBtbTBtbNDsxSBtbTQ=="
+  },
+  {
+    "cols": 6,
+    "rows": 4,
+    "lines": ["1", "", "2"],
+    "copy": "1\n\n2",
+    "name": "insert and delete lines (snapshot)",
+    "data": "MQ0KDQoyG1sxQhtbMUQ="
+  },
+  {
+    "cols": 8,
+    "rows": 3,
+    "lines": ["a", "b", "c", "d", "status"],
+    "copy": "a\nb\nc\nd\nstatus",
+    "name": "status line below a scroll region",
+    "data": "G1szOzFIc3RhdHVzG1sxOzJyG1sxOzFIYQ0KYg0KYw0KZA=="
+  },
+  {
+    "cols": 8,
+    "rows": 3,
+    "lines": ["a", "b", "c", "d", "status"],
+    "copy": "a\nb\nc\nd\nstatus",
+    "name": "status line below a scroll region (snapshot)",
+    "data": "YQ0KYg0KYw0KZA0Kc3RhdHVzG1sxQRtbNUQbWzE7MnI="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["abZd", "xy"],
+    "copy": "abZd\nxy",
+    "name": "save and restore cursor",
+    "data": "YWIbN2NkDQp4eRs4Wg=="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["abZd", "xy"],
+    "copy": "abZd\nxy",
+    "name": "save and restore cursor (snapshot)",
+    "data": "YWJaZA0KeHkbWzFBG1sxQw=="
+  },
+  {
+    "cols": 12,
+    "rows": 5,
+    "lines": ["out", "│ done │", "╰──────╯", "╰──────╯"],
+    "copy": "out\n│ done │\n╰──────╯\n╰──────╯",
+    "name": "prompt box repaint",
+    "data": "b3V0DQrila3ilIDilIDilIDilIDilIDilIDila4NCuKUgiBoaSAgIOKUgg0K4pWw4pSA4pSA4pSA4pSA4pSA4pSA4pWvG1syQQ0bWzJLG1sxQg0bWzJLG1sxQQ3ilIIgZG9uZSDilIINCuKVsOKUgOKUgOKUgOKUgOKUgOKUgOKVrw=="
+  },
+  {
+    "cols": 12,
+    "rows": 5,
+    "lines": ["out", "│ done │", "╰──────╯", "╰──────╯"],
+    "copy": "out\n│ done │\n╰──────╯\n╰──────╯",
+    "name": "prompt box repaint (snapshot)",
+    "data": "b3V0DQrilIIgZG9uZSDilIINCuKVsOKUgOKUgOKUgOKUgOKUgOKUgOKVrw0K4pWw4pSA4pSA4pSA4pSA4pSA4pSA4pWvG1sxQQ=="
+  },
+  {
+    "cols": 10,
+    "rows": 3,
+    "lines": ["app"],
+    "copy": "app",
+    "name": "full-screen app hides history",
+    "data": "c2hlbGwxDQpzaGVsbDINChtbPzEwNDloG1tIG1sySmFwcA=="
+  },
+  {
+    "cols": 10,
+    "rows": 3,
+    "lines": ["app"],
+    "copy": "app",
+    "name": "full-screen app hides history (snapshot)",
+    "data": "c2hlbGwxDQpzaGVsbDIbWzFCG1s2RBtbPzEwNDloG1tIYXBw"
+  },
+  {
+    "cols": 10,
+    "rows": 3,
+    "lines": ["shell1", "$"],
+    "copy": "shell1\n$",
+    "name": "leaving a full-screen app restores the shell",
+    "data": "c2hlbGwxDQobWz8xMDQ5aBtbSBtbMkphcHAbWz8xMDQ5bCQg"
+  },
+  {
+    "cols": 10,
+    "rows": 3,
+    "lines": ["shell1", "$"],
+    "copy": "shell1\n$",
+    "name": "leaving a full-screen app restores the shell (snapshot)",
+    "data": "c2hlbGwxDQokIA=="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["oklink"],
+    "copy": "oklink",
+    "name": "title sequences are hidden",
+    "data": "G10wO3RpdGxlB29rG104OztodHRwczovL3guZGV2G1xsaW5rG104OzsbXA=="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["oklink"],
+    "copy": "oklink",
+    "name": "title sequences are hidden (snapshot)",
+    "data": "b2sbWzRtbGluaxtbMG0="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["café ─┼─ ✓"],
+    "copy": "café ─┼─ ✓",
+    "name": "accents and box drawing",
+    "data": "Y2Fmw6kg4pSA4pS84pSAIOKckw=="
+  },
+  {
+    "cols": 10,
+    "rows": 2,
+    "lines": ["café ─┼─ ✓"],
+    "copy": "café ─┼─ ✓",
+    "name": "accents and box drawing (snapshot)",
+    "data": "Y2Fmw6kg4pSA4pS84pSAIOKckw=="
+  },
+  {
+    "cols": 6,
+    "rows": 3,
+    "lines": ["日本語", "ab", "✅ ok"],
+    "copy": "日本語ab\n✅ ok",
+    "name": "wide characters",
+    "data": "5pel5pys6KqeYWINCuKchSBvaw=="
+  },
+  {
+    "cols": 6,
+    "rows": 3,
+    "lines": ["日本語", "ab", "✅ ok"],
+    "copy": "日本語ab\n✅ ok",
+    "name": "wide characters (snapshot)",
+    "data": "5pel5pys6KqeYWINCuKchSBvaw=="
+  },
+  {
+    "cols": 5,
+    "rows": 3,
+    "lines": ["日本", "語x"],
+    "copy": "日本 語x",
+    "name": "wide character at the last column wraps whole",
+    "data": "5pel5pys6KqeeA=="
+  },
+  {
+    "cols": 5,
+    "rows": 3,
+    "lines": ["日本", "語x"],
+    "copy": "日本 語x",
+    "name": "wide character at the last column wraps whole (snapshot)",
+    "data": "5pel5pys6KqeeA=="
+  },
+  {
+    "cols": 5,
+    "rows": 3,
+    "lines": ["abcd", "日"],
+    "copy": "abcd 日",
+    "name": "wide character wrapping from the last column clears it",
+    "data": "YWJjZGUbWzE7NUjml6U="
+  },
+  {
+    "cols": 5,
+    "rows": 3,
+    "lines": ["abcd", "日"],
+    "copy": "abcd 日",
+    "name": "wide character wrapping from the last column clears it (snapshot)",
+    "data": "YWJjZOaXpQ=="
+  },
+  {
+    "cols": 4,
+    "rows": 3,
+    "lines": ["ééxy", "z"],
+    "copy": "ééxyz",
+    "name": "combining marks share a cell",
+    "data": "ZcyBZcyBeHl6"
+  },
+  {
+    "cols": 4,
+    "rows": 3,
+    "lines": ["ééxy", "z"],
+    "copy": "ééxyz",
+    "name": "combining marks share a cell (snapshot)",
+    "data": "ZcyBZcyBeHl6"
+  },
+  {
+    "cols": 4,
+    "rows": 3,
+    "lines": ["🤖abc", "d"],
+    "copy": "🤖abcd",
+    "name": "astral emoji",
+    "data": "8J+klmFiY2Q="
+  },
+  {
+    "cols": 4,
+    "rows": 3,
+    "lines": ["🤖abc", "d"],
+    "copy": "🤖abcd",
+    "name": "astral emoji (snapshot)",
+    "data": "8J+klmFiY2Q="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": [" xy"],
+    "copy": " xy",
+    "name": "overwriting half a wide character",
+    "data": "5pel5pysG1sxOzJIeBtbMTszSHk="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": [" xy"],
+    "copy": " xy",
+    "name": "overwriting half a wide character (snapshot)",
+    "data": "G1sxQ3h5"
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": [" ab"],
+    "copy": " ab",
+    "name": "delete at a wide character",
+    "data": "5LitYWING1sxUA=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": [" ab"],
+    "copy": " ab",
+    "name": "delete at a wide character (snapshot)",
+    "data": "G1sxQ2FiG1szRA=="
+  },
+  {
+    "cols": 4,
+    "rows": 2,
+    "lines": [" ab"],
+    "copy": " ab",
+    "name": "insert pushes a wide character off the edge",
+    "data": "YWLkuK0bWzFHG1sxQA=="
+  },
+  {
+    "cols": 4,
+    "rows": 2,
+    "lines": [" ab"],
+    "copy": " ab",
+    "name": "insert pushes a wide character off the edge (snapshot)",
+    "data": "G1sxQ2FiG1szRA=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["  ab"],
+    "copy": "  ab",
+    "name": "erase half a wide character",
+    "data": "5LitYWIbWzJHG1sxWA=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["  ab"],
+    "copy": "  ab",
+    "name": "erase half a wide character (snapshot)",
+    "data": "G1syQ2FiG1szRA=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["a"],
+    "copy": "a",
+    "name": "erase to the end from inside a wide character",
+    "data": "YeS4rWIbWzNHG1tL"
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["a"],
+    "copy": "a",
+    "name": "erase to the end from inside a wide character (snapshot)",
+    "data": "YRtbMUM="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["   b"],
+    "copy": "   b",
+    "name": "erase to the cursor on a wide character",
+    "data": "YeS4rWIbWzJHG1sxSw=="
+  },
+  {
+    "cols": 6,
+    "rows": 2,
+    "lines": ["   b"],
+    "copy": "   b",
+    "name": "erase to the cursor on a wide character (snapshot)",
+    "data": "G1szQ2IbWzNE"
+  }
+]

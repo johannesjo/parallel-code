@@ -62,6 +62,20 @@ cd android
 ./gradlew installDebug        # install on a connected device
 ```
 
+### Kept in step with the desktop
+
+Two test files in `app/src/test/resources` are written by desktop tests, so the app's own parser and terminal are checked against the desktop's:
+
+- `protocol-samples.json`: one sample of every message the desktop sends, built from the types in `electron/remote/protocol.ts`. `ProtocolSamplesTest` must parse each one.
+- `terminal-golden.json`: terminal output, raw and as the snapshot the server sends, with what the desktop's xterm.js shows for it. `TerminalGoldenTest` feeds the same bytes to `TerminalScreen` and expects the same lines.
+
+The desktop tests fail when the files are out of date. Rewrite them with:
+
+```sh
+UPDATE_PROTOCOL_SAMPLES=1 npm run test:unit -- electron/remote/protocol-samples.test.ts
+UPDATE_TERMINAL_GOLDEN=1 npm run test:unit -- electron/remote/terminal-golden.test.ts
+```
+
 ### Google Play test builds
 
 The Android workflow tests pull requests and pushes that change Android code or its shared theme sources. After tests pass on `main`, it builds a signed Android App Bundle and publishes it to Google Play's **internal testing** track. **Actions → Android → Run workflow** on `main` also publishes a test build. PRs, other branches, and release tags do not publish to Play.
