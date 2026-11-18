@@ -20,6 +20,7 @@ import {
   type UnderstandingTourController,
 } from '../lib/create-understanding-tour';
 import type { Task } from '../store/types';
+import { taskPlanHandoffBlocker } from '../store/plan-handoff';
 
 interface TaskNotesBodyProps {
   task: Task;
@@ -187,7 +188,11 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
                       Detected automatically: the most recently changed plan file in this worktree.
                       Writing a newer one replaces it here.
                     </p>
-                    <p class="tour-hint-action">Click to open it.</p>
+                    <p class="tour-hint-action">
+                      {taskPlanHandoffBlocker(props.task.id)
+                        ? 'Click to open it.'
+                        : 'Click to open it, or to implement it in a fresh session.'}
+                    </p>
                   </>
                 )}
               >

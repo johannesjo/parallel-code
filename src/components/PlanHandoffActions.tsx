@@ -28,8 +28,17 @@ export function PlanHandoffActions(props: { taskId: string; onHandedOff: () => v
     setBusy(true);
     try {
       const refused = await implementPlanInFreshSession(props.taskId);
-      if (refused) showNotification(refused, { durationMs: NOTIFICATION_ERROR_MS });
-      else props.onHandedOff();
+      if (refused) {
+        showNotification(refused, { durationMs: NOTIFICATION_ERROR_MS });
+        return;
+      }
+      props.onHandedOff();
+      // The viewer is gone; the notice is the quickest way back. Clicking it is
+      // the undo, so it doesn't ask again. The longer error duration leaves time to click.
+      showNotification('Plan sent to a fresh session.', {
+        durationMs: NOTIFICATION_ERROR_MS,
+        action: { label: 'Back to planning', run: returnNow },
+      });
     } catch (err) {
       showNotification(`Could not hand over the plan: ${errMessage(err)}`, {
         durationMs: NOTIFICATION_ERROR_MS,
@@ -45,10 +54,14 @@ export function PlanHandoffActions(props: { taskId: string; onHandedOff: () => v
         'The stopped session stays in the session history.',
       { title: 'Back to planning session', okLabel: 'Go back' },
     );
-    if (!ok) return;
+    if (ok && returnNow()) props.onHandedOff();
+  }
+
+  /** Goes back, or says why not; true once the pane is restarting. */
+  function returnNow(): boolean {
     const refused = returnToPlanningSession(props.taskId);
     if (refused) showNotification(refused, { durationMs: NOTIFICATION_ERROR_MS });
-    else props.onHandedOff();
+    return !refused;
   }
 
   const buttonStyle = {
