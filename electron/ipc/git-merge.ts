@@ -8,6 +8,7 @@ import os from 'os';
 import path from 'path';
 import type { Notify } from './notify.js';
 import { KANBAN_FILE } from './kanban.js';
+import { duplicatesCards, mergeAppBoardEdits } from './kanban-board-merge.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { debug as logDebug } from '../log.js';
 import { exec, MAX_BUFFER } from './git-exec.js';
@@ -158,9 +159,12 @@ const KANBAN_CLASH_WARNING =
  * Unchanged: the saved text is written back as is. Changed (the task branch
  * committed board edits): the saved edits are merged onto the new board with
  * `git merge-file`, so the branch's changes are not reverted in the working
- * copy (#337). When the edits overlap, the saved text is written back and the
- * function resolves to a warning naming the board, since the file then lacks
- * changes that are in the commit.
+ * copy (#337). When the lines overlap (the task edited the card the app
+ * moved), or merge into a board that shows a card twice (both moved it), the
+ * app's own card edits are replayed onto the new board instead.
+ * When neither works, the saved text is written back and the function
+ * resolves to a warning naming the board, since the file then lacks changes
+ * that are in the commit.
  */
 export async function setAsideKanbanEdits(
   mergeRoot: string,
@@ -179,7 +183,10 @@ export async function setAsideKanbanEdits(
     try {
       const merged = await committedBoard(mergeRoot);
       if (merged !== base) {
-        const combined = await mergeBoardText(mergeRoot, { local: saved, base, merged });
+        const local = saved.toString('utf8');
+        const lines = await mergeBoardText(mergeRoot, { local: saved, base, merged });
+        const clean = lines !== null && !duplicatesCards({ local, merged, result: lines });
+        const combined = clean ? lines : mergeAppBoardEdits({ base, local, merged });
         if (combined === null) warning = KANBAN_CLASH_WARNING;
         else text = combined;
       }

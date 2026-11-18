@@ -93,7 +93,7 @@ const A_MOVED = [
   '- [ ] Card A',
   '  - [ ] first criterion',
   '  - [ ] second criterion',
-  '  branch: task/a',
+  '  branch: `task/a`',
   '',
 ].join('\n');
 
@@ -172,12 +172,47 @@ it('keeps an untracked board and warns when the branch adds one', async () => {
 });
 
 it('keeps the local board and warns when its edits clash with the branch', async () => {
-  // The task ticks a criterion on the very card the app moved: the edits overlap.
-  const root = boardRepo(BASE_BOARD.replace('[ ] first criterion', '[x] first criterion'));
+  // The task renames the card the app moved, so neither merge can place the move.
+  const root = boardRepo(BASE_BOARD.replace('Card A', 'Card A, renamed'));
   const result = await mergeTask(root, 'task/a', false, null, false, 'main');
   expect(board(root)).toBe(A_MOVED);
   expect(result.warning).toMatch(/KANBAN\.md/);
-  expect(run(root, ['show', 'HEAD:KANBAN.md'])).toContain('[x] first criterion');
+  expect(run(root, ['show', 'HEAD:KANBAN.md'])).toContain('Card A, renamed');
+});
+
+it('combines the app moving a card with the task editing that card (#337)', async () => {
+  // The common case: the app moved the task's card, the task ticked its criterion.
+  const root = boardRepo(
+    B_EXTENDED(BASE_BOARD.replace('[ ] first criterion', '[x] first criterion')),
+  );
+  const result = await mergeTask(root, 'task/a', false, null, false, 'main');
+  expect(board(root)).toBe(
+    B_EXTENDED(A_MOVED.replace('[ ] first criterion', '[x] first criterion')),
+  );
+  expect(result.warning).toBeUndefined();
+});
+
+it('warns instead of showing a card twice when the task moved it elsewhere', async () => {
+  // The lines merge cleanly, but the card would sit in both columns.
+  const withDone = (text: string) => `${text}\n## Done\n`;
+  const branchBoard = withDone(
+    BASE_BOARD.replace('- [ ] Card A\n  - [ ] first criterion\n  - [ ] second criterion\n\n', ''),
+  ).replace(
+    '## Done\n',
+    '## Done\n\n- [ ] Card A\n  - [ ] first criterion\n  - [ ] second criterion\n',
+  );
+  const root = repo();
+  fs.writeFileSync(path.join(root, 'KANBAN.md'), withDone(BASE_BOARD));
+  run(root, ['commit', '-qam', 'board']);
+  run(root, ['branch', '-f', 'task/a']);
+  run(root, ['checkout', '-q', 'task/a']);
+  fs.writeFileSync(path.join(root, 'KANBAN.md'), branchBoard);
+  run(root, ['commit', '-qam', 'task moves its card']);
+  run(root, ['checkout', '-q', 'main']);
+  fs.writeFileSync(path.join(root, 'KANBAN.md'), withDone(A_MOVED));
+  const result = await mergeTask(root, 'task/a', false, null, false, 'main');
+  expect(board(root).match(/Card A/g)).toHaveLength(1);
+  expect(result.warning).toMatch(/KANBAN\.md/);
 });
 
 it('keeps the local board and warns when the branch deleted it', async () => {
@@ -197,7 +232,7 @@ it('keeps the local board and warns when the branch deleted it', async () => {
 it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
   'names the board in the error when cleanup fails after a clashing merge',
   async () => {
-    const root = boardRepo(BASE_BOARD.replace('[ ] first criterion', '[x] first criterion'));
+    const root = boardRepo(BASE_BOARD.replace('Card A', 'Card A, renamed'));
     const worktree = path.join(root, '.worktrees', 'task', 'a');
     run(root, ['worktree', 'add', '-q', worktree, 'task/a']);
     // A read-only folder makes the worktree removal fail after the merge landed.
