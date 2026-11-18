@@ -181,6 +181,16 @@ describe('returnToPlanningSession', () => {
     expect(state.tasks.t1.planHandoff).toBeUndefined();
   });
 
+  // The restart would discard what the user typed into the agent's terminal.
+  it('refuses while text typed into the terminal is unsent', () => {
+    state.tasks.t1.terminalInputPending = true;
+    expect(returnToPlanningSession('t1')).toBe(
+      'Send or clear the text typed into the agent first; the restart would discard it.',
+    );
+    expect(mockResumeAgentSession).not.toHaveBeenCalled();
+    expect(state.tasks.t1.planHandoff).toEqual({ sessionId: PLANNING, command: 'claude' });
+  });
+
   it('is not offered once the pane runs a different CLI', () => {
     state.agents.a1.def.command = 'codex';
     expect(planningSessionToReturnTo('t1')).toBeUndefined();

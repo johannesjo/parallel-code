@@ -19,6 +19,10 @@ export function planHandoffPrompt(plan: { content: string; path: string }): stri
   );
 }
 
+/** Restarting the pane would discard text typed into the agent's terminal. */
+export const UNSENT_TERMINAL_INPUT =
+  'Send or clear the text typed into the agent first; the restart would discard it.';
+
 /**
  * Why the plan can't be handed over right now, or null when it can.
  *
@@ -45,8 +49,7 @@ export function planHandoffBlocker(input: {
   if (input.coordinated) return 'Not available for tasks run by a coordinating agent.';
   if (input.initialPrompt?.trim())
     return 'A prompt is still waiting to be sent. Wait until it has gone out.';
-  if (input.terminalInputPending)
-    return 'Send or clear the text typed into the agent first; the restart would discard it.';
+  if (input.terminalInputPending) return UNSENT_TERMINAL_INPUT;
   if (input.promptDraft?.trim())
     return 'Send or clear the text in the prompt box first; it would block the plan.';
   return null;
