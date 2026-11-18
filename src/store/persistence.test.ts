@@ -2556,8 +2556,8 @@ describe('browser preview persistence', () => {
   });
 });
 
-describe('run command persistence', () => {
-  it('keeps a task port block and the project run list, dropping malformed values', async () => {
+describe('command bookmark persistence', () => {
+  it('keeps a task port block and bookmark names and links, dropping malformed values', async () => {
     const task = persistedTask(agentDef());
     mockInvoke.mockResolvedValueOnce(
       JSON.stringify({
@@ -2567,14 +2567,14 @@ describe('run command persistence', () => {
             name: 'Repo',
             path: '/repo',
             color: 'blue',
-            runCommands: [
+            terminalBookmarks: [
               {
                 id: 'r1',
                 name: 'web',
                 command: 'npm run dev',
                 url: 'localhost:$PARALLEL_CODE_PORT',
               },
-              { id: 'r2', name: '', command: 'npm run api' },
+              { id: 'r2', command: 'npm test' },
               { id: 'r3', name: 'api', command: '   ' },
             ],
           },
@@ -2588,8 +2588,9 @@ describe('run command persistence', () => {
       }),
     );
     await loadState();
-    expect(store.projects[0].runCommands).toEqual([
+    expect(store.projects[0].terminalBookmarks).toEqual([
       { id: 'r1', name: 'web', command: 'npm run dev', url: 'localhost:$PARALLEL_CODE_PORT' },
+      { id: 'r2', command: 'npm test' },
     ]);
     expect(store.tasks['task-1'].portBase).toBe(20010);
     expect(store.tasks['task-2'].portBase).toBeUndefined();
@@ -2597,7 +2598,7 @@ describe('run command persistence', () => {
     await saveState();
     const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
     expect(saved.tasks['task-1'].portBase).toBe(20010);
-    expect(saved.projects[0].runCommands).toHaveLength(1);
+    expect(saved.projects[0].terminalBookmarks).toHaveLength(2);
   });
 });
 

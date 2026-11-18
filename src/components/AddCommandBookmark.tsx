@@ -5,12 +5,15 @@ import { BookmarkPlusIcon } from './icons';
 import { createAnchorEffect, placeBelow } from '../lib/floating';
 import { ProjectField, projectButtonStyle, projectMonoInputStyle } from './ProjectDialogParts';
 import { theme } from '../lib/theme';
+import { BOOKMARK_NAME_MAX_LENGTH, draftBookmark } from '../lib/bookmarks';
 
 /** Add a project command bookmark straight from the shell toolbar, without opening project settings. */
 export function AddCommandBookmark(props: { projectId: string }) {
   const id = createUniqueId();
   const [open, setOpen] = createSignal(false);
   const [draft, setDraft] = createSignal('');
+  const [name, setName] = createSignal('');
+  const [url, setUrl] = createSignal('');
   const [position, setPosition] = createSignal({ top: 0, right: 0, maxHeight: 240 });
   let anchor: HTMLButtonElement | undefined;
   let panel: HTMLFormElement | undefined;
@@ -18,6 +21,8 @@ export function AddCommandBookmark(props: { projectId: string }) {
   function close(restoreFocus = false) {
     setOpen(false);
     setDraft('');
+    setName('');
+    setUrl('');
     if (restoreFocus) anchor?.focus();
   }
 
@@ -98,15 +103,18 @@ export function AddCommandBookmark(props: { projectId: string }) {
             }}
             onSubmit={(event) => {
               event.preventDefault();
-              const command = draft().trim();
+              const bookmark = draftBookmark({ command: draft(), name: name(), url: url() });
               const project = getProject(props.projectId);
-              if (!command || !project) return;
+              if (!bookmark || !project) return;
               const bookmarks = project.terminalBookmarks ?? [];
-              // A repeat would only add a second identical button.
-              if (!bookmarks.some((bookmark) => bookmark.command === command)) {
-                updateProject(props.projectId, {
-                  terminalBookmarks: [...bookmarks, { id: crypto.randomUUID(), command }],
-                });
+              // A repeat updates the existing button's name and link instead of adding a twin.
+              const existing = bookmarks.find((b) => b.command === bookmark.command);
+              const { id: _id, command: _command, ...extras } = bookmark;
+              const next = existing
+                ? bookmarks.map((b) => (b === existing ? { ...b, ...extras } : b))
+                : [...bookmarks, bookmark];
+              if (!existing || Object.keys(extras).length > 0) {
+                updateProject(props.projectId, { terminalBookmarks: next });
               }
               close(true);
             }}
@@ -126,19 +134,44 @@ export function AddCommandBookmark(props: { projectId: string }) {
               'box-shadow': '0 4px 16px rgba(0, 0, 0, 0.3)',
             }}
           >
-            <ProjectField label="Command" hint="Saved for all tasks in this project.">
+            <ProjectField
+              label="Command"
+              hint="Saved for all tasks in this project; each task runs it in its own terminal."
+            >
               {(inputId) => (
                 <input
                   id={inputId}
                   class="input-field"
                   type="text"
-                  placeholder="e.g. npm run dev"
+                  placeholder="e.g. npm run dev -- --port $PARALLEL_CODE_PORT"
                   value={draft()}
                   onInput={(event) => setDraft(event.currentTarget.value)}
                   style={projectMonoInputStyle}
                 />
               )}
             </ProjectField>
+            <div style={{ display: 'flex', gap: '6px', 'margin-top': '8px' }}>
+              <input
+                class="input-field"
+                type="text"
+                aria-label="Name (optional)"
+                placeholder="Name (optional)"
+                maxLength={BOOKMARK_NAME_MAX_LENGTH}
+                value={name()}
+                onInput={(event) => setName(event.currentTarget.value)}
+                style={{ ...projectMonoInputStyle, width: '110px', 'flex-shrink': '0' }}
+              />
+              <input
+                class="input-field"
+                type="text"
+                aria-label="Link (optional)"
+                title="Opens in the task's browser preview; $PARALLEL_CODE_PORT is the task's port"
+                placeholder="Link, e.g. localhost:$PARALLEL_CODE_PORT"
+                value={url()}
+                onInput={(event) => setUrl(event.currentTarget.value)}
+                style={{ ...projectMonoInputStyle, flex: '1', 'min-width': '0' }}
+              />
+            </div>
             <div
               style={{
                 display: 'flex',

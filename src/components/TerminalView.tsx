@@ -197,7 +197,6 @@ interface TerminalViewProps {
   ) => void;
   fontSize?: number;
   autoFocus?: boolean;
-  initialCommand?: string;
   /** Shells only: run this script instead of an interactive shell. The main
    *  process picks the shell and flags; the PTY exits with the script. */
   shellScript?: string;
@@ -1060,15 +1059,9 @@ export function TerminalView(props: TerminalViewProps) {
     }
 
     const onOutput = new Channel<PtyOutput>();
-    let initialCommandSent = false;
     onOutput.onmessage = (msg) => {
       if (msg.type === 'Data') {
         enqueueOutput(msg.data);
-        if (!initialCommandSent && props.initialCommand) {
-          const cmd = props.initialCommand;
-          initialCommandSent = true;
-          setTimeout(() => enqueueInput(cmd + '\r'), 50);
-        }
       } else if (msg.type === 'Exit') {
         ptyGone = true;
         pendingExitPayload = msg.data;

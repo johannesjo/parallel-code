@@ -94,16 +94,12 @@ export interface VerifyPassRecord {
   finishedAt: string;
 }
 
+/** A saved project command each task can run, stop and restart in a terminal of its own. */
 export interface TerminalBookmark {
   id: string;
   command: string;
-}
-
-/** A named dev server a task can start, stop and open in its browser preview. */
-export interface RunCommand {
-  id: string;
-  name: string;
-  command: string;
+  /** Toolbar label; unset means a short word taken from the command. */
+  name?: string;
   /** Address to open in the preview; `$PARALLEL_CODE_PORT` is filled in per task. */
   url?: string;
 }
@@ -156,9 +152,6 @@ export interface Project {
    *  user first picks; empty means the reviewer alone. */
   reviewChecks?: string[];
   terminalBookmarks?: TerminalBookmark[];
-  /** Dev servers offered in each task's shell toolbar. App state, for the
-   *  same reason as `verifyCommand`. */
-  runCommands?: RunCommand[];
   /** Commands run in a visible terminal of each new worktree task, right
    *  after the worktree exists. App state, for the same reason as
    *  `verifyCommand`. Unset means no setup step at all. */

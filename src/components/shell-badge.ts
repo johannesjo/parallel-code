@@ -20,6 +20,7 @@ export function shellBadge({ setup, run, exit }: ShellBadgeInput): ShellBadge | 
   const label = () => setupExitLabel(exit?.exitCode ?? null, exit?.signal ?? null);
   if (run) {
     if (run.state === 'failed') return { text: `${run.name} failed (${label()})`, tone: 'error' };
+    if (run.state === 'finished') return { text: `${run.name} finished`, tone: 'muted' };
     if (run.state === 'stopped' || exit) return { text: `${run.name} stopped`, tone: 'muted' };
     return { text: `${run.name} running`, tone: 'muted' };
   }

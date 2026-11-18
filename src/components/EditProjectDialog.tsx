@@ -16,7 +16,6 @@ import {
   projectInputStyle,
 } from './ProjectDialogParts';
 import { ProjectBookmarksField } from './ProjectBookmarksField';
-import { ProjectRunCommandsField } from './ProjectRunCommandsField';
 import { ProjectEnvVarsField } from './ProjectEnvVarsField';
 import { ProjectColorPicker } from './ProjectColorPicker';
 import { ProjectIconField } from './ProjectIconField';
@@ -283,10 +282,6 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 </ProjectSection>
 
                 <ProjectSection title="Terminal">
-                  <ProjectRunCommandsField
-                    runs={form.runCommands()}
-                    onChange={form.setRunCommands}
-                  />
                   <ProjectBookmarksField
                     bookmarks={form.bookmarks()}
                     onChange={form.setBookmarks}

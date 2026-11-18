@@ -71,7 +71,6 @@ export {
   reorderTaskVisually,
   reorderTaskInTileOrder,
   spawnShellForTask,
-  runBookmarkInTask,
   startRunInTask,
   stopRunInTask,
   closeShell,

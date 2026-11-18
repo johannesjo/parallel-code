@@ -1,5 +1,4 @@
 import { sanitizeWorktreeIncludes, sanitizeWorktreeScript } from '../lib/worktree-includes';
-import { sanitizeRunCommands } from '../lib/run-commands';
 import { produce } from 'solid-js/store';
 import { openDialog } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
@@ -185,7 +184,6 @@ export function updateProject(
       | 'verifyAutoRun'
       | 'reviewChecks'
       | 'terminalBookmarks'
-      | 'runCommands'
       | 'worktreeSetupScript'
       | 'worktreeTeardownScript'
       | 'worktreeIncludes'
@@ -237,8 +235,6 @@ export function updateProject(
         s.projects[idx].reviewChecks = [...updates.reviewChecks];
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
-      if (Object.prototype.hasOwnProperty.call(updates, 'runCommands'))
-        s.projects[idx].runCommands = sanitizeRunCommands(updates.runCommands);
       if (Object.prototype.hasOwnProperty.call(updates, 'worktreeSetupScript'))
         s.projects[idx].worktreeSetupScript = sanitizeWorktreeScript(updates.worktreeSetupScript);
       if (Object.prototype.hasOwnProperty.call(updates, 'worktreeTeardownScript'))
