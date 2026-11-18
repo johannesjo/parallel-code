@@ -9,9 +9,10 @@ import {
 } from '../lib/create-understanding-tour';
 import { TaskNotesBody } from './TaskNotesBody';
 
-const { setAskCodeProvider, setAskCodeModel } = vi.hoisted(() => ({
+const { setAskCodeProvider, setAskCodeModel, handoffBlocker } = vi.hoisted(() => ({
   setAskCodeProvider: vi.fn(),
   setAskCodeModel: vi.fn(),
+  handoffBlocker: vi.fn<(taskId: string) => string | null>(() => 'No agent to hand the plan to.'),
 }));
 
 vi.mock('../store/store', () => ({
@@ -27,6 +28,8 @@ vi.mock('../store/store', () => ({
   unregisterFocusFn: vi.fn(),
 }));
 
+vi.mock('../store/plan-handoff', () => ({ taskPlanHandoffBlocker: handoffBlocker }));
+
 const disposers: Array<() => void> = [];
 
 afterEach(() => {
@@ -34,6 +37,7 @@ afterEach(() => {
   document.body.replaceChildren();
   store.showPlans = true;
   vi.clearAllMocks();
+  handoffBlocker.mockReturnValue('No agent to hand the plan to.');
 });
 
 const task: Task = {
@@ -192,6 +196,22 @@ describe('TaskNotesBody plan button', () => {
     expect(hint.textContent).toContain('.claude/plans/theme-plan.md');
     expect(hint.textContent).toContain('most recently changed plan file');
     expect(review.getAttribute('aria-describedby')).toBe(hint.id);
+  });
+
+  // The handoff buttons live in the plan viewer; the hint is where users learn of them.
+  it('mentions the fresh-session handoff when it is available', () => {
+    handoffBlocker.mockReturnValue(null);
+    const container = renderPlan({ task });
+    expect(showHint(buttonLabelled(container, 'Review Plan')).textContent).toContain(
+      'Click to open it, or to implement it in a fresh session.',
+    );
+  });
+
+  it('does not mention the handoff when it is unavailable', () => {
+    const container = renderPlan({ task });
+    const hint = showHint(buttonLabelled(container, 'Review Plan'));
+    expect(hint.textContent).toContain('Click to open it.');
+    expect(hint.textContent).not.toContain('fresh session');
   });
 
   it('falls back to the plan file name when no path was recorded', () => {

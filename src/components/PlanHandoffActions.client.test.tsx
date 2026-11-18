@@ -64,6 +64,34 @@ describe('PlanHandoffActions', () => {
     expect(onHandedOff).toHaveBeenCalledOnce();
   });
 
+  // The viewer closes on handoff, so the way back is offered where the user looks.
+  it('offers going back from the handoff notice, without asking again', async () => {
+    renderActions();
+    implementButton()?.click();
+    await flush();
+    expect(handoff.notify).toHaveBeenCalledWith('Plan sent to a fresh session.', {
+      durationMs: 10_000,
+      action: expect.objectContaining({ label: 'Back to planning' }),
+    });
+    const [, opts] = handoff.notify.mock.calls[0] as [string, { action: { run: () => void } }];
+    opts.action.run();
+    expect(handoff.goBack).toHaveBeenCalledWith('t1');
+    expect(handoff.confirm).not.toHaveBeenCalled();
+  });
+
+  it('says why when going back from the handoff notice is refused', async () => {
+    handoff.goBack.mockReturnValue('Send or clear the text typed into the agent first.');
+    renderActions();
+    implementButton()?.click();
+    await flush();
+    const [, opts] = handoff.notify.mock.calls[0] as [string, { action: { run: () => void } }];
+    opts.action.run();
+    expect(handoff.notify).toHaveBeenLastCalledWith(
+      'Send or clear the text typed into the agent first.',
+      { durationMs: 10_000 },
+    );
+  });
+
   it('explains why the handoff is unavailable', () => {
     handoff.blocker.mockReturnValue('Send or clear the text in the prompt box first.');
     renderActions();
@@ -76,6 +104,8 @@ describe('PlanHandoffActions', () => {
     const onHandedOff = renderActions();
     implementButton()?.click();
     await flush();
+    // Only the refusal, no success notice: a refused handoff has nothing to go back from.
+    expect(handoff.notify).toHaveBeenCalledOnce();
     expect(handoff.notify).toHaveBeenCalledWith('The agent changed. Try again.', {
       durationMs: 10_000,
     });
