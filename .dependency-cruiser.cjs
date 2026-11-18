@@ -7,7 +7,12 @@ module.exports = {
       comment:
         'Renderer (src/) must never import Electron main-process code. ' +
         'Use IPC channels instead.',
-      from: { path: '^src/' },
+      from: {
+        path: '^src/',
+        // An end-to-end test that drives recorded agent sessions through the
+        // main-process hook pipeline into task status; never bundled.
+        pathNot: ['^src/store/recorded-session-replay\\.test\\.ts$'],
+      },
       to: {
         path: '^electron/',
         // Allow importing pure shared modules with no Node/Electron deps:

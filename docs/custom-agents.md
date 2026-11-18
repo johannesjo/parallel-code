@@ -40,12 +40,28 @@ For Docker tasks the agent runs inside the container, so it must be installed in
 
 ## What works differently from built-in agents
 
-- **Status on the board.** For built-in agents other than Claude Code and Codex, and for every custom agent, Parallel Code works out whether the agent is working, waiting or asking a question from its terminal output. It recognises an input line that starts with `❯` or `›`. Other agents still work, but their status is less precise.
+- **Status on the board.** For built-in agents other than Claude Code and Codex, and for every custom agent, Parallel Code works out whether the agent is working, waiting or asking a question from its terminal output. It recognises an input line that starts with `❯` or `›`. Other agents still work, but their status is less precise. An agent or wrapper script can report its status exactly instead; see [Reporting status](#reporting-status).
 - **The first prompt.** A task's prompt is typed in once the agent shows its input line. For an agent whose input line Parallel Code doesn't recognise, it is typed once the output has stayed unchanged for about 1.5 seconds. It is held while the screen shows a numbered menu whose cursor is `❯` or `›` (`❯ 1. …`) or a question Parallel Code recognises; answer the agent and the prompt goes in afterwards. Menus drawn differently, for example inside a box or with `●` or `>` as the cursor, are not recognised, so answer any startup dialog before the prompt is due.
 - **Commands named like a built-in agent.** Parallel Code recognises some agents by the command's file name and gives a custom agent with such a command that agent's handling. `claude` gets Claude Code's status hooks, session IDs and MCP flag. Any name that contains `codex`, such as a wrapper called `my-codex`, gets Codex's session handling and MCP config; only a command named exactly `codex` also gets Codex's status hooks, on macOS and Linux and outside Docker. They are tested with Codex CLI 0.167; a Codex that doesn't accept them keeps the status worked out from its terminal output. `copilot` gets its own MCP flag, and `agy` none, since Parallel Code writes its workspace MCP config instead. `claude`, `codex`, `gemini`, `copilot` and `agy` also get a default skip-permissions flag when that field is empty. A wrapper script with any other name gets the generic handling.
 - **Tours, reviews and code questions** run only with Claude Code, Codex or MiniMax, chosen in Settings, not with custom agents.
 - **The chat view** is only available for Claude Code and Codex.
 - **Agent orchestration.** When a custom agent with a command it doesn't recognise runs a coordinated task, Parallel Code adds `--mcp-config <file>`, as for Claude Code. Use a custom agent there only if it accepts that flag.
+
+## Reporting status
+
+An agent, or a wrapper script around one, can tell Parallel Code what it is doing by printing a [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status) sequence (OSC 7501) to its terminal. Claude Code does this by itself when it runs without Parallel Code's hooks, for example in Docker.
+
+```sh
+printf '\033]7501;state=working\033\\'
+printf '\033]7501;state=blocked:kind=permission:msg=%s\033\\' "$(printf 'Deploy to prod?' | base64 | tr -d '\n')"
+printf '\033]7501;state=idle\033\\'
+```
+
+- `working` puts the card in **Working**. `blocked` moves it to **Needs you**: `kind=permission` marks an approval, `kind=question` a question. `msg` is optional base64 text shown in the status tooltip.
+- `done` marks a finished turn, `error` a failed one, and `idle` a program waiting for input. Always end a turn with one of them: once a program reports, Parallel Code stops guessing from the screen, so a turn that never reports its end stays **Working** until the program exits. On a turn longer than 30 minutes, send `working` again at least every 30 minutes; a report older than that is dropped and Parallel Code goes back to guessing.
+- Keys typed into the terminal count as evidence until the next report: Esc or Ctrl-C during `working` reads as an interrupt, and Enter or a digit at a `kind=permission` prompt as an approval. Report `idle` after an interrupt, as the protocol asks.
+- `id=name` reports for a worker inside the program. The card stays **Working** while any worker is working, even after the main record is `done`.
+- Agents that get Parallel Code's hooks (`claude` and `codex`, see above) report through those, and their status sequences are ignored.
 
 ## Checking a new agent
 

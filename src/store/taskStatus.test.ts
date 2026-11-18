@@ -299,6 +299,38 @@ describe('looksLikeQuestion', () => {
     expect(looksLikeQuestion(tail)).toBe(true);
   });
 
+  it("does not join Codex's update notice and its footer into one question", () => {
+    // Codex 0.167.2 at start, drawn row by row with cursor moves; the prompt row
+    // was drawn earlier and is not repainted, so only the redrawn rows follow.
+    const frame = [
+      '\x1b[1;3H│ ✨ Update available! 0.167.2 -> 0.170.0 │',
+      '\x1b[2;3H│ See https://github.com/openai/codex for installation │',
+      '\x1b[5;3H>_ OpenAI Codex (v0.167.2)',
+      '\x1b[22;3HGPT-6-Luna default · /home/user/tmp/pc-demo…',
+      '\x1b[23;3H← for agents · ? for shortcuts     ⚠ 1 warning · f2 to view',
+    ].join('');
+    expect(looksLikeQuestion(frame)).toBe(false);
+    // A question wrapped onto the next row still counts.
+    expect(looksLikeQuestion(`${frame}\x1b[8;3HAllow writing outside the`)).toBe(false);
+    expect(looksLikeQuestion(`${frame}\x1b[8;3HAllow writing outside the\x1b[9;3Hworkspace?`)).toBe(
+      true,
+    );
+    // Codex draws a row word by word, each word with its own cursor move.
+    expect(
+      looksLikeQuestion(
+        `${frame}\x1b[8;3HAllow\x1b[8;9Hwriting outside the\x1b[9;3Hworkspace\x1b[9;13H?`,
+      ),
+    ).toBe(true);
+    // Rows a partial repaint draws apart do not join: a progress row and the footer.
+    expect(looksLikeQuestion(`${frame}\x1b[8;3HWaiting to continue\x1b[23;3H? for shortcuts`)).toBe(
+      false,
+    );
+    // A question that fits on one of those rows still counts.
+    expect(looksLikeQuestion(`${frame}\x1b[8;3HWould you like to run the following command?`)).toBe(
+      true,
+    );
+  });
+
   it('detects the update menu with spaces lost in a cursor-positioned redraw', () => {
     expect(looksLikeQuestion('›1.Updatenow(runs`npm install -g @openai/codex`)2.Skip')).toBe(true);
   });
@@ -2020,6 +2052,26 @@ describe('hook-reported agent status', () => {
     markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
     expect(getTaskAttentionState('task-1')).toBe('needs_input');
     expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('lets Stop win over an answered dialog that only lingers on screen', () => {
+    // Codex repaints only changed rows, so later output never redraws the dialog.
+    markAgentOutput('agent-1', new TextEncoder().encode('Allow this command?\r\n'), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    vi.advanceTimersByTime(1_200);
+    markAgentOutput('agent-1', new TextEncoder().encode('Working (1s)'), 'task-1');
+    vi.advanceTimersByTime(1_200);
+    hook('agent-1', 'done', 'Stop');
+    markAgentOutput('agent-1', new TextEncoder().encode(' Ran touch'), 'task-1');
+    vi.advanceTimersByTime(1_200);
+
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskOpenQuestions('task-1')).toEqual([]);
+
+    // Drawing the question again makes it current.
+    markAgentOutput('agent-1', new TextEncoder().encode('\r\nAllow this command?'), 'task-1');
+    vi.advanceTimersByTime(1_200);
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
   });
 
   it('does not refresh an old question when delayed analysis runs after Stop', () => {

@@ -167,14 +167,59 @@ const seedClaudeLogin = (home: string, repo: string): void => {
     projects: { [repo]: { hasTrustDialogAccepted: true } },
   };
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify(settings));
-  // Spinner tips are noise in recordings.
+  // Spinner tips are noise in recordings. Without a default mode a fresh login
+  // starts in auto mode, which never asks permission, so scenes could not show
+  // the question; Claude Code may still offer auto mode at start.
   fs.writeFileSync(
     path.join(home, '.claude', 'settings.json'),
-    JSON.stringify({ spinnerTipsEnabled: false }),
+    JSON.stringify({ spinnerTipsEnabled: false, permissions: { defaultMode: 'default' } }),
   );
 };
 
-const showcaseEnv = (home: string, blockedAgentsBin: string): Record<string, string> => ({
+// Codex renews an ageing ChatGPT login, and a renewal in the copy could leave
+// the real login with a spent token. Copy only a recently renewed one.
+// shortcut: a guessed margin; read Codex's renewal interval if this ever trips.
+const CODEX_LOGIN_MAX_AGE_MS = 6 * 24 * 60 * 60_000;
+
+/**
+ * Lets an opted-in Codex start: copies only its login file into the throwaway
+ * home and trusts the demo repository, whose worktrees share its trust.
+ */
+const seedCodexLogin = (home: string, repo: string): void => {
+  const source = path.join(os.homedir(), '.codex', 'auth.json');
+  let refreshedAt = NaN;
+  try {
+    const login = JSON.parse(fs.readFileSync(source, 'utf8')) as { last_refresh?: unknown };
+    refreshedAt = Date.parse(String(login.last_refresh ?? ''));
+  } catch {
+    // The parse error would quote part of the file, tokens included.
+    throw new Error('realAgents: could not read the Codex login in ~/.codex/auth.json');
+  }
+  if (!(Date.now() - refreshedAt < CODEX_LOGIN_MAX_AGE_MS)) {
+    throw new Error(
+      'realAgents: the Codex login was not renewed in the last 6 days (or is no ChatGPT login); run `codex` once',
+    );
+  }
+  const target = path.join(home, '.codex', 'auth.json');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  fs.chmodSync(target, 0o600);
+  // As for Claude: close() deletes the home, this covers an exit without it.
+  process.once('exit', () => fs.rmSync(target, { force: true }));
+  fs.writeFileSync(
+    path.join(home, '.codex', 'config.toml'),
+    `[projects.${JSON.stringify(repo)}]\ntrust_level = "trusted"\n`,
+  );
+};
+
+// Only real agents are worth recording for the status replay tests (sessions/README.md).
+const RECORD_SESSIONS_ENV = 'PARALLEL_CODE_RECORD_SESSIONS';
+
+const showcaseEnv = (
+  home: string,
+  blockedAgentsBin: string,
+  realAgents: RealAgent[],
+): Record<string, string> => ({
   ...Object.fromEntries(
     PASSED_ENV.flatMap((name) => {
       const value = process.env[name];
@@ -184,6 +229,9 @@ const showcaseEnv = (home: string, blockedAgentsBin: string): Record<string, str
   PATH: [blockedAgentsBin, process.env.PATH].filter(Boolean).join(path.delimiter),
   HOME: home,
   XDG_CONFIG_HOME: path.join(home, '.config'),
+  ...(realAgents.length > 0 && process.env[RECORD_SESSIONS_ENV]
+    ? { [RECORD_SESSIONS_ENV]: process.env[RECORD_SESSIONS_ENV] }
+    : {}),
 });
 
 const startApp = async (page: Page, app: ElectronApplication): Promise<void> => {
@@ -263,6 +311,7 @@ export const launchShowcaseApp = async (
     seedShellRc(home, blockedAgentsBin);
     const repo = seedDemoWorkspace(dir, home, options);
     if (options.realAgents?.includes('claude')) seedClaudeLogin(home, repo);
+    if (options.realAgents?.includes('codex')) seedCodexLogin(home, repo);
     app = await _electron.launch({
       executablePath: path.join(REPO_ROOT, 'node_modules', 'electron', 'dist', 'electron'),
       args: [
@@ -275,7 +324,7 @@ export const launchShowcaseApp = async (
         path.join(REPO_ROOT, 'dist-electron', 'main.js'),
       ],
       cwd: REPO_ROOT,
-      env: showcaseEnv(home, blockedAgentsBin),
+      env: showcaseEnv(home, blockedAgentsBin, options.realAgents ?? []),
     });
     const page = await app.firstWindow();
     await startApp(page, app);

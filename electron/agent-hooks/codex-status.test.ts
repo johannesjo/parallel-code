@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import {
-  APPROVED_THEN_INTERRUPTED,
-  DECLINED_THEN_COMPLETED,
-  PATCH_APPROVED,
-  QUESTION_ANSWERED,
-  TOOL_TURN,
-} from './codex-recordings.js';
+import { recordedHookPayloads } from './recorded-sessions.js';
 import { mapCodexHookPayload } from './codex-status.js';
 import {
   activityEvidenceFromHook,
   transitionAgentHookStatus,
   type ReducedAgentHookStatus,
 } from './status.js';
+
+const TOOL_TURN = recordedHookPayloads('codex-0.167.0-tool-turn');
+const APPROVED_THEN_INTERRUPTED = recordedHookPayloads('codex-0.167.0-approved-then-interrupted');
+const DECLINED_THEN_COMPLETED = recordedHookPayloads('codex-0.167.0-declined-then-completed');
+const PATCH_APPROVED = recordedHookPayloads('codex-0.167.0-patch-approved');
+const QUESTION_ANSWERED = recordedHookPayloads('codex-0.167.0-question-answered');
 
 /** The status after each recorded payload, as `state event [detail]`, or `ignored`. */
 function replay(recording: readonly unknown[]): { timeline: string[]; activity: string } {

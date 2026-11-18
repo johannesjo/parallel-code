@@ -1,0 +1,122 @@
+{
+  "command": "codex",
+  "hooks": "codex",
+  "version": "0.167.0",
+  "summary": "In Plan mode the model asks the user a question, which they answer, and the turn finishes.",
+  "recorded": "Hook payloads from Codex CLI driven through its terminal UI against a scripted model. Ids and paths are replaced; everything else is as Codex wrote it to the hook.",
+  "steps": [
+    {
+      "hook": {
+        "session_id": "session-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "SessionStart",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "source": "startup"
+      }
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "UserPromptSubmit",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "prompt": "go"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "PreToolUse",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "tool_name": "request_user_input",
+        "tool_input": {
+          "questions": [
+            {
+              "id": "q1",
+              "header": "Pick",
+              "question": "Which one should I use?",
+              "options": [
+                {
+                  "label": "Alpha",
+                  "description": "the first"
+                },
+                {
+                  "label": "Beta",
+                  "description": "the second"
+                }
+              ]
+            }
+          ]
+        },
+        "tool_use_id": "exec-1"
+      }
+    },
+    {
+      "expect": "needs_input"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "PostToolUse",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "tool_name": "request_user_input",
+        "tool_input": {
+          "questions": [
+            {
+              "id": "q1",
+              "header": "Pick",
+              "question": "Which one should I use?",
+              "options": [
+                {
+                  "label": "Alpha",
+                  "description": "the first"
+                },
+                {
+                  "label": "Beta",
+                  "description": "the second"
+                }
+              ]
+            }
+          ]
+        },
+        "tool_response": "{\"answers\":{\"q1\":{\"answers\":[\"Alpha\"]}}}",
+        "tool_use_id": "exec-1"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "Stop",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "stop_hook_active": false,
+        "last_assistant_message": "Thanks."
+      }
+    },
+    {
+      "expect": "idle"
+    }
+  ]
+}
