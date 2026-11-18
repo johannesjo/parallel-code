@@ -2,7 +2,7 @@
 
 Updated 2026-11-19. **Adopt OSC 7501; don't invent a protocol.** Parallel Code now reads the [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status) (OSC 7501, rev 0.3) from launches that have no lifecycle hooks (step 1 below). Next is a hook adapter for Copilot CLI, then Kimi and Droid on the same path. OSC 9/777 and ACP are deferred.
 
-Confidence is about 80%. The open question the first version had, whether Claude Code sends OSC 7501 inside Parallel Code's terminal, is settled: Claude Code 2.1.328 asks with `OSC 7501;?`, sends nothing when the terminal stays silent, and reports `state=idle:app=claude-code` once the terminal answers. The main uncertainty left is how reliably agents other than Claude will end a turn with `idle` or `done`; see the limits below.
+Confidence is about 85%. The open question the first version had, whether Claude Code sends OSC 7501 inside Parallel Code's terminal, is settled: Claude Code 2.1.328 asks with `OSC 7501;?`, sends nothing when the terminal stays silent, and reports once the terminal answers. In real turns it sent `working` then `done`, `blocked` with `kind=permission` at an approval dialog and `kind=question` at a multiple-choice question, each with a readable `msg`, and `idle` after Esc. That recorded session is a test in `program-status.test.ts`. The main uncertainty left is how reliably agents other than Claude will end a turn with `idle` or `done`; see the limits below.
 
 Sources: **[R]** means read directly in source, docs or release notes. **[S]** means seen only in a search snippet.
 
@@ -82,4 +82,4 @@ Tests a build needs (step 1 tests the parser, the records, the hook gate and rep
 
 ## Changelog
 
-- 2026-11-19: first version, and step 1 built. Claude Code's behaviour checked with a short run in a pseudo-terminal, with and without answering the query.
+- 2026-11-19: first version, and step 1 built. Claude Code's behaviour checked with a short run in a pseudo-terminal, with and without answering the query. Then recorded through real turns: a reply, an approval, a question and two interrupts.

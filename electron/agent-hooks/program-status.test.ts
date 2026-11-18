@@ -165,6 +165,40 @@ describe('createProgramStatusRecords', () => {
   });
 });
 
+describe('a recorded Claude Code 2.1.328 session', () => {
+  it('reads every turn boundary, approval and question it reports', () => {
+    const records = createProgramStatusRecords();
+    const read = (payload: string) => {
+      const parsed = parseProgramStatus(payload);
+      if (!parsed || parsed === 'query') throw new Error(`unreadable: ${payload}`);
+      return records.apply(parsed);
+    };
+    expect(read('state=idle:app=claude-code')).toEqual({ state: 'done', event: 'ProgramStatus' });
+    expect(read('state=working:app=claude-code')).toMatchObject({ state: 'working' });
+    expect(read('state=done:app=claude-code')).toMatchObject({ state: 'done', event: 'Stop' });
+    expect(
+      read(
+        'state=blocked:app=claude-code:kind=permission:msg=YXBwcm92ZSBCYXNoOiB0b3VjaCBvc2MtcHJvYmUtbWFya2VyLnR4dCAmJiBscyAtbCBvc2MtcHJvYmUtbWFya2VyLnR4dA==',
+      ),
+    ).toMatchObject({
+      state: 'waiting',
+      prompt: 'permission',
+      detail: 'approve Bash: touch osc-probe-marker.txt && ls -l osc-probe-marker.txt',
+    });
+    // Esc at the dialog.
+    expect(read('state=idle:app=claude-code')).toMatchObject({ state: 'done' });
+    expect(
+      read(
+        'state=blocked:app=claude-code:kind=question:msg=YW5zd2VyOiBEbyB5b3UgcHJlZmVyIHRlYSBvciBjb2ZmZWU/IChUZWEgwrcgQ29mZmVlKQ==',
+      ),
+    ).toMatchObject({
+      state: 'waiting',
+      prompt: 'question',
+      detail: 'answer: Do you prefer tea or coffee? (Tea · Coffee)',
+    });
+  });
+});
+
 describe('createProgramStatusReporter', () => {
   const agentId = 'agent-program-status';
   const taskId = 'task-program-status';
