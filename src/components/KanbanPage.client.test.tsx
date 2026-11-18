@@ -319,6 +319,34 @@ describe('KanbanPage', () => {
     expect(button('Map').disabled).toBe(true);
   });
 
+  it('keeps the stacked columns scrolled down across a trip to the map', async () => {
+    await mount();
+    const lanes = () => host.querySelector<HTMLElement>('.task-board-lanes');
+    const before = lanes();
+    if (!before) throw new Error('missing lanes');
+    before.scrollTop = 120;
+    button('Map').click();
+    await settle();
+    button('Board').click();
+    await settle();
+    expect(lanes()?.scrollTop).toBe(120);
+  });
+
+  it('scrolls the stacked columns down while a card is dragged near the bottom', async () => {
+    await mount();
+    const lanes = host.querySelector<HTMLElement>('.task-board-lanes');
+    if (!lanes) throw new Error('missing lanes');
+    lanes.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 600 }) as DOMRect;
+    const over = new MouseEvent('dragover', { bubbles: true, clientX: 200, clientY: 590 });
+    Object.defineProperty(over, 'dataTransfer', {
+      value: { types: ['application/x-parallel-code-kanban-column'] },
+    });
+    // The board remembers its scroll per project, so start from wherever it is.
+    const start = lanes.scrollTop;
+    lanes.dispatchEvent(over);
+    expect(lanes.scrollTop).toBe(start + 14);
+  });
+
   it('clusters the map by theme, set in the card editor or by the planning agent', async () => {
     await mount();
     button('Map').click();

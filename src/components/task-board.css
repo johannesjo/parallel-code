@@ -336,13 +336,18 @@ html[data-look^='islands-'] .task-board {
   overflow: hidden;
 }
 /* Beside the side panel the board keeps room for a lane (the panel gives way
-   first), and lanes it cuts off fade out rather than end at a hard edge. */
+   first), stacks its lanes sooner (below), and lanes it cuts off fade out
+   rather than end at a hard edge. */
 .task-board:has(+ .task-workspace.board-side-panel),
 .plan-board-shell:has(+ .task-workspace.board-side-panel) {
   min-width: 320px;
+  --beside-task: 1;
 }
-.task-board:has(+ .task-workspace.board-side-panel) .task-board-lanes {
-  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+/* Only lanes side by side get cut off; a stacked board (below) has none. */
+@container task-board (width > 800px) {
+  .task-board:has(+ .task-workspace.board-side-panel) .task-board-lanes {
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  }
 }
 .task-board-empty {
   position: absolute;
@@ -457,8 +462,10 @@ html[data-look^='islands-'] .task-board {
 }
 
 /* Too narrow for lanes side by side: stack them in one scrolling column.
+   Beside an open task the task matters more, so lanes stay side by side only
+   while about 3⅓ fit: 20px padding + 3 × (212px lane + 20px gap) + 71px ≈ 800px.
    task-board-keys reads this flex-direction to step arrows across lanes. */
-@container task-board (max-width: 550px) {
+@container task-board (max-width: 550px) or ((max-width: 800px) and style(--beside-task: 1)) {
   .task-board-lanes {
     flex-direction: column;
     mask-image: none;

@@ -109,6 +109,8 @@ interface BoardSession {
   /** Only the cards whose task needs input or failed. */
   needsYou: boolean;
   scrollLeft: number;
+  /** Stacked columns (a narrow plan) scroll down instead of sideways. */
+  scrollTop: number;
   /** Columns or the mind map drawn from them. */
   view: 'board' | 'map';
   /** Branches the user folded or unfolded in the map, by node ID. */
@@ -124,6 +126,7 @@ function boardSession(projectId: string): BoardSession {
       query: '',
       needsYou: false,
       scrollLeft: 0,
+      scrollTop: 0,
       view: 'board',
       mapFolds: {},
       mapGrouping: 'column',
@@ -347,6 +350,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
       query: query(),
       needsYou: needsYou(),
       scrollLeft: columnsRef?.scrollLeft ?? session.scrollLeft,
+      scrollTop: columnsRef?.scrollTop ?? session.scrollTop,
       view: view(),
       mapFolds: mapFolds(),
       mapGrouping: mapGrouping(),
@@ -442,7 +446,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     // Take focus so the shortcuts work at once, unless the user is typing elsewhere.
     if (!isTypingTarget(document.activeElement)) section?.focus({ preventScroll: true });
     void reload().then(() => {
-      if (columnsRef) columnsRef.scrollLeft = session.scrollLeft;
+      restoreLanesScroll();
     });
     const timer = setInterval(() => {
       // Hidden, nobody sees the board; the next tick after showing catches up.
@@ -711,17 +715,24 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
 
   // --- Board or map ---
 
+  function restoreLanesScroll(): void {
+    if (!columnsRef) return;
+    columnsRef.scrollLeft = session.scrollLeft;
+    columnsRef.scrollTop = session.scrollTop;
+  }
+
   function showView(next: 'board' | 'map', restoreScroll = true): void {
     if (next === view()) return;
     // The lanes unmount in the map; keep their scroll for the way back.
     if (next === 'map' && columnsRef) {
       session.scrollLeft = columnsRef.scrollLeft;
+      session.scrollTop = columnsRef.scrollTop;
       columnsRef = undefined;
     }
     setView(next);
     if (next === 'board' && restoreScroll) {
       queueMicrotask(() => {
-        if (columnsRef) columnsRef.scrollLeft = session.scrollLeft;
+        restoreLanesScroll();
       });
     }
   }
@@ -1319,12 +1330,15 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
             class="task-board-lanes"
             ref={columnsRef}
             onDragOver={(e) => {
-              // Scroll the board sideways while dragging near its edges.
+              // Scroll the board while dragging near its edges: sideways, or
+              // down and up once a narrow plan stacks its columns.
               if (!acceptsDrag(e) || !columnsRef) return;
               const rect = columnsRef.getBoundingClientRect();
               const edge = 60;
               if (e.clientX < rect.left + edge) columnsRef.scrollLeft -= 14;
               else if (e.clientX > rect.right - edge) columnsRef.scrollLeft += 14;
+              if (e.clientY < rect.top + edge) columnsRef.scrollTop -= 14;
+              else if (e.clientY > rect.bottom - edge) columnsRef.scrollTop += 14;
             }}
           >
             <Index each={b().columns}>
