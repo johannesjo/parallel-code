@@ -25,7 +25,12 @@ import { MAX_PROMPT_HISTORY, promptHistoryOf } from '../lib/prompt-history';
 import type { TeleportTarget } from '../lib/claude-session-url';
 import { setTaskFocusedPanel, shellPanelId } from './focused-panel';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
-import { bookmarkLabel, setPendingShellLaunch, type ShellLaunch } from '../lib/bookmarks';
+import {
+  isProgramShell,
+  setPendingShellCommand,
+  setPendingShellLaunch,
+  type ShellLaunch,
+} from '../lib/bookmarks';
 import {
   forgetSetupShells,
   reportTeardownWarning,
@@ -45,6 +50,7 @@ import {
   clearAgentActivity,
   clearTaskGitStatusTracking,
   isAgentBracketedPasteEnabled,
+  isAgentIdle,
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 import { recordMergedLines, recordTaskMerged } from './completion';
@@ -62,7 +68,7 @@ import type {
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import { linkTaskToIssueReference } from './github-issue-link';
-import type { Agent, Task, GitIsolationMode, AppStore, Project, TerminalBookmark } from './types';
+import type { Agent, Task, GitIsolationMode, AppStore, Project, RunCommand } from './types';
 import type { DockerSource } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
@@ -1072,8 +1078,9 @@ export function reorderTaskVisually(movedId: string, targetVisibleIdx: number): 
   if (next) setStore('taskOrder', next);
 }
 
-export function spawnShellForTask(taskId: string): string {
+export function spawnShellForTask(taskId: string, initialCommand?: string): string {
   const shellId = crypto.randomUUID();
+  if (initialCommand) setPendingShellCommand(shellId, initialCommand);
   addShellToTask(taskId, shellId);
   return shellId;
 }
@@ -1115,41 +1122,32 @@ function startWorktreeSetup(taskId: string, project: Project | undefined): void 
 const restartingRuns = new Set<string>();
 
 /**
- * Runs a command bookmark in a terminal of its own, or reruns it: its previous
- * terminal, running or finished, closes first so each command keeps one log.
+ * Starts a run in a terminal of its own, or restarts it: the run's previous
+ * terminal, running or finished, closes first so each run keeps one log.
  * shortcut: a restart kills the old server and starts the new one at once,
  * because a killed terminal reports no exit to wait on. A server slow to release
  * its port fails the restart, or moves to the next port (Vite without
  * --strictPort) so the link misses it; waiting in the main process for the old
  * PTY to exit would fix both.
  */
-export async function startRunInTask(taskId: string, bookmark: TerminalBookmark): Promise<void> {
+export async function startRunInTask(taskId: string, run: RunCommand): Promise<void> {
   // A second click while the old terminal closes would start a second server on the same port.
-  const key = `${taskId}:${bookmark.id}`;
+  const key = `${taskId}:${run.id}`;
   if (restartingRuns.has(key)) return;
   restartingRuns.add(key);
   try {
-    const previous = runShellId(taskId, bookmark.id);
+    const previous = runShellId(taskId, run.id);
     if (previous) await closeShell(taskId, previous);
     if (!store.tasks[taskId]) return;
     const shellId = crypto.randomUUID();
-    setPendingRunScript(shellId, {
-      taskId,
-      runId: bookmark.id,
-      name: bookmarkLabel(bookmark),
-      command: bookmark.command,
-      announceFailure: !!bookmark.url,
-    });
+    setPendingRunScript(shellId, { taskId, runId: run.id, name: run.name, command: run.command });
     addShellToTask(taskId, shellId);
-    // closeShell focused a neighbour; the user wants to watch the new run.
-    const index = store.tasks[taskId]?.shellAgentIds.indexOf(shellId) ?? -1;
-    if (index >= 0) setTaskFocusedPanel(taskId, shellPanelId(index));
   } finally {
     restartingRuns.delete(key);
   }
 }
 
-/** Stops a run like Ctrl+C would, so a server shuts down cleanly and its log stays. */
+/** Stops a run like Ctrl+C would, so the server shuts down cleanly and its log stays. */
 export function stopRunInTask(taskId: string, runId: string): void {
   const shellId = runShellId(taskId, runId);
   if (!shellId || runState(taskId, runId) !== 'running') return;
@@ -1157,6 +1155,30 @@ export function stopRunInTask(taskId: string, runId: string): void {
   invoke(IPC.WriteToAgent, { agentId: shellId, data: '\x03' }).catch((err) => {
     logWarn('tasks.shell', 'WriteToAgent failed while stopping a run', { err });
   });
+}
+
+/** Send a bookmark command to an existing idle shell, or spawn a new one. */
+export function runBookmarkInTask(taskId: string, command: string): void {
+  const task = store.tasks[taskId];
+  if (!task) return;
+
+  // Prefer the most-recently-created idle shell (sitting at a prompt).
+  for (let i = task.shellAgentIds.length - 1; i >= 0; i--) {
+    const shellId = task.shellAgentIds[i];
+    // A quiet program terminal (e.g. a cloud session) would take the command as input.
+    if (isAgentIdle(shellId) && !isProgramShell(shellId)) {
+      // Mark busy immediately so rapid clicks don't reuse the same shell.
+      markAgentBusy(shellId);
+      setTaskFocusedPanel(taskId, shellPanelId(i));
+      invoke(IPC.WriteToAgent, { agentId: shellId, data: command + '\r' }).catch((err) => {
+        logWarn('tasks.shell', 'WriteToAgent failed; falling back to spawnShell', { err });
+        spawnShellForTask(taskId, command);
+      });
+      return;
+    }
+  }
+
+  spawnShellForTask(taskId, command);
 }
 
 export async function closeShell(taskId: string, shellId: string): Promise<void> {

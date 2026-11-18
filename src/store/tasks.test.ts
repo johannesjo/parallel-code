@@ -106,6 +106,10 @@ vi.mock('./projects', () => ({
   getProjectBranchPrefix: vi.fn(),
   isProjectMissing: vi.fn(),
 }));
+vi.mock('../lib/bookmarks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/bookmarks')>()),
+  setPendingShellCommand: vi.fn(),
+}));
 // No close animation: a closed task leaves the store on a 0ms timer, which the
 // top-level afterEach drains, so it cannot delete the next test's same-id task.
 vi.mock('../lib/reducedMotion', () => ({ prefersMotion: () => false }));
@@ -189,8 +193,8 @@ import {
   selectActiveNeighborAfterRemoval,
   updateTaskName,
   forgetTask,
+  runBookmarkInTask,
   spawnProgramForTask,
-  spawnShellForTask,
   startRunInTask,
   stopRunInTask,
   closeShell,
@@ -2978,8 +2982,26 @@ describe('mergeTask / pushTask preconditions', () => {
   });
 });
 
-describe('command bookmark runs', () => {
-  const web = { id: 'run-web', name: 'web', command: 'npm run dev', url: 'localhost:3000' };
+describe('runBookmarkInTask', () => {
+  it('never types a bookmark into a quiet program terminal such as a cloud session', () => {
+    mockTasks['task-b'] = { agentIds: [], shellAgentIds: [] };
+    const programId = spawnProgramForTask('task-b', { command: 'claude', args: ['--cloud', 'x'] });
+    vi.mocked(isAgentIdle).mockReturnValue(true);
+    mockInvoke.mockClear();
+    mockInvoke.mockResolvedValue(undefined);
+
+    runBookmarkInTask('task-b', 'npm test');
+
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      IPC.WriteToAgent,
+      expect.objectContaining({ agentId: programId }),
+    );
+    expect(mockTasks['task-b'].shellAgentIds).toHaveLength(2);
+  });
+});
+
+describe('run commands', () => {
+  const web = { id: 'run-web', name: 'web', command: 'npm run dev' };
 
   beforeEach(() => {
     mockTasks['task-r'] = { agentIds: [], shellAgentIds: [] };
@@ -3011,18 +3033,6 @@ describe('command bookmark runs', () => {
     expect(runState('task-r', 'run-web')).toBe('running');
   });
 
-  it('focuses the new terminal on every run, not a neighbour of the closed one', async () => {
-    const panels: Record<string, string> = {};
-    Object.assign(core.harness?.store ?? {}, { focusedPanel: panels });
-    const focused = () => panels['task-r'];
-    const other = spawnShellForTask('task-r');
-    await startRunInTask('task-r', web);
-    expect(focused()).toBe('shell:1');
-    await startRunInTask('task-r', web);
-    expect(mockTasks['task-r'].shellAgentIds[0]).toBe(other);
-    expect(focused()).toBe('shell:1');
-  });
-
   it('stops with Ctrl+C and reads the exit that follows as stopped, quietly', async () => {
     await startRunInTask('task-r', web);
     const [shellId] = mockTasks['task-r'].shellAgentIds;
@@ -3046,29 +3056,6 @@ describe('command bookmark runs', () => {
       expect.stringContaining('“web” stopped unexpectedly in “Fix login” (exit 1)'),
       expect.anything(),
     );
-  });
-
-  it('runs in a terminal of its own, never typed into an idle shell or program', async () => {
-    const programId = spawnProgramForTask('task-r', { command: 'claude', args: ['--cloud', 'x'] });
-    vi.mocked(isAgentIdle).mockReturnValue(true);
-    await startRunInTask('task-r', { id: 'b-test', command: 'npm test' });
-    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.WriteToAgent, expect.anything());
-    const [, shellId] = mockTasks['task-r'].shellAgentIds;
-    expect(shellId).not.toBe(programId);
-    expect(consumePendingRunScript(shellId)).toBe('npm test');
-  });
-
-  it('marks a command that ends on its own finished, and a failed one-off quietly', async () => {
-    const test = { id: 'b-test', command: 'npm test' };
-    await startRunInTask('task-r', test);
-    noteRunShellExit(mockTasks['task-r'].shellAgentIds[0], 'Fix login', 0);
-    expect(runState('task-r', 'b-test')).toBe('finished');
-
-    await startRunInTask('task-r', test);
-    noteRunShellExit(mockTasks['task-r'].shellAgentIds[0], 'Fix login', 1);
-    // Without a link it is no server: the terminal shows the failure, no notification.
-    expect(runState('task-r', 'b-test')).toBe('failed');
-    expect(showNotification).not.toHaveBeenCalled();
   });
 
   it('starts one terminal when restart is pressed twice in quick succession', async () => {

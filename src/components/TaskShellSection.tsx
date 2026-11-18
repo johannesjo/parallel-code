@@ -4,7 +4,7 @@ import {
   store,
   getProject,
   spawnShellForTask,
-  startRunInTask,
+  runBookmarkInTask,
   closeShell,
   markAgentOutput,
   clearAgentActivity,
@@ -24,12 +24,16 @@ import { fileLinkMenu, type ChangesLink } from './file-link-menu';
 import { findBareFile } from '../lib/find-bare-file';
 import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { editAsDocument } from '../documents/store';
-import { CloseIcon, RefreshIcon, TerminalSmallIcon } from './icons';
+import { CloseIcon, TerminalSmallIcon } from './icons';
 import { AddCommandBookmark } from './AddCommandBookmark';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
-import { bookmarkLabel, consumePendingShellLaunch } from '../lib/bookmarks';
+import {
+  extractLabel,
+  consumePendingShellCommand,
+  consumePendingShellLaunch,
+} from '../lib/bookmarks';
 import {
   consumePendingSetupScript,
   noteSetupShellExit,
@@ -39,7 +43,7 @@ import {
 import { consumePendingRunScript, noteRunShellExit, runShellInfo } from '../store/runs';
 import { shellBadge, type ShellBadge } from './shell-badge';
 import { toolbarBtnStyle } from './shell-toolbar-style';
-import { CommandBookmarkButton, toggleBookmarkRun } from './CommandBookmarkButton';
+import { TaskRunButtons } from './TaskRunButtons';
 import { autoShellLayout, shellColumns } from '../lib/shellLayout';
 import { ShellLayoutMenu } from './ShellLayoutMenu';
 import type { Task } from '../store/types';
@@ -199,7 +203,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                 spawnShellForTask(props.task.id);
               } else {
                 const bm = projectBookmarks()[idx - 1];
-                if (bm) toggleBookmarkRun(props.task.id, bm);
+                if (bm) runBookmarkInTask(props.task.id, bm.command);
               }
             }
           }}
@@ -236,16 +240,25 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           </button>
           <For each={projectBookmarks()}>
             {(bookmark, i) => (
-              <CommandBookmarkButton
-                taskId={props.task.id}
-                bookmark={bookmark}
-                highlighted={shellToolbarIdx() === i() + 1 && shellToolbarFocused()}
-                onActivate={() => setTaskFocusedPanel(props.task.id, `shell-toolbar:${i() + 1}`)}
-              />
+              <button
+                class="shell-toolbar-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTask(props.task.id);
+                  setTaskFocusedPanel(props.task.id, `shell-toolbar:${i() + 1}`);
+                  runBookmarkInTask(props.task.id, bookmark.command);
+                }}
+                tabIndex={-1}
+                title={bookmark.command}
+                style={toolbarBtnStyle(shellToolbarIdx() === i() + 1 && shellToolbarFocused())}
+              >
+                <span>{extractLabel(bookmark.command)}</span>
+              </button>
             )}
           </For>
           <AddCommandBookmark projectId={props.task.projectId} />
         </div>
+        <TaskRunButtons task={props.task} />
         <Show when={shellCount() >= 2}>
           <ShellLayoutMenu taskId={props.task.id} mode={layout()} />
         </Show>
@@ -268,6 +281,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
         >
           <For each={props.task.shellAgentIds}>
             {(shellId, i) => {
+              const initialCommand = consumePendingShellCommand(shellId);
               const launch = consumePendingShellLaunch(shellId);
               const setupScript = consumePendingSetupScript(shellId);
               const runScript = consumePendingRunScript(shellId);
@@ -278,12 +292,6 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                   run: run && { name: run.name, state: run.state },
                   exit: shellExits[shellId],
                 });
-              };
-              // A running bookmark restarts from its terminal, so the toolbar never shifts.
-              const restartable = () => {
-                const run = runShellInfo(shellId);
-                if (run?.state !== 'running') return undefined;
-                return projectBookmarks().find((b) => b.id === run.runId);
               };
               let shellFocusFn: (() => void) | undefined;
               let registeredKey: string | undefined;
@@ -351,35 +359,8 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                           padding: '4px 12px',
                           'border-radius': 'var(--radius-md)',
                           border: `1px solid ${theme.border}`,
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '6px',
                         }}
                       >
-                        {/* First, so the close button that shows on hover never covers it. */}
-                        <Show when={restartable()}>
-                          {(bookmark) => (
-                            <button
-                              type="button"
-                              aria-label={`Restart ${bookmarkLabel(bookmark())}`}
-                              title="Restart"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void startRunInTask(props.task.id, bookmark());
-                              }}
-                              style={{
-                                display: 'inline-flex',
-                                padding: '0',
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'inherit',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <RefreshIcon size={12} />
-                            </button>
-                          )}
-                        </Show>
                         {current().text}
                       </div>
                     )}
@@ -406,6 +387,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     findBareFile={(name) => findBareFile(name, props.task)}
                     dockerMode={props.task.dockerMode}
                     dockerImage={props.task.dockerImage}
+                    initialCommand={initialCommand}
                     shellScript={setupScript ?? runScript}
                     env={setupScript || runScript ? setupEnv() : undefined}
                     onData={(data) => markAgentOutput(shellId, data, props.task.id)}
@@ -424,8 +406,8 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                       if (registeredKey) registerFocusFn(registeredKey, focusFn);
                     }}
                     fontSize={12}
-                    // The setup terminal opens on its own, so it must not take focus
-                    // from the prompt; a run terminal gets focus from startRunInTask.
+                    // The setup terminal opens on its own and a run terminal is
+                    // a log; neither may take focus from the prompt.
                     autoFocus={!setupScript && !runScript}
                   />
                 </div>

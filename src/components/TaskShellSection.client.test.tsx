@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../store/types';
 import { TaskShellSection } from './TaskShellSection';
 import { editAsDocument } from '../documents/store';
-import { store, updateProject, startRunInTask, spawnShellForTask } from '../store/store';
+import { store, updateProject, runBookmarkInTask, spawnShellForTask } from '../store/store';
 import { IPC } from '../../electron/ipc/channels';
 import type { FileLinkMenu } from './file-link-menu';
 import { forgetRunShells, setPendingRunScript } from '../store/runs';
@@ -29,9 +29,7 @@ vi.mock('../store/store', () => ({
     ],
   }),
   spawnShellForTask: vi.fn(),
-  startRunInTask: vi.fn(async () => undefined),
-  stopRunInTask: vi.fn(),
-  openCanvasBrowserAt: vi.fn(),
+  runBookmarkInTask: vi.fn(),
   updateProject: vi.fn(),
   closeShell: vi.fn(),
   markAgentOutput: vi.fn(),
@@ -102,7 +100,7 @@ describe('TaskShellSection', () => {
   it('saves a project command without running it and preserves existing bookmarks', async () => {
     const { trigger, form, input } = openCommandForm();
     await vi.waitFor(() => expect(document.activeElement).toBe(input));
-    expect(form.textContent).toContain('Saved for all tasks in this project');
+    expect(form.textContent).toContain('Saved for all tasks in this project.');
     input.value = '  npm run dev  ';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
@@ -118,39 +116,10 @@ describe('TaskShellSection', () => {
         { id: expect.any(String), command: 'npm run dev' },
       ],
     });
-    expect(startRunInTask).not.toHaveBeenCalled();
+    expect(runBookmarkInTask).not.toHaveBeenCalled();
     expect(spawnShellForTask).not.toHaveBeenCalled();
     expect(form.isConnected).toBe(false);
     expect(document.activeElement).toBe(trigger);
-  });
-
-  it('saves an optional name and link with the command', () => {
-    const { form } = openCommandForm();
-    const field = (selector: string) => {
-      const el = form.querySelector<HTMLInputElement>(selector);
-      if (!el) throw new Error(`Missing ${selector}`);
-      return el;
-    };
-    for (const [selector, value] of [
-      ['input:not([aria-label])', 'npm run dev -- --port $PARALLEL_CODE_PORT'],
-      ['[aria-label="Name (optional)"]', ' web '],
-      ['[aria-label="Link (optional)"]', 'localhost:$PARALLEL_CODE_PORT'],
-    ]) {
-      const input = field(selector);
-      input.value = value;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    form.requestSubmit();
-    expect(updateProject).toHaveBeenCalledWith('project-1', {
-      terminalBookmarks: expect.arrayContaining([
-        {
-          id: expect.any(String),
-          command: 'npm run dev -- --port $PARALLEL_CODE_PORT',
-          name: 'web',
-          url: 'localhost:$PARALLEL_CODE_PORT',
-        },
-      ]),
-    });
   });
 
   it('does not save a duplicate of an existing command', () => {
@@ -161,24 +130,6 @@ describe('TaskShellSection', () => {
 
     expect(updateProject).not.toHaveBeenCalled();
     expect(form.isConnected).toBe(false);
-  });
-
-  it('gives an existing command the name and link entered with it again', () => {
-    const { form, input } = openCommandForm();
-    input.value = 'npm test';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    const name = form.querySelector<HTMLInputElement>('[aria-label="Name (optional)"]');
-    if (!name) throw new Error('Missing name input');
-    name.value = 'tests';
-    name.dispatchEvent(new Event('input', { bubbles: true }));
-    form.requestSubmit();
-
-    expect(updateProject).toHaveBeenCalledWith('project-1', {
-      terminalBookmarks: [
-        { id: 'test', command: 'npm test', name: 'tests' },
-        { id: 'typecheck', command: 'npm run typecheck' },
-      ],
-    });
   });
 
   it('keeps the draft open when the window loses focus', async () => {
@@ -265,7 +216,7 @@ describe('TaskShellSection', () => {
 
     const toolbar = container.querySelector<HTMLElement>('.shell-toolbar-panel');
     const buttons = container.querySelectorAll<HTMLElement>(
-      '.shell-toolbar-panel > :not([aria-haspopup])',
+      '.shell-toolbar-panel > button:not([aria-haspopup])',
     );
 
     expect(toolbar?.style.overflowX).toBe('auto');
@@ -286,35 +237,21 @@ describe('TaskShellSection', () => {
     expect((container.firstElementChild as HTMLElement).style.minHeight).toBe('0');
   });
 
-  it('runs a bookmark once in its terminal, labels it and restarts it from there', () => {
+  it('runs a run command once in its terminal and labels it with the run', () => {
     setPendingRunScript('shell-run', {
       taskId: 'task-1',
-      runId: 'test',
-      name: 'test',
-      command: 'npm test',
-      announceFailure: false,
+      runId: 'web',
+      name: 'web',
+      command: 'npm run dev',
     });
     const container = document.createElement('div');
     document.body.append(container);
     disposers.push(
       render(() => <TaskShellSection task={makeTask(['shell-run'])} isActive />, container),
     );
-    expect(terminalProps.at(-1)).toMatchObject({ shellScript: 'npm test', autoFocus: false });
-    expect(container.textContent).toContain('test running');
-    container.querySelector<HTMLButtonElement>('[aria-label="Restart test"]')?.click();
-    expect(startRunInTask).toHaveBeenCalledWith('task-1', { id: 'test', command: 'npm test' });
+    expect(terminalProps.at(-1)).toMatchObject({ shellScript: 'npm run dev', autoFocus: false });
+    expect(container.textContent).toContain('web running');
     forgetRunShells(['shell-run']);
-  });
-
-  it('runs a bookmark from its toolbar button', () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    disposers.push(render(() => <TaskShellSection task={makeTask([])} isActive />, container));
-    container.querySelector<HTMLButtonElement>('button[title="Run npm run typecheck"]')?.click();
-    expect(startRunInTask).toHaveBeenCalledWith('task-1', {
-      id: 'typecheck',
-      command: 'npm run typecheck',
-    });
   });
 
   it('offers the layout menu only once two shells are open', () => {

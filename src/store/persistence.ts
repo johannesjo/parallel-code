@@ -1,5 +1,5 @@
 import { sanitizeWorktreeIncludes, sanitizeWorktreeScript } from '../lib/worktree-includes';
-import { sanitizeBookmarks } from '../lib/bookmarks';
+import { sanitizeRunCommands } from '../lib/run-commands';
 import { isPortBase } from '../lib/task-ports';
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { parseCloseSuggestion } from '../../electron/shared/close-suggestion';
@@ -923,7 +923,7 @@ export async function loadState(): Promise<void> {
     p.worktreeSetupScript = sanitizeWorktreeScript(p.worktreeSetupScript);
     p.worktreeTeardownScript = sanitizeWorktreeScript(p.worktreeTeardownScript);
     p.worktreeIncludes = sanitizeWorktreeIncludes(p.worktreeIncludes);
-    p.terminalBookmarks = sanitizeBookmarks(p.terminalBookmarks);
+    p.runCommands = sanitizeRunCommands(p.runCommands);
     // Background evidence builds and the evidence review model are gone; drop
     // their old settings. Check suggestions use the review model instead.
     delete (p as unknown as Record<string, unknown>).evidenceAutoBuild;

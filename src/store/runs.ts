@@ -3,21 +3,19 @@ import { NOTIFICATION_ERROR_MS, showNotification } from './notification';
 import { setupExitLabel } from './worktree-setup';
 
 /**
- * Command bookmarks as run from one task: each run opens a terminal of its
- * own that runs the command and serves as its log. State is ephemeral, like
- * setup terminals: commands die with the app, so a restored session shows
- * none as running and never restarts one.
+ * Run commands (a project's named dev servers) as seen from one task: each
+ * start opens a terminal of its own that runs the command and serves as its
+ * log. State is ephemeral, like setup terminals: servers die with the app, so
+ * a restored session shows every run as stopped and never restarts one.
  */
 
-export type RunState = 'running' | 'finished' | 'stopped' | 'failed';
+export type RunState = 'running' | 'stopped' | 'failed';
 
 interface RunShell {
   taskId: string;
   runId: string;
   name: string;
   state: RunState;
-  /** Servers (bookmarks with a link) announce a crash; a failed one-off command only shows it. */
-  announceFailure: boolean;
   /** Set by Stop, so the exit that follows reads as stopped, whatever its code. */
   stopRequested?: boolean;
 }
@@ -27,11 +25,10 @@ const [runShells, setRunShells] = createStore<Record<string, RunShell | undefine
 
 export function setPendingRunScript(
   shellId: string,
-  run: { taskId: string; runId: string; name: string; command: string; announceFailure: boolean },
+  run: { taskId: string; runId: string; name: string; command: string },
 ): void {
   pendingRunScripts.set(shellId, run.command);
-  const { taskId, runId, name, announceFailure } = run;
-  setRunShells(shellId, { taskId, runId, name, announceFailure, state: 'running' });
+  setRunShells(shellId, { taskId: run.taskId, runId: run.runId, name: run.name, state: 'running' });
 }
 
 /** The command for a run terminal's first spawn; undefined afterwards. */
@@ -65,16 +62,9 @@ export function markRunStopRequested(shellId: string): void {
 }
 
 /** Ctrl+C in a shell ends with 130, a plain kill with 143: both mean stopped, not failed. */
-const STOP_EXIT_CODES = new Set([130, 143]);
+const STOP_EXIT_CODES = new Set([0, 130, 143]);
 
-function exitState(run: RunShell, exitCode: number | null, signal: string | null): RunState {
-  if (run.stopRequested) return 'stopped';
-  if (exitCode === 0) return 'finished';
-  if (signal !== null && signal !== 'spawn_failed') return 'stopped';
-  return STOP_EXIT_CODES.has(exitCode ?? -1) ? 'stopped' : 'failed';
-}
-
-/** Records how a run's terminal ended; a server crash is announced, a stop is not. */
+/** Records how a run's terminal ended; a crash is announced, a stop is not. */
 export function noteRunShellExit(
   shellId: string,
   taskName: string,
@@ -83,9 +73,12 @@ export function noteRunShellExit(
 ): void {
   const run = runShells[shellId];
   if (run?.state !== 'running') return;
-  const state = exitState(run, exitCode, signal);
-  setRunShells(shellId, 'state', state);
-  if (state === 'failed' && run.announceFailure) {
+  const stopped =
+    run.stopRequested ||
+    (signal !== null && signal !== 'spawn_failed') ||
+    STOP_EXIT_CODES.has(exitCode ?? -1);
+  setRunShells(shellId, 'state', stopped ? 'stopped' : 'failed');
+  if (!stopped) {
     showNotification(
       `“${run.name}” stopped unexpectedly in “${taskName}” (${setupExitLabel(exitCode, signal)}). Its terminal has the output.`,
       { durationMs: NOTIFICATION_ERROR_MS },

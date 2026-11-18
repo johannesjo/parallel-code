@@ -11,9 +11,6 @@ describe('shellBadge', () => {
       shellBadge({ run: { name: 'web', state: 'stopped' }, exit: { exitCode: 130, signal: null } }),
     ).toEqual({ text: 'web stopped', tone: 'muted' });
     expect(
-      shellBadge({ run: { name: 'test', state: 'finished' }, exit: { exitCode: 0, signal: null } }),
-    ).toEqual({ text: 'test finished', tone: 'muted' });
-    expect(
       shellBadge({ run: { name: 'web', state: 'failed' }, exit: { exitCode: 1, signal: null } }),
     ).toEqual({ text: 'web failed (exit 1)', tone: 'error' });
   });

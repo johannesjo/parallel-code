@@ -63,6 +63,7 @@ vi.mock('./projects', () => ({
   getProjectBranchPrefix: vi.fn(),
   isProjectMissing: vi.fn(),
 }));
+vi.mock('../lib/bookmarks', () => ({ setPendingShellCommand: vi.fn() }));
 vi.mock('./taskStatus', () => ({
   markAgentSpawned: vi.fn(),
   markAgentBusy: vi.fn(),
