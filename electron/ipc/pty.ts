@@ -38,6 +38,7 @@ import {
 import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
 import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
 import { hasCodexHookOverride, isCodexCommand } from '../agent-hooks/codex-hooks.js';
+import { createProgramStatusReporter } from '../agent-hooks/program-status.js';
 import { debug as logDebug, warn as logWarn } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -922,6 +923,9 @@ export async function spawnAgent(
         applyCodexHookLaunch(codexHooks, args, { command, spawnEnv, launchId }),
       )
     : applyAgentHookLaunch(args, command, cwd, spawnEnv, launchId);
+  // Registering hooks always adds flags. A launch without them may report its
+  // status over OSC 7501 instead; a hooked one would only duplicate its hooks.
+  const reportsProgramStatus = !args.isShell && launchArgs.length === args.args.length;
   const spawnSpec = buildPtySpawnSpec({ ...args, args: launchArgs }, command, cwd, spawnEnv);
 
   logDebug('pty', `spawn command ${args.agentId}`, {
@@ -975,6 +979,9 @@ export async function spawnAgent(
       rows: args.rows,
       reply: (data) => proc.write(data),
       scrollback: mirrorScrollback,
+      programStatus: reportsProgramStatus
+        ? createProgramStatusReporter({ agentId: args.agentId, taskId: args.taskId, launchId })
+        : undefined,
     }),
     containerName: spawnSpec.containerName,
   };

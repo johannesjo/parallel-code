@@ -1,5 +1,11 @@
 import headless from '@xterm/headless';
 import serializeAddon from '@xterm/addon-serialize';
+import {
+  PROGRAM_STATUS_OSC,
+  PROGRAM_STATUS_QUERY_REPLY,
+  parseProgramStatus,
+  type ProgramStatusReport,
+} from '../agent-hooks/program-status.js';
 
 const { Terminal } = headless;
 const { SerializeAddon } = serializeAddon;
@@ -70,6 +76,9 @@ export function createTerminalQueryResponder(opts: {
   rows: number;
   reply: (data: string) => void;
   scrollback?: number;
+  /** Takes the program's OSC 7501 status reports; without it they are ignored
+   *  and the feature query goes unanswered, so programs see no support. */
+  programStatus?: (report: ProgramStatusReport) => void;
 }): TerminalQueryResponder {
   const term = new Terminal({
     cols: Math.max(1, opts.cols),
@@ -99,8 +108,21 @@ export function createTerminalQueryResponder(opts: {
   );
   term.parser.registerEscHandler({ final: 'c' }, () => {
     sgrReports = false;
+    // A full reset (RIS) removes every status record, as the spec requires.
+    if (muted === 0) opts.programStatus?.({ state: 'clear', id: '' });
     return false;
   });
+  const { programStatus } = opts;
+  if (programStatus) {
+    // Replayed scrollback is display only: its reports are stale and get no answer.
+    term.parser.registerOscHandler(PROGRAM_STATUS_OSC, (data) => {
+      if (disposed || muted > 0) return true;
+      const report = parseProgramStatus(data);
+      if (report === 'query') opts.reply(PROGRAM_STATUS_QUERY_REPLY);
+      else if (report) programStatus(report);
+      return true;
+    });
+  }
 
   term.onData((data) => {
     if (disposed || muted > 0 || !CURSOR_POSITION_REPORT.test(data)) return;

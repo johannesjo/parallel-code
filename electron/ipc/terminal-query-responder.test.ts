@@ -168,4 +168,37 @@ describe('createTerminalQueryResponder', () => {
     await settle();
     expect(replies).toEqual([]);
   });
+
+  it('answers the status query and passes live reports on, not replayed ones', async () => {
+    const reports: unknown[] = [];
+    const replies: string[] = [];
+    const responder = createTerminalQueryResponder({
+      cols: 80,
+      rows: 24,
+      reply: (data) => replies.push(data),
+      programStatus: (report) => reports.push(report),
+    });
+    // Display-only replay comes first at session start, like carried scrollback.
+    responder.feedDisplayOnly('\x1b]7501;state=working\x07\x1b]7501;?\x07');
+    await responder.serialize();
+    responder.feed('\x1b]7501;?\x1b\\');
+    responder.feed('\x1b]7501;state=blocked:kind=question\x07');
+    responder.feed('\x1b]7501;state=sleeping\x1b\\');
+    responder.feed('\x1bc');
+    await responder.serialize();
+    expect(replies).toEqual(['\x1b]7501;?\x1b\\']);
+    expect(reports).toEqual([
+      { state: 'blocked', id: '', kind: 'question' },
+      { state: 'clear', id: '' },
+    ]);
+    responder.dispose();
+  });
+
+  it('leaves the status query unanswered when status is not read', async () => {
+    const { responder, replies } = setup();
+    responder.feed('\x1b]7501;?\x1b\\');
+    await settle();
+    expect(replies).toEqual([]);
+    responder.dispose();
+  });
 });

@@ -1006,6 +1006,30 @@ describe('PTY hook launch ownership', () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
+  it('reads OSC 7501 status only from a launch without hooks', async () => {
+    const blocked = '\x1b]7501;state=blocked:kind=permission\x07';
+    hookCodex(() => Promise.resolve([]));
+    await spawnAgent(createMockNotify(), codexSpawnArgs('agent-osc-plain', []));
+    const plain = mockPtySpawn.mock.results.slice(-1)[0]?.value as ReturnType<typeof mockPtySpawn>;
+    plain.emitData(blocked);
+    await vi.waitFor(() =>
+      expect(getAgentActivityEvidence('agent-osc-plain')).toMatchObject({
+        activity: 'waiting',
+        prompt: 'permission',
+      }),
+    );
+
+    hookCodex(() => Promise.resolve(['-c', 'hooks.Stop=[]']));
+    await spawnAgent(createMockNotify(), codexSpawnArgs('agent-osc-hooked', []));
+    const hooked = mockPtySpawn.mock.results.slice(-1)[0]?.value as ReturnType<typeof mockPtySpawn>;
+    hooked.emitData(`${blocked}\x1b]7501;?\x07`);
+    // Same parser queue: once this later write lands, the report was seen and ignored.
+    hooked.emitData('\x1b[6n');
+    await vi.waitFor(() => expect(hooked.write).toHaveBeenCalled());
+    expect(hooked.write).not.toHaveBeenCalledWith('\x1b]7501;?\x1b\\');
+    expect(getAgentActivityEvidence('agent-osc-hooked')?.activity).not.toBe('waiting');
+  });
+
   it('does not launch Codex once it was stopped while its hooks were being checked', async () => {
     let release: (args: string[]) => void = () => {};
     const probe = vi.fn(() => new Promise<string[]>((resolve) => (release = resolve)));
