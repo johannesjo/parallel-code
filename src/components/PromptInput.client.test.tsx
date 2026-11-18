@@ -1,17 +1,19 @@
 import { clearStagedNotification, setStagedNotificationUserEdited } from '../store/tasks';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { createSignal, untrack } from 'solid-js';
+import { batch, createSignal, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PromptInput } from './PromptInput';
 import {
+  clearInitialPrompt,
   getAgentOutputTail,
   onAgentReady,
   registerAction,
   registerFocusFn,
   sendPrompt,
+  setInitialPrompt,
   showNotification,
 } from '../store/store';
 import { NOTIFICATION_ERROR_MS } from '../store/notification';
@@ -282,6 +284,87 @@ describe('PromptInput initial prompt after an app restart', () => {
     // What restartAgent(id, false) does after the resume args fail.
     setAgents('agent-1', { resumed: false, generation: 1 });
     expect(onAgentReady).toHaveBeenCalled();
+  });
+
+  // The plan handoff queues a prompt for a fresh launch; it may repeat one the
+  // previous launch already received, word for word.
+  it('sends a repeated initial prompt to a fresh launch of the agent', async () => {
+    vi.useFakeTimers();
+    try {
+      let echoed = false;
+      vi.mocked(sendPrompt).mockClear();
+      vi.mocked(sendPrompt).mockImplementation(async () => {
+        echoed = true;
+      });
+      vi.mocked(getAgentOutputTail).mockImplementation(() =>
+        echoed ? 'Claude Code\n❯ do it' : 'Claude Code\n❯ ',
+      );
+      const [agents, setAgents] = createStore({ 'agent-1': { resumed: false, generation: 0 } });
+      // eslint-disable-next-line solid/reactivity -- the component tracks reads through this store mock
+      storeMock.agents = agents;
+      storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'] } };
+      const [initialPrompt, setQueued] = createSignal<string | undefined>('do it');
+      const container = document.createElement('div');
+      document.body.append(container);
+      disposers.push(
+        render(
+          () => (
+            <PromptInput
+              taskId="task-1"
+              taskName="Task"
+              agentId="agent-1"
+              initialPrompt={initialPrompt()}
+            />
+          ),
+          container,
+        ),
+      );
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(sendPrompt).toHaveBeenCalledTimes(1);
+
+      setQueued(undefined); // what the real sendPrompt does once it is written
+      echoed = false;
+      batch(() => {
+        setQueued('do it');
+        setAgents('agent-1', { generation: 1 });
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(sendPrompt).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.mocked(sendPrompt).mockImplementation(async () => undefined);
+      vi.mocked(getAgentOutputTail).mockImplementation(() => '');
+      vi.useRealTimers();
+    }
+  });
+
+  // Going back to the planning session mid-delivery resumes another
+  // conversation; the unconfirmed plan must not be queued again for it.
+  it('does not re-queue an unconfirmed prompt after the pane resumes another session', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(sendPrompt).mockClear();
+      vi.mocked(setInitialPrompt).mockClear();
+      vi.mocked(clearInitialPrompt).mockClear();
+      vi.mocked(getAgentOutputTail).mockImplementation(() => 'Claude Code\n❯ ');
+      const [agents, setAgents] = createStore({ 'agent-1': { resumed: false, generation: 0 } });
+      // eslint-disable-next-line solid/reactivity -- the component tracks reads through this store mock
+      storeMock.agents = agents;
+      storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'] } };
+      vi.mocked(sendPrompt).mockImplementation(async () => {
+        setAgents('agent-1', { resumed: true, generation: 1 });
+      });
+      mountWithInitialPrompt();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(sendPrompt).toHaveBeenCalledTimes(1);
+      expect(setInitialPrompt).not.toHaveBeenCalled();
+      expect(clearInitialPrompt).toHaveBeenCalledWith('task-1');
+    } finally {
+      vi.mocked(sendPrompt).mockImplementation(async () => undefined);
+      vi.mocked(getAgentOutputTail).mockImplementation(() => '');
+      vi.useRealTimers();
+    }
   });
 
   it('clears the stored draft when the box closes during an automatic send', async () => {

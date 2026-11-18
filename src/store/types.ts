@@ -275,6 +275,13 @@ export interface PromptHistoryEntry {
   agentId?: string;
 }
 
+/** The session a plan was planned in, kept when the plan is handed to a fresh
+ *  session. `command` guards against resuming it with a different CLI. */
+export interface PlanHandoff {
+  sessionId: string;
+  command: string;
+}
+
 export interface Task {
   mainAgentView?: 'terminal' | 'chat';
   codexChatThreadId?: string;
@@ -359,6 +366,9 @@ export interface Task {
   planFileName?: string;
   /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
   planPath?: string;
+  /** The planning conversation an approved plan was handed away from, so the
+   *  user can go back to it. Always about the first pane. */
+  planHandoff?: PlanHandoff;
   /** What is open in the task's canvas column, one tab each, in strip order. */
   canvasTabs?: CanvasTab[];
   /** Key (see canvasTabKey) of the tab in front. */
@@ -557,6 +567,8 @@ export interface PersistedTask {
   cards?: unknown;
   /** Validated on load. */
   agentPlan?: unknown;
+  /** Validated on load. */
+  planHandoff?: unknown;
   /** A rating saved before the Confidence card held it; restored into `cards.confidence`. */
   confidence?: unknown;
   /** Validated on load. */

@@ -1,6 +1,6 @@
 # Plan, approve, implement: design proposal
 
-Status: Proposal, not implemented. Written 2026-11-19.
+Status: First step of option (a) implemented 2026-11-19: **Implement in fresh session** and **Back to planning session** in the plan viewer, for Claude Code and Codex terminal panes, and only when the planning session can be reopened. The approved-plan snapshot, option (b) and option (c) are not built yet.
 
 ## Why
 
@@ -93,6 +93,16 @@ Recommended flow:
 The **smallest step that fixes context bloat** is (a) for Claude Code and Codex terminal panes only: snapshot, restart fresh, plan as the first prompt, and Back to planning session on failure. Estimate 2–3 days. One thing must be confirmed while building: that the first-prompt auto-send fires again after a fresh restart of an existing pane. The code suggests it does, but this hasn't been tested.
 
 Neither is a trivial change, so nothing has been built.
+
+### Known limits of the first step
+
+- **Back** reopens the session the pane was started in (Claude) or the newest one in the worktree's history (Codex). If the user ran `/clear` or `/resume` inside the CLI during planning, that may be an older conversation. The real planning conversation is still in the session history.
+- Not offered for chat mode or for tasks run by a coordinating agent, whose prompts the coordinator delivers.
+- For Codex, the planning session is found in the worktree's session history. The handoff is refused when that is ambiguous: two Codex panes in the task, or a task working in the shared project folder. A Codex sub-agent session that is newer than the planner could still be taken for it.
+- If the app closes before the plan is delivered, the queued plan is dropped unless the pane will reopen its fresh session. Click **Implement in fresh session** again.
+- Nothing asks for confirmation when the planning agent is mid-turn. The partial turn stays in its transcript.
+- Going back before the plan has been sent leaves the plan text in the prompt box. It is not sent unless the user sends it.
+- Handing over again from the implementing session keeps **Back** pointing at the original planning session.
 
 ### Later, for agents without a plan mode
 

@@ -7,6 +7,7 @@ import { ReviewCommentsButton, ReviewSidebarPanel } from './ReviewSidebarPanel';
 import { ReviewCommentCard } from './ReviewCommentCard';
 import { InlineInput } from './InlineInput';
 import { AskCodeCard } from './AskCodeCard';
+import { PlanHandoffActions } from './PlanHandoffActions';
 import { CloseIcon, ExternalLinkIcon } from './icons';
 import { createHighlightedMarkdown } from '../lib/marked-shiki';
 import { renderMermaidIn } from '../lib/mermaid';
@@ -80,6 +81,7 @@ export function PlanViewerDialog(props: PlanViewerDialogProps) {
           planContent={props.planContent}
           planFileName={props.planFileName}
           worktreePath={props.worktreePath}
+          taskId={props.taskId}
           onClose={props.onClose}
           onTakeTour={props.onTakeTour}
         />
@@ -92,6 +94,8 @@ interface PlanViewerContentProps {
   planContent: string;
   planFileName: string;
   worktreePath?: string;
+  /** Offers the fresh-session handoff for this task's plan; omit to hide it. */
+  taskId?: string;
   onClose: () => void;
   onTakeTour?: () => void;
 }
@@ -315,6 +319,10 @@ function PlanViewerContent(props: PlanViewerContentProps) {
         <ReviewCommentsButton />
 
         <span style={{ flex: '1' }} />
+
+        <Show when={props.taskId}>
+          {(taskId) => <PlanHandoffActions taskId={taskId()} onHandedOff={props.onClose} />}
+        </Show>
 
         <Show when={props.onTakeTour}>
           <button

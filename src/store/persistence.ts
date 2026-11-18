@@ -5,6 +5,7 @@ import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-stor
 import { appFactCard, defaultCards } from '../lib/app-facts';
 import { CARD_LIMITS, persistCardDefinitions, restoreCardDefinitions } from '../lib/cards';
 import { restoreTaskAgentPlan } from '../lib/task-plan';
+import { restoredQueuedPrompt, restorePlanHandoff } from '../lib/plan-handoff';
 import { restoreReviewChecks } from '../lib/review-checks';
 import { restoreRatedTaskCards } from '../lib/confidence-card';
 import { restoreTaskVisit } from '../lib/task-visit';
@@ -508,6 +509,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     evidence: persistedCheckSuite(task.evidence),
     cards: task.cards,
     agentPlan: task.agentPlan,
+    planHandoff: task.planHandoff,
     lastVisit: task.lastVisit,
     finishItems: task.finishItems,
     reviewDismissed: task.reviewDismissed,
@@ -1342,12 +1344,16 @@ export async function loadState(): Promise<void> {
           snoozedUntilCi: pt.snoozedUntilCi === true ? true : undefined,
           prBabysit: restoredPrBabysit(pt.prBabysit),
           notes: pt.notes,
-          promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
+          ...restoredQueuedPrompt({
+            initialPrompt: pt.initialPrompt,
+            promptDraft: pt.promptDraft,
+            planHandoff: restorePlanHandoff(pt.planHandoff),
+            firstPaneSessionId: restoredAgentSessionIds(pt, agentIds)?.[agentIds[0]],
+          }),
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
           lastPrompt: pt.lastPrompt,
           promptHistory: restoredPromptHistory(pt.promptHistory),
           promptedAgentIds: restoredPromptedAgentIds(pt, agentIds),
-          initialPrompt: typeof pt.initialPrompt === 'string' ? pt.initialPrompt : undefined,
           gitIsolation: legacy.gitIsolation ?? (legacy.directMode ? 'direct' : 'worktree'),
           baseBranch: legacy.baseBranch || undefined,
           externalWorktree: pt.externalWorktree,
@@ -1412,6 +1418,7 @@ export async function loadState(): Promise<void> {
           evidence: restoredCheckSuite(pt.evidence),
           cards: restoreRatedTaskCards(pt.cards, pt.confidence),
           agentPlan: restoreTaskAgentPlan(pt.agentPlan),
+          planHandoff: restorePlanHandoff(pt.planHandoff),
           finishItems: restoreTaskFinishItems(pt.finishItems),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:
@@ -1496,12 +1503,17 @@ export async function loadState(): Promise<void> {
             typeof pt.claudeChatSessionId === 'string' ? pt.claudeChatSessionId : undefined,
           shellAgentIds: [],
           notes: pt.notes,
-          promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
+          // Collapsed tasks have no pane, so a queued plan is never kept.
+          ...restoredQueuedPrompt({
+            initialPrompt: pt.initialPrompt,
+            promptDraft: pt.promptDraft,
+            planHandoff: restorePlanHandoff(pt.planHandoff),
+            firstPaneSessionId: undefined,
+          }),
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
           lastPrompt: pt.lastPrompt,
           promptHistory: restoredPromptHistory(pt.promptHistory),
           promptedAgentIds: restoredPromptedAgentIds(pt, []),
-          initialPrompt: typeof pt.initialPrompt === 'string' ? pt.initialPrompt : undefined,
           gitIsolation:
             legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
           baseBranch: legacyCollapsed.baseBranch || undefined,
@@ -1576,6 +1588,7 @@ export async function loadState(): Promise<void> {
           evidence: restoredCheckSuite(pt.evidence),
           cards: restoreRatedTaskCards(pt.cards, pt.confidence),
           agentPlan: restoreTaskAgentPlan(pt.agentPlan),
+          planHandoff: restorePlanHandoff(pt.planHandoff),
           finishItems: restoreTaskFinishItems(pt.finishItems),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:

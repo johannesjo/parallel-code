@@ -198,6 +198,15 @@ describe('parseCodexTranscript', () => {
     expect(record?.lastPrompt).toBeUndefined();
   });
 
+  // One-shot `codex exec` runs, such as the app's Ask about code, are not
+  // conversations to resume; Codex's own picker hides them too.
+  it('skips non-interactive exec sessions', () => {
+    const exec = { ...meta, payload: { ...meta.payload, source: 'exec' } };
+    expect(parseCodexTranscript([exec])).toBeNull();
+    const cli = { ...meta, payload: { ...meta.payload, source: 'cli' } };
+    expect(parseCodexTranscript([cli])?.id).toBe(CODEX_ID);
+  });
+
   it('returns null without session_meta', () => {
     expect(parseCodexTranscript([{ type: 'event_msg', payload: {} }])).toBeNull();
   });
