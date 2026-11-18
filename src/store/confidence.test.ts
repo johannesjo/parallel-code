@@ -121,6 +121,18 @@ describe('card_publish to the Confidence card', () => {
     ]);
   });
 
+  it('accepts list slots as card_list describes them, optional fields left out', () => {
+    publishCardValues('t1', 'confidence', {
+      scores: [{ label: 'Correct', score: 70, why: 'x' }],
+      findings: [{ text: 'Unclear name' }],
+      changes: [{ text: 'Retries back off' }],
+    });
+    expect(taskConfidence(task())).toMatchObject({
+      findings: [{ kind: 'extra', text: 'Unclear name' }],
+      changes: [{ now: 'Retries back off' }],
+    });
+  });
+
   it('rejects a broken classic payload with the confidence_publish message', () => {
     expect(() => publishCardValues('t1', 'confidence', { scores: [] })).toThrow('scores must be');
   });

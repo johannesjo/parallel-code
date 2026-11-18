@@ -498,6 +498,22 @@ describe('Edit Confidence', () => {
     expect(saved?.source).toEqual({ kind: 'agent' });
   });
 
+  it('asks for room instead of dropping a slot when the layout is full', () => {
+    const full = Array.from({ length: 8 }, (_, i) => ({
+      id: `line-${i}`,
+      type: 'line' as const,
+      label: `Line ${i}`,
+    }));
+    setStore('cardDefinitions', [confidenceCard(true, full), structuredClone(RISKS)]);
+    button('Edit Confidence').click();
+    button('Add them back').click();
+    const labels = document.body.querySelectorAll('input[aria-label="Slot label"]');
+    expect(labels).toHaveLength(8);
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Remove a slot first',
+    );
+  });
+
   it('adds the score list and findings back from the note', () => {
     button('Edit Confidence').click();
     button('Remove Findings').click();

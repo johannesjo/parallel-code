@@ -24,11 +24,15 @@ function tidy(draft: CardDefinition): CardDefinition | undefined {
   return restored.find((card) => card.id === draft.id && card.builtIn === draft.builtIn);
 }
 
-/** The draft with the default score list and findings in front, in place of any slot using their ids. */
-function withMergeEvidence(slots: SlotDefinition[]): SlotDefinition[] {
+/**
+ * The draft with the default score list and findings in front, in place of any
+ * slot using their ids; undefined when that would push out one of the user's.
+ */
+function withMergeEvidence(slots: SlotDefinition[]): SlotDefinition[] | undefined {
   const evidence = defaultConfidenceSlots().filter((slot) => MERGE_SLOTS.has(slot.id));
   const rest = slots.filter((slot) => !MERGE_SLOTS.has(slot.id));
-  return [...evidence, ...rest].slice(0, SLOT_LIMITS.slots);
+  const next = [...evidence, ...rest];
+  return next.length > SLOT_LIMITS.slots ? undefined : next;
 }
 
 const MERGE_SLOTS = new Set(['scores', 'findings']);
@@ -206,7 +210,12 @@ export function CardEditor(props: CardEditorProps) {
             <CardSlotsEditor draft={draft} setDraft={setDraft} />
             <MergeNote
               draft={draft}
-              onRestore={() => setDraft('slots', withMergeEvidence(unwrap(draft).slots))}
+              onRestore={() => {
+                const slots = withMergeEvidence(unwrap(draft).slots);
+                if (!slots) return setError('Remove a slot first to make room for them.');
+                setError('');
+                setDraft('slots', slots);
+              }}
             />
           </div>
           <div class="card-editor-section">

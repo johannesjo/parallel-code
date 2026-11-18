@@ -94,25 +94,47 @@ export function publishTaskConfidence(taskId: string, input: unknown): void {
 
 const CLASSIC_KEYS = new Set(['scores', 'findings', 'source', 'asked', 'changes', 'keyLine']);
 
+/** Stores checked values once the whole payload passed; nothing is stored on an error. */
+type ConfidenceRun = (at: number) => void;
+
+function classicRun(taskId: string, card: CardDefinition, raw: object): ConfidenceRun {
+  const payload = parseConfidencePayload(raw);
+  // Any other key must name a slot of the card.
+  const rest = Object.entries(raw).filter(([key]) => !CLASSIC_KEYS.has(key));
+  const extra = rest.length ? parseCardValues(card, Object.fromEntries(rest)) : {};
+  return (at) => storeRating(taskId, payload, { at }, extra);
+}
+
+function slotRun(taskId: string, card: CardDefinition, raw: object): ConfidenceRun {
+  const values = parseCardValues(card, raw);
+  return (at) => storeCardRun(taskId, card, { values, at });
+}
+
 /**
- * `card_publish` to the Confidence card. A classic confidence_publish payload
- * is checked as before, so skills that send it keep working; any other key
- * must name a slot of the card. Slot-keyed values without a classic rating
- * are checked against the layout like any agent card's.
+ * A classic confidence_publish payload first, so skills that send it keep
+ * working; else values keyed by the card's slots, as card_list describes them.
+ * A payload without scores gets the classic error, which says they are missing.
  */
+function parseConfidenceRun(taskId: string, card: CardDefinition, raw: object): ConfidenceRun {
+  try {
+    return classicRun(taskId, card, raw);
+  } catch (classicError) {
+    if (!('scores' in raw)) throw classicError;
+    try {
+      return slotRun(taskId, card, raw);
+    } catch (slotError) {
+      // The error of the format the agent meant to send.
+      throw isClassicRating(raw as Record<string, unknown>) ? classicError : slotError;
+    }
+  }
+}
+
+/** `card_publish` to the Confidence card. */
 export function publishConfidenceCard(taskId: string, input: unknown): void {
   const task = publishTarget(taskId);
-  const card = confidenceCardDefinition();
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const save = parseConfidenceRun(taskId, confidenceCardDefinition(), raw);
   const at = Date.now();
-  // Without scores it is checked as a classic rating, which says that scores are missing.
-  if ('scores' in raw && !isClassicRating(raw as Record<string, unknown>)) {
-    storeCardRun(taskId, card, { values: parseCardValues(card, raw), at });
-  } else {
-    const payload = parseConfidencePayload(raw);
-    const rest = Object.entries(raw).filter(([key]) => !CLASSIC_KEYS.has(key));
-    const extra = rest.length ? parseCardValues(card, Object.fromEntries(rest)) : {};
-    storeRating(taskId, payload, { at }, extra);
-  }
+  save(at);
   fingerprintRating(task, at);
 }
