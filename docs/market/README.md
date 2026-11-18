@@ -37,7 +37,7 @@ here. There are five groups, one scorecard section each:
 - **Parallel-agent apps**, scored on every dimension: apps built for exactly
   PC's job, and the closest alternatives for someone who already wants it.
   Conductor, Emdash, Paradev (formerly Superset), Orchestrator (formerly
-  Composio's agent-orchestrator).
+  Composio's agent-orchestrator), Orca, T3 Code, Paseo.
 - **Vendor apps**, scored on every dimension: what most people use instead of PC,
   because it comes with the agent or the editor they already pay for. The Codex
   app (the Codex mode of the ChatGPT desktop app), Claude Code desktop, Cursor, and
