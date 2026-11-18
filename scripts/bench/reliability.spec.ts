@@ -16,6 +16,7 @@
  * the app and runs all three (about 2 minutes); add `-- -g load` for one.
  * Results land in `.tmp/bench/reliability-<scenario>.json`. Headless runs use
  * software rendering, so the GPU process's CPU is not what a desktop sees.
+ * Prefix `SHOWCASE_WINDOWED=1` for a real window with the GPU, outside a sandbox.
  * Landing integrity is covered by electron/ipc/git-merge-kanban.integration.test.ts.
  */
 import * as fs from 'node:fs';

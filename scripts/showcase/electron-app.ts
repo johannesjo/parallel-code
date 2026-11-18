@@ -46,9 +46,15 @@ export type ShowcaseApp = {
 // point the app back at real sessions and usage data despite the fake HOME.
 const PROXY_ENV = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'];
 // Proxies included: behind one, a real agent cannot reach its API without them.
+// SHOWCASE_WINDOWED=1 opens a real window with the GPU, to measure rendering
+// as a desktop does; it needs the display and a GPU, so not in a sandbox or CI.
+const WINDOWED = process.env.SHOWCASE_WINDOWED === '1';
+const DISPLAY_ENV = ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XAUTHORITY'];
+
 const PASSED_ENV = [
   ...['PATH', 'LANG', 'LC_ALL', 'TERM', 'SHELL', 'TMPDIR'],
   ...PROXY_ENV.flatMap((name) => [name, name.toLowerCase()]),
+  ...(WINDOWED ? DISPLAY_ENV : []),
 ];
 
 // The agent CLIs the app offers (electron/ipc/agents.ts). A fake HOME hides
@@ -292,8 +298,7 @@ const launchElectron = (env: Record<string, string>): Promise<ElectronApplicatio
       '--no-sandbox',
       // Offscreen rendering: no window on the desktop, and no GPU needed. A
       // windowed run crashes where the GPU device is unavailable (sandboxes, CI).
-      '--ozone-platform=headless',
-      '--disable-gpu',
+      ...(WINDOWED ? [] : ['--ozone-platform=headless', '--disable-gpu']),
       ...recorderLaunchArgs(WINDOW.deviceScaleFactor),
       path.join(REPO_ROOT, 'dist-electron', 'main.js'),
     ],
