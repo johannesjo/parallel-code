@@ -480,6 +480,70 @@ describe('background verify persistence', () => {
     expect(JSON.parse(lastCall[1].json).tasks['task-1'].agentPlan).toEqual(plan);
   });
 
+  it('round-trips the planning session a plan was handed away from', async () => {
+    const def = agentDef();
+    const handoff = { sessionId: '11111111-2222-4333-8444-555555555555', command: 'claude' };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), planHandoff: handoff },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            planHandoff: { sessionId: 'not-a-session', command: 'claude' },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].planHandoff).toEqual(handoff);
+    expect(store.tasks['task-2'].planHandoff).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].planHandoff).toEqual(handoff);
+  });
+
+  // A pane without a known fresh session resumes the newest one on relaunch,
+  // which may be the planning session; the plan must not be typed into it.
+  it('keeps a queued plan only for a pane that will reopen its fresh session', async () => {
+    const def = agentDef();
+    const handoff = { sessionId: '11111111-2222-4333-8444-555555555555', command: 'codex' };
+    const fresh = '99999999-8888-4777-8666-555555555555';
+    const task = (id: string, sessionIds?: Record<string, string>) => ({
+      ...persistedTask(def),
+      id,
+      branchName: `task/${id}`,
+      worktreePath: `/repo/.worktrees/${id}`,
+      agentIds: [`${id}-agent`],
+      agentSessionIds: sessionIds,
+      planHandoff: handoff,
+      initialPrompt: 'Implement this approved plan.',
+      // The prompt box shows the queued prompt, and saves it as its draft.
+      promptDraft: 'Implement this approved plan.',
+    });
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': task('task-1', { 'task-1-agent': fresh }),
+          'task-2': task('task-2'),
+          'task-3': task('task-3', { 'task-3-agent': handoff.sessionId }),
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].initialPrompt).toBe('Implement this approved plan.');
+    expect(store.tasks['task-1'].promptDraft).toBe('Implement this approved plan.');
+    expect(store.tasks['task-2'].initialPrompt).toBeUndefined();
+    expect(store.tasks['task-2'].promptDraft).toBeUndefined();
+    expect(store.tasks['task-3'].initialPrompt).toBeUndefined();
+  });
+
   it("round-trips the agent's finish items and drops a malformed list", async () => {
     const def = agentDef();
     const finishItems = { items: ['Remove the DEBUG_SYNC flag'], publishedAt: 5, sentAt: 6 };

@@ -216,6 +216,9 @@ export function parseCodexTranscript(
     }
   }
   if (!meta) return null;
+  // One-shot `codex exec` runs (such as the app's Ask about code) are not
+  // conversations to resume; Codex's own picker hides them as well.
+  if (meta.source === 'exec') return null;
 
   const id = [meta.id, meta.session_id].find(isSessionId);
   const cwd = asString(meta.cwd);

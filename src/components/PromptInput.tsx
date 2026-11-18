@@ -147,7 +147,13 @@ export function PromptInput(props: PromptInputProps) {
   // A suspended agent has no process to send to. Unlike a detected question,
   // this cannot stick: Resume in the agent's pane always ends it.
   const suspended = () => isAgentSuspended(store.agents[props.agentId]);
-  const [autoSentInitialPrompt, setAutoSentInitialPrompt] = createSignal<string | null>(null);
+  // Keyed by launch: a plan handed to a fresh session can repeat an earlier
+  // initial prompt word for word, and that launch has not received it yet.
+  const [autoSentInitialPrompt, setAutoSentInitialPrompt] = createSignal<{
+    text: string;
+    generation: number | undefined;
+  } | null>(null);
+  const launchGeneration = () => untrack(() => store.agents[props.agentId]?.generation);
   // Incremented when promptAppearedInOutput fails so the auto-send createEffect
   // restarts a fresh attempt rather than treating the prompt as delivered.
   const [autoSendRetry, setAutoSendRetry] = createSignal(0);
@@ -241,7 +247,8 @@ export function PromptInput(props: PromptInputProps) {
       // Keep the queued instruction editable, but never type it into a picker.
       return;
     }
-    if (autoSentInitialPrompt() === ip) return;
+    const sent = autoSentInitialPrompt();
+    if (sent?.text === ip && sent.generation === launchGeneration()) return;
 
     const agentId = props.agentId;
     const coordinatedBy = props.coordinatedBy;
@@ -867,6 +874,7 @@ export function PromptInput(props: PromptInputProps) {
       });
       // Snapshot tail before send for verification comparison.
       const preSendTail = getAgentOutputTail(props.agentId);
+      const sendGeneration = launchGeneration();
       await sendPrompt(props.taskId, props.agentId, val);
 
       if (mode === 'auto') {
@@ -896,12 +904,18 @@ export function PromptInput(props: PromptInputProps) {
           // re-runs the effect exactly once.  On giveup we clear it for good so
           // a stray effect re-run can't fire again.  Either way the text stays
           // in the field so the user can send manually.
-          if (outcome === 'retry') {
+          // A relaunch that resumed a conversation (such as going back to the
+          // planning session) is not the one the prompt was queued for; a fresh
+          // fallback launch still is.
+          const resumedElsewhere =
+            launchGeneration() !== sendGeneration &&
+            untrack(() => store.agents[props.agentId]?.resumed) === true;
+          if (outcome === 'retry' && !resumedElsewhere) {
             batch(() => {
               if (initialPromptSnapshot) setInitialPrompt(props.taskId, initialPromptSnapshot);
               setAutoSendRetry((n) => n + 1);
             });
-          } else if (outcome === 'giveup') {
+          } else {
             clearInitialPrompt(props.taskId);
           }
           return;
@@ -915,7 +929,7 @@ export function PromptInput(props: PromptInputProps) {
       // draft must still be cleared or it reappears when the box reopens.
       setTaskPromptDraftActive(props.taskId, false);
       if (initialPromptSnapshot && val === initialPromptSnapshot) {
-        setAutoSentInitialPrompt(initialPromptSnapshot);
+        setAutoSentInitialPrompt({ text: initialPromptSnapshot, generation: sendGeneration });
       }
       if (shouldAckInitialPrompt) {
         invoke(IPC.MCP_CoordinatedTaskPromptDelivered, { taskId: props.taskId }).catch(() => {});
