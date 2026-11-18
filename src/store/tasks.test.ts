@@ -1459,6 +1459,16 @@ describe('createTask worktree setup', () => {
     forgetSetupShells(['shell-fail', 'shell-ok']);
     expect(setupShellState('shell-ok')).toBeUndefined();
   });
+
+  // node-pty on macOS and Linux reports every exit with a signal; "0" means none.
+  it('reads the PTY exit report of a clean setup run as passed', () => {
+    vi.mocked(showNotification).mockClear();
+    worktreeSetup.setPendingSetupScript('shell-pty', 'true');
+    noteSetupShellExit('shell-pty', 'Fix login', 0, '0');
+    expect(setupShellState('shell-pty')).toBe('passed');
+    expect(showNotification).not.toHaveBeenCalled();
+    forgetSetupShells(['shell-pty']);
+  });
 });
 
 // A task's own first pane is created by a different path from the panes added

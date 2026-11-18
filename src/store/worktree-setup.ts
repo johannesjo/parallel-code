@@ -36,14 +36,20 @@ export function setupShellState(shellId: string): SetupState | undefined {
   return setupShells[shellId];
 }
 
+/** The signal that ended a PTY, or null: node-pty on macOS and Linux reports a normal exit as "0". */
+export function ptyExitSignal(signal: string | null): string | null {
+  return signal === '0' ? null : signal;
+}
+
 /** Records how the setup terminal ended and reports a failure loudly. */
 export function noteSetupShellExit(
   shellId: string,
   taskName: string,
   exitCode: number | null,
-  signal: string | null = null,
+  rawSignal: string | null = null,
 ): void {
   if (setupShells[shellId] !== 'running') return;
+  const signal = ptyExitSignal(rawSignal);
   // node-pty reports exit code 0 with a signal for a killed process.
   const passed = exitCode === 0 && !signal;
   setSetupShells(shellId, passed ? 'passed' : 'failed');
@@ -58,8 +64,8 @@ export function noteSetupShellExit(
 /** "exit 2", "SIGINT" or "did not start", for badges and notices. */
 export function setupExitLabel(exitCode: number | null, signal: string | null): string {
   if (signal === 'spawn_failed') return 'did not start';
-  // node-pty on macOS and Linux reports a normal exit with signal "0".
-  if (signal && signal !== '0') return signal;
+  const killedBy = ptyExitSignal(signal);
+  if (killedBy) return killedBy;
   return `exit ${exitCode ?? '?'}`;
 }
 
