@@ -195,6 +195,7 @@ import {
   forgetTask,
   runBookmarkInTask,
   spawnProgramForTask,
+  spawnShellForTask,
   startRunInTask,
   stopRunInTask,
   closeShell,
@@ -3042,6 +3043,44 @@ describe('run commands', () => {
     noteRunShellExit(shellId, 'Fix login', 1);
     expect(runState('task-r', 'run-web')).toBe('stopped');
     expect(showNotification).not.toHaveBeenCalled();
+  });
+
+  it('focuses the new terminal on every run, not a neighbour of the closed one', async () => {
+    const panels: Record<string, string> = {};
+    Object.assign(core.harness?.store ?? {}, { focusedPanel: panels });
+    const other = spawnShellForTask('task-r');
+    await startRunInTask('task-r', web);
+    expect(panels['task-r']).toBe('shell:1');
+    await startRunInTask('task-r', web);
+    expect(mockTasks['task-r'].shellAgentIds[0]).toBe(other);
+    expect(panels['task-r']).toBe('shell:1');
+  });
+
+  it('marks a command that ends on its own as finished, quietly', async () => {
+    await startRunInTask('task-r', web);
+    noteRunShellExit(mockTasks['task-r'].shellAgentIds[0], 'Fix login', 0);
+    expect(runState('task-r', 'run-web')).toBe('finished');
+    expect(showNotification).not.toHaveBeenCalled();
+  });
+
+  // node-pty on macOS and Linux reports every exit with a signal; "0" means none.
+  it.each([
+    { how: 'a clean exit', exitCode: 0, signal: '0', state: 'finished' },
+    { how: 'Ctrl+C typed in the terminal', exitCode: 0, signal: '2', state: 'stopped' },
+    { how: 'an outside kill', exitCode: 0, signal: '15', state: 'stopped' },
+    { how: 'a crash', exitCode: 1, signal: '0', state: 'failed' },
+  ])('reads $how as $state from the PTY exit report', async ({ exitCode, signal, state }) => {
+    await startRunInTask('task-r', web);
+    noteRunShellExit(mockTasks['task-r'].shellAgentIds[0], 'Fix login', exitCode, signal);
+    expect(runState('task-r', 'run-web')).toBe(state);
+    if (state === 'failed') {
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.stringContaining('“web” stopped unexpectedly in “Fix login” (exit 1)'),
+        expect.anything(),
+      );
+    } else {
+      expect(showNotification).not.toHaveBeenCalled();
+    }
   });
 
   it('treats Ctrl+C typed in the terminal as a stop and a crash as a failure', async () => {

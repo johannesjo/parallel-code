@@ -58,7 +58,8 @@ export function noteSetupShellExit(
 /** "exit 2", "SIGINT" or "did not start", for badges and notices. */
 export function setupExitLabel(exitCode: number | null, signal: string | null): string {
   if (signal === 'spawn_failed') return 'did not start';
-  if (signal) return signal;
+  // node-pty on macOS and Linux reports a normal exit with signal "0".
+  if (signal && signal !== '0') return signal;
   return `exit ${exitCode ?? '?'}`;
 }
 

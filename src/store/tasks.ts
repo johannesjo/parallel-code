@@ -1142,6 +1142,9 @@ export async function startRunInTask(taskId: string, run: RunCommand): Promise<v
     const shellId = crypto.randomUUID();
     setPendingRunScript(shellId, { taskId, runId: run.id, name: run.name, command: run.command });
     addShellToTask(taskId, shellId);
+    // closeShell focused a neighbour; the user wants to watch the new run.
+    const index = store.tasks[taskId]?.shellAgentIds.indexOf(shellId) ?? -1;
+    if (index >= 0) setTaskFocusedPanel(taskId, shellPanelId(index));
   } finally {
     restartingRuns.delete(key);
   }

@@ -9,7 +9,7 @@ import { setupExitLabel } from './worktree-setup';
  * a restored session shows every run as stopped and never restarts one.
  */
 
-export type RunState = 'running' | 'stopped' | 'failed';
+export type RunState = 'running' | 'finished' | 'stopped' | 'failed';
 
 interface RunShell {
   taskId: string;
@@ -62,23 +62,34 @@ export function markRunStopRequested(shellId: string): void {
 }
 
 /** Ctrl+C in a shell ends with 130, a plain kill with 143: both mean stopped, not failed. */
-const STOP_EXIT_CODES = new Set([0, 130, 143]);
+const STOP_EXIT_CODES = new Set([130, 143]);
+
+function exitState(
+  run: RunShell,
+  exitCode: number | null,
+  signal: string | null,
+): Exclude<RunState, 'running'> {
+  if (run.stopRequested) return 'stopped';
+  // A killed process exits 0 too, so the signal decides before the code does.
+  if (signal !== null && signal !== 'spawn_failed') return 'stopped';
+  if (exitCode === 0) return 'finished';
+  return STOP_EXIT_CODES.has(exitCode ?? -1) ? 'stopped' : 'failed';
+}
 
 /** Records how a run's terminal ended; a crash is announced, a stop is not. */
 export function noteRunShellExit(
   shellId: string,
   taskName: string,
   exitCode: number | null,
-  signal: string | null = null,
+  rawSignal: string | null = null,
 ): void {
   const run = runShells[shellId];
   if (run?.state !== 'running') return;
-  const stopped =
-    run.stopRequested ||
-    (signal !== null && signal !== 'spawn_failed') ||
-    STOP_EXIT_CODES.has(exitCode ?? -1);
-  setRunShells(shellId, 'state', stopped ? 'stopped' : 'failed');
-  if (!stopped) {
+  // node-pty on macOS and Linux reports a normal exit with signal 0.
+  const signal = rawSignal === '0' ? null : rawSignal;
+  const state = exitState(run, exitCode, signal);
+  setRunShells(shellId, 'state', state);
+  if (state === 'failed') {
     showNotification(
       `“${run.name}” stopped unexpectedly in “${taskName}” (${setupExitLabel(exitCode, signal)}). Its terminal has the output.`,
       { durationMs: NOTIFICATION_ERROR_MS },
