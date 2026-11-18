@@ -2,6 +2,7 @@ import { Show, createSignal } from 'solid-js';
 import {
   implementPlanInFreshSession,
   planningSessionToReturnTo,
+  returnToPlanningBlocker,
   returnToPlanningSession,
   taskPlanHandoffBlocker,
 } from '../store/plan-handoff';
@@ -21,6 +22,7 @@ export function PlanHandoffActions(props: { taskId: string; onHandedOff: () => v
   const [busy, setBusy] = createSignal(false);
   const blocker = () => taskPlanHandoffBlocker(props.taskId);
   const planningSession = () => planningSessionToReturnTo(props.taskId);
+  const backBlocker = () => returnToPlanningBlocker(props.taskId);
 
   async function implement() {
     setBusy(true);
@@ -44,8 +46,9 @@ export function PlanHandoffActions(props: { taskId: string; onHandedOff: () => v
       { title: 'Back to planning session', okLabel: 'Go back' },
     );
     if (!ok) return;
-    returnToPlanningSession(props.taskId);
-    props.onHandedOff();
+    const refused = returnToPlanningSession(props.taskId);
+    if (refused) showNotification(refused, { durationMs: NOTIFICATION_ERROR_MS });
+    else props.onHandedOff();
   }
 
   const buttonStyle = {
@@ -64,8 +67,14 @@ export function PlanHandoffActions(props: { taskId: string; onHandedOff: () => v
           type="button"
           class="plan-back-to-planning-btn"
           onClick={() => void goBack()}
-          style={{ ...buttonStyle, border: 'none', color: theme.fgMuted }}
-          title="Reopen the conversation this plan was made in"
+          disabled={!!backBlocker()}
+          style={{
+            ...buttonStyle,
+            border: 'none',
+            color: theme.fgMuted,
+            cursor: backBlocker() ? 'default' : 'pointer',
+          }}
+          title={backBlocker() ?? 'Reopen the conversation this plan was made in'}
         >
           Back to planning session
         </button>

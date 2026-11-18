@@ -5,7 +5,8 @@ const handoff = vi.hoisted(() => ({
   blocker: vi.fn<(taskId: string) => string | null>(),
   implement: vi.fn<(taskId: string) => Promise<string | null>>(),
   planningSession: vi.fn<(taskId: string) => string | undefined>(),
-  goBack: vi.fn<(taskId: string) => void>(),
+  goBack: vi.fn<(taskId: string) => string | null>(),
+  backBlocker: vi.fn<(taskId: string) => string | null>(),
   confirm: vi.fn<() => Promise<boolean>>(),
   notify: vi.fn(),
 }));
@@ -15,6 +16,7 @@ vi.mock('../store/plan-handoff', () => ({
   implementPlanInFreshSession: handoff.implement,
   planningSessionToReturnTo: handoff.planningSession,
   returnToPlanningSession: handoff.goBack,
+  returnToPlanningBlocker: handoff.backBlocker,
 }));
 vi.mock('../lib/dialog', () => ({ confirm: handoff.confirm }));
 vi.mock('../store/notification', () => ({
@@ -43,6 +45,8 @@ beforeEach(() => {
   handoff.implement.mockResolvedValue(null);
   handoff.planningSession.mockReturnValue(undefined);
   handoff.confirm.mockResolvedValue(true);
+  handoff.goBack.mockReturnValue(null);
+  handoff.backBlocker.mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -89,6 +93,28 @@ describe('PlanHandoffActions', () => {
     backButton()?.click();
     await flush();
     expect(handoff.goBack).toHaveBeenCalledWith('t1');
+  });
+
+  it('explains why going back is unavailable', () => {
+    handoff.planningSession.mockReturnValue('s1');
+    handoff.backBlocker.mockReturnValue('Send or clear the text typed into the agent first.');
+    renderActions();
+    expect(backButton()?.disabled).toBe(true);
+    expect(backButton()?.title).toBe('Send or clear the text typed into the agent first.');
+  });
+
+  // The user can type into the agent while the confirmation is open.
+  it('keeps the viewer open and says why when going back is refused', async () => {
+    handoff.planningSession.mockReturnValue('s1');
+    handoff.goBack.mockReturnValue('Send or clear the text typed into the agent first.');
+    const onHandedOff = renderActions();
+    backButton()?.click();
+    await flush();
+    expect(handoff.notify).toHaveBeenCalledWith(
+      'Send or clear the text typed into the agent first.',
+      { durationMs: 10_000 },
+    );
+    expect(onHandedOff).not.toHaveBeenCalled();
   });
 
   it('stays in the current session when the user cancels', async () => {

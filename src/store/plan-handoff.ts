@@ -5,7 +5,7 @@ import { restartAgent } from './agents';
 import { isAgentChat } from './agent-chat';
 import { listResumableSessions, resumeAgentSession } from './sessions';
 import { saveState } from './persistence';
-import { planHandoffBlocker, planHandoffPrompt } from '../lib/plan-handoff';
+import { UNSENT_TERMINAL_INPUT, planHandoffBlocker, planHandoffPrompt } from '../lib/plan-handoff';
 import { canResumeSessionId } from '../../electron/shared/session-resume';
 
 /** Why the task's plan can't be handed to a fresh session now, or null. The
@@ -111,12 +111,20 @@ export function planningSessionToReturnTo(taskId: string): string | undefined {
   return handoff.sessionId;
 }
 
+/** Why the first pane can't go back to the planning session now, or null. */
+export function returnToPlanningBlocker(taskId: string): string | null {
+  return store.tasks[taskId]?.terminalInputPending ? UNSENT_TERMINAL_INPUT : null;
+}
+
 /** Reopen the planning session in the first pane, stopping whatever runs there.
- *  The stopped session stays in the session history. */
-export function returnToPlanningSession(taskId: string): void {
+ *  The stopped session stays in the session history. Returns why nothing
+ *  happened, or null once the pane is restarting. */
+export function returnToPlanningSession(taskId: string): string | null {
   const sessionId = planningSessionToReturnTo(taskId);
   const agentId = store.tasks[taskId]?.agentIds[0];
-  if (!sessionId || !agentId) return;
+  if (!sessionId || !agentId) return 'There is no planning session to go back to.';
+  const blocked = returnToPlanningBlocker(taskId);
+  if (blocked) return blocked;
   batch(() => {
     setStore(
       produce((s) => {
@@ -129,4 +137,5 @@ export function returnToPlanningSession(taskId: string): void {
     );
     resumeAgentSession(taskId, agentId, sessionId);
   });
+  return null;
 }
