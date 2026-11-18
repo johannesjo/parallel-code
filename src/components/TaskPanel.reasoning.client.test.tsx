@@ -416,6 +416,33 @@ it('caps the cards pane lower when shell terminals share the column, so they kee
   }
 });
 
+it('puts the side panel beside the terminal from 860px wide, stacking it below that', () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get');
+  try {
+    toggleFocusMode(true);
+    for (const [px, split] of [
+      [900, true],
+      [800, false],
+    ] as const) {
+      width.mockReturnValue(px);
+      const container = document.createElement('div');
+      document.body.append(container);
+      dispose = render(
+        () => <TaskPanel task={{ ...agentTask(), gitIsolation: 'worktree' }} isActive />,
+        container,
+      );
+      // The cards pane exists only in the split view's side column.
+      expect(container.querySelector('.test-cards-pane') !== null).toBe(split);
+      dispose();
+      dispose = undefined;
+      container.remove();
+    }
+  } finally {
+    toggleFocusMode(false);
+    width.mockRestore();
+  }
+});
+
 it('shows the cards as a pane above the changed files in the split view, not in the header', () => {
   const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   try {
