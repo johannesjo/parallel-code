@@ -6,25 +6,16 @@
 import { BRIEF_MODELS, type BriefModelId } from '../../electron/shared/task-name-model';
 import { SLOT_LIMITS, parseSlotValue, type SlotDefinition, type SlotValue } from './card-slots';
 import { appFactPending } from './app-facts';
-import {
-  CONFIDENCE_PIN,
-  fillsOnItsOwn,
-  type CardDefinition,
-  type CardSource,
-  type CardValues,
-} from './cards';
-import {
-  LOW_CONFIDENCE_SCORE,
-  inConfidenceOrder,
-  isConfidenceOutdated,
-  type TaskConfidence,
-} from './task-confidence';
+import { fillsOnItsOwn, type CardDefinition, type CardSource, type CardValues } from './cards';
+import { inConfidenceOrder } from './task-confidence';
 
 /** Whether a value is past the threshold its slot sets: the only reason for colour. */
 export function slotWarns(slot: SlotDefinition, value: SlotValue): boolean {
   switch (value.type) {
     case 'score':
       return slot.warnBelow !== undefined && value.score < slot.warnBelow;
+    case 'scores':
+      return value.scores.some((entry) => scoreWarns(slot, entry.score));
     case 'stat':
       return slot.limit !== undefined && value.value > slot.limit;
     case 'items':
@@ -36,17 +27,28 @@ export function slotWarns(slot: SlotDefinition, value: SlotValue): boolean {
   }
 }
 
+/** Whether one score of a score list is below its slot's bar. */
+export function scoreWarns(slot: SlotDefinition, score: number): boolean {
+  return slot.warnBelow !== undefined && score < slot.warnBelow;
+}
+
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 /** Slot types whose label, on a card's only slot, repeats the card's name. */
 const UNLABELLED_ALONE: ReadonlySet<SlotDefinition['type']> = new Set([
+  'scores',
   'items',
   'checklist',
   'status',
   'text',
 ]);
+
+/** The slots the card itself draws; hidden ones are only stored, pinned and read elsewhere. */
+export function shownSlots(card: CardDefinition): SlotDefinition[] {
+  return card.slots.filter((slot) => !slot.hidden);
+}
 
 /**
  * Whether a slot's label shows above it in the card. A card's only list or text
@@ -54,7 +56,7 @@ const UNLABELLED_ALONE: ReadonlySet<SlotDefinition['type']> = new Set([
  * number keeps its label, which says what the short value is.
  */
 export function showsSlotLabel(card: CardDefinition, slot: SlotDefinition): boolean {
-  return card.slots.length > 1 || !UNLABELLED_ALONE.has(slot.type);
+  return shownSlots(card).length > 1 || !UNLABELLED_ALONE.has(slot.type);
 }
 
 /** A list slot whose source answered "nothing found". */
@@ -73,6 +75,10 @@ export function slotSummary(slot: SlotDefinition, value: SlotValue): string {
       return value.text.split('\n').find((line) => line.trim()) ?? '';
     case 'score':
       return `${slot.label} ${value.score}`;
+    case 'scores':
+      return inConfidenceOrder(value.scores)
+        .map((entry) => `${entry.label} ${entry.score}`)
+        .join(' · ');
     case 'stat':
       return `${formatNumber(value.value)}${value.unit ? ` ${value.unit}` : ''}`;
     case 'items': {
@@ -123,7 +129,7 @@ export function cardNeedsAttention(
   outdated: boolean,
 ): boolean {
   if (outdated) return false;
-  return card.slots.some((slot) => {
+  return shownSlots(card).some((slot) => {
     const value = valueFor(slot, values);
     return !!value && slotWarns(slot, value);
   });
@@ -131,7 +137,7 @@ export function cardNeedsAttention(
 
 /** One line for a collapsed card: what needs attention first, else its first values. */
 export function cardSummary(card: CardDefinition, values: CardValues | undefined): string {
-  const filled = card.slots.flatMap((slot) => {
+  const filled = shownSlots(card).flatMap((slot) => {
     const value = valueFor(slot, values);
     return value ? [{ slot, value }] : [];
   });
@@ -197,10 +203,9 @@ export function triggerLabel(source: CardSource): string {
   }
 }
 
-/** What a task holds that its cards read: user card values, its rating and the newest code. */
+/** What a task holds that its cards read: card values and the newest code. */
 export interface CardTaskState {
   cards?: Record<string, CardValues>;
-  confidence?: TaskConfidence;
   codeFingerprint?: { fingerprint: string; at: number };
 }
 
@@ -217,29 +222,22 @@ export interface CardReading {
   pending: string;
 }
 
-function readConfidence(rating: TaskConfidence | undefined, task: CardTaskState): CardReading {
-  const pending = 'waiting for a rating';
-  if (!rating) return { outdated: false, urgent: false, summary: '', source: 'agent', pending };
-  const outdated = isConfidenceOutdated(rating, task.codeFingerprint);
-  return {
-    at: rating.publishedAt,
-    outdated,
-    urgent: !outdated && rating.scores.some((entry) => entry.score < LOW_CONFIDENCE_SCORE),
-    summary: inConfidenceOrder(rating.scores)
-      .map((entry) => `${entry.label} ${entry.score}`)
-      .join(' · '),
-    source: rating.source ?? (rating.origin === 'review' ? 'review' : 'agent'),
-    pending,
-  };
+/** Who filled the values: the publisher's own name, the app's review, else the card's source. */
+function filledBy(
+  card: CardDefinition,
+  values: CardValues | undefined,
+  defaultModel: BriefModelId,
+) {
+  if (values?.source) return values.source;
+  return values?.origin === 'review' ? 'review' : sourceLabel(card.source, defaultModel);
 }
 
-/** Reads a card on a task; the built-in Confidence card reads the task's rating. */
+/** Reads a card on a task. */
 export function readCard(
   card: CardDefinition,
   task: CardTaskState,
   defaultModel: BriefModelId,
 ): CardReading {
-  if (card.builtIn === 'confidence') return readConfidence(task.confidence, task);
   const values = task.cards?.[card.id];
   const outdated = areCardValuesOutdated(values, task.codeFingerprint);
   return {
@@ -247,8 +245,8 @@ export function readCard(
     outdated,
     urgent: cardNeedsAttention(card, values, outdated),
     summary: cardSummary(card, values),
-    source: sourceLabel(card.source, defaultModel),
-    pending: fillHint(card.source),
+    source: filledBy(card, values, defaultModel),
+    pending: card.builtIn === 'confidence' ? 'waiting for a rating' : fillHint(card.source),
   };
 }
 
@@ -265,7 +263,7 @@ export function shownCards(
   inRun: (card: CardDefinition) => boolean = () => false,
 ): CardDefinition[] {
   return cards.filter((card) => {
-    if (card.builtIn === 'confidence') return !!task.confidence;
+    if (card.builtIn === 'confidence') return !!task.cards?.[card.id];
     return !card.hideEmpty || !fillsOnItsOwn(card.source) || !!task.cards?.[card.id] || inRun(card);
   });
 }
@@ -291,8 +289,7 @@ export interface PinGroup {
 
 /** The slots a card pins that still exist, from settings alone. */
 export function pinnedSlotIds(card: CardDefinition): string[] {
-  const ids = card.builtIn === 'confidence' ? [CONFIDENCE_PIN] : card.slots.map((slot) => slot.id);
-  return ids.filter((id) => card.pinned?.includes(id));
+  return card.slots.map((slot) => slot.id).filter((id) => card.pinned?.includes(id));
 }
 
 /** Whether a card shows in the pin row: its mini view or a pinned slot. Settings only, like the pins. */
@@ -304,9 +301,9 @@ export function showsInPinRow(card: CardDefinition): boolean {
  * Whether a card shows in the pin row on a task: by settings, except that
  * Confidence waits for a rating, like its card.
  */
-export function showsInPinRowOn(task: Pick<CardTaskState, 'confidence'>) {
+export function showsInPinRowOn(task: Pick<CardTaskState, 'cards'>) {
   return (card: CardDefinition): boolean =>
-    showsInPinRow(card) && (card.builtIn !== 'confidence' || !!task.confidence);
+    showsInPinRow(card) && (card.builtIn !== 'confidence' || !!task.cards?.[card.id]);
 }
 
 /** The mini view: the card's name and the summary its card line would show. */
@@ -323,17 +320,6 @@ function miniPin(card: CardDefinition, task: CardTaskState): Pin {
   };
 }
 
-function confidencePins(card: CardDefinition, rating: TaskConfidence, task: CardTaskState): Pin[] {
-  const faded = isConfidenceOutdated(rating, task.codeFingerprint);
-  return inConfidenceOrder(rating.scores).map((entry, index) => ({
-    key: `${card.id}:${index}`,
-    label: entry.label,
-    text: String(entry.score),
-    warn: !faded && entry.score < LOW_CONFIDENCE_SCORE,
-    faded,
-  }));
-}
-
 function pinText(slot: SlotDefinition, value: SlotValue): string {
   if (value.type === 'score') return String(value.score);
   if (value.type === 'stat') return formatNumber(value.value);
@@ -346,15 +332,26 @@ function slotPins(card: CardDefinition, task: CardTaskState): Pin[] {
   const pinned = pinnedSlotIds(card);
   return card.slots
     .filter((slot) => pinned.includes(slot.id))
-    .map((slot) => {
+    .flatMap((slot): Pin[] => {
       const value = valueFor(slot, values);
-      return {
-        key: `${card.id}:${slot.id}`,
-        label: slot.type === 'line' || slot.type === 'text' ? '' : slot.label,
-        text: value ? pinText(slot, value) : '–',
-        warn: !faded && !!value && slotWarns(slot, value),
-        faded,
-      };
+      // A score list pins each of its scores, in the order its card shows them.
+      if (value?.type === 'scores')
+        return inConfidenceOrder(value.scores).map((entry, index) => ({
+          key: `${card.id}:${slot.id}:${index}`,
+          label: entry.label,
+          text: String(entry.score),
+          warn: !faded && scoreWarns(slot, entry.score),
+          faded,
+        }));
+      return [
+        {
+          key: `${card.id}:${slot.id}`,
+          label: slot.type === 'line' || slot.type === 'text' ? '' : slot.label,
+          text: value ? pinText(slot, value) : '–',
+          warn: !faded && !!value && slotWarns(slot, value),
+          faded,
+        },
+      ];
     });
 }
 
@@ -365,9 +362,6 @@ function slotPins(card: CardDefinition, task: CardTaskState): Pin[] {
 export function pinGroups(cards: readonly CardDefinition[], task: CardTaskState): PinGroup[] {
   return cards.filter(showsInPinRowOn(task)).map((card) => ({
     card,
-    pins:
-      card.builtIn === 'confidence' && task.confidence
-        ? confidencePins(card, task.confidence, task)
-        : [...(card.mini ? [miniPin(card, task)] : []), ...slotPins(card, task)],
+    pins: [...(card.mini && !card.builtIn ? [miniPin(card, task)] : []), ...slotPins(card, task)],
   }));
 }

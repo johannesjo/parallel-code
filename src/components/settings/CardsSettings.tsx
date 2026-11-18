@@ -140,16 +140,16 @@ function CardRow(props: {
         >
           {pins() ? `${pins()} pinned` : 'no pins'}
         </button>
-        {/* Confidence lives in the task's own storage, so it is switched off, never edited or removed. */}
+        <button
+          type="button"
+          class="cards-edit"
+          aria-label={`Edit ${props.card.name}`}
+          onClick={() => props.onEdit()}
+        >
+          Edit
+        </button>
+        {/* Finish and the merge check read Confidence, so it is switched off, never removed. */}
         <Show when={!props.card.builtIn}>
-          <button
-            type="button"
-            class="cards-edit"
-            aria-label={`Edit ${props.card.name}`}
-            onClick={() => props.onEdit()}
-          >
-            Edit
-          </button>
           <button
             type="button"
             class="cards-edit"
@@ -255,7 +255,9 @@ export function CardsSettings() {
             card={open().card}
             isNew={open().isNew}
             onClose={() => setEditing(undefined)}
-            onRemove={open().isNew ? undefined : () => setRemoving(open().card)}
+            onRemove={
+              open().isNew || open().card.builtIn ? undefined : () => setRemoving(open().card)
+            }
           />
         )}
       </Show>

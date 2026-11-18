@@ -288,7 +288,7 @@ export const CARD_TOOLS: ToolDef[] = [
     description:
       'Publish values for one card on your task, from card_list. "values" is keyed by slot id; slots you leave out are empty. The new values replace the card\'s previous ones and show as out of date once the code changes. ' +
       "A value of the wrong shape, or far over its slot's limits, rejects the whole payload with an error naming the slot, and the card keeps its previous values; text slightly over a limit is shortened. " +
-      'For card "confidence", send the confidence_publish payload as "values".',
+      'Card "confidence" also takes the confidence_publish payload as "values", checked as that tool checks it; parts whose slot the user removed are dropped.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -316,8 +316,8 @@ export const CARD_TOOLS: ToolDef[] = [
           ' | ',
         )}, prompt, inputs: any of "task-name", "prompts", "agent-message", "diff", checkId?: a check to run first, trigger: "after-turn" | "manual" | "finish"}, ` +
       '{kind: "agent"} (the task\'s agent fills it with card_publish), {kind: "check", checkId, mode: "exit-code" | "json", trigger: "manual" | "finish" | "after-turn"}, or {kind: "app", fact: "plan" | "diff-size" | "branch-health" | "activity" | "commits" | "remote-branch" | "ci"}. ' +
-      '"slots" is 1 to 8 of {id, type: "line" | "text" | "score" | "stat" | "items" | "checklist" | "status", label, hint?: an instruction for the model, warnBelow?: for a score, limit?: for a stat, addUp?: for items}; app and exit-code check cards get their one fixed layout whatever you send. ' +
-      'For the built-in card "confidence" only enabled, projects and pinned change. ' +
+      '"slots" is 1 to 8 of {id, type: "line" | "text" | "score" | "scores" | "stat" | "items" | "checklist" | "status", label, hint?: an instruction for the model, warnBelow?: for a score or score list, limit?: for a stat, addUp?: for items, hidden?: true to keep it out of the card body while it still fills and can be pinned}; app and exit-code check cards get their one fixed layout whatever you send. ' +
+      'The built-in card "confidence" keeps its source and cannot be removed; its name, slots, enabled, projects and pinned change. The Finish review and merge check read its slots "scores" (score list) and "findings" (items); without both a task never shows as ready to merge, and the score list\'s warnBelow can raise the merge bar of 60 but not lower it. ' +
       'The change applies at once, and the reply holds the card as saved, with a note when that differs from what you sent. ' +
       'Three kinds of change wait for one click from the user in the app instead, and the reply says so: one that switches on an AI card (model or agent source) where it was off or makes an agent card that is on a model card, one that gives a model card that is on another model or more inputs (a checkId counts), and one that drops slots holding values on tasks. A waiting change is applied whole, with its position, and only if the card is still as it was; sending the card again replaces it, and card_config_read lists what still waits and reports how the user answered. A restart of the app drops waiting changes. To save without waiting, send an AI card switched off and tell the user to switch it on. The trigger of a check card applies at once: "finish" and "after-turn" make the app run that project check by itself.',
     inputSchema: {

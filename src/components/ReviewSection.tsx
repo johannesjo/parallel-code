@@ -35,6 +35,7 @@ import {
   takeUnseenReview,
   taskReviewModel,
 } from '../store/task-review';
+import { taskConfidence } from '../store/confidence';
 import type { Task } from '../store/types';
 import { CheckIcon, CloseIcon, PlusIcon, ReviewIcon } from './icons';
 import { createHeightTransition } from './understanding/create-height-transition';
@@ -175,7 +176,7 @@ export function ReviewSection(props: {
   const bodyId = createUniqueId();
   const summary = createMemo(() =>
     buildReviewSummary({
-      confidence: props.task.confidence,
+      confidence: taskConfidence(props.task),
       dismissed: props.task.reviewDismissed,
       codeFingerprint: props.task.codeFingerprint,
     }),
@@ -188,7 +189,7 @@ export function ReviewSection(props: {
   });
   const risk = (id: string) => byId().get(id) as ReviewRisk | undefined;
 
-  const hasResult = () => !!props.task.confidence;
+  const hasResult = () => !!taskConfidence(props.task);
   const running = () => props.task.reviewStatus?.state === 'running';
   const failure = () => {
     const status = props.task.reviewStatus;
@@ -232,7 +233,7 @@ export function ReviewSection(props: {
 
   onMount(() => {
     // A rating is judged against the code as it is now, not as the last turn left it.
-    if (props.task.confidence)
+    if (taskConfidence(props.task))
       refreshCodeFingerprint(props.task.id).catch((error: unknown) =>
         logWarn('review', 'Reading the code failed', { error: errMessage(error) }),
       );
@@ -274,7 +275,7 @@ export function ReviewSection(props: {
     if (pickedChecks() === undefined) setPicking(true);
     else startReview(props.task.id);
   };
-  const rateLabel = () => (props.task.confidence ? 'Run review again' : 'Run review');
+  const rateLabel = () => (taskConfidence(props.task) ? 'Run review again' : 'Run review');
 
   const stage = () => {
     if (stageRework(props.task.id, pickedItems())) {
@@ -549,7 +550,7 @@ export function ReviewSection(props: {
               </button>
             </Show>
           </div>
-          <Show when={props.task.confidence && failure()}>
+          <Show when={taskConfidence(props.task) && failure()}>
             {(message) => (
               <p style={{ margin: '0', 'font-size': sf(12), color: theme.fgSubtle }}>
                 The last review failed, so these scores are older: {message()}
@@ -617,7 +618,7 @@ export function ReviewSection(props: {
             </button>
           </Show>
         </div>
-        <Show when={!props.task.confidence && failure()}>
+        <Show when={!taskConfidence(props.task) && failure()}>
           {(message) => (
             <p
               role="alert"

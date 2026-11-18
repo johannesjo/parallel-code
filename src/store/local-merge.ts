@@ -2,6 +2,7 @@ import { VERIFY_CHECK_ID } from '../../electron/shared/checks';
 import { isReadyToMergeLocally } from '../lib/local-merge-readiness';
 import { isConfidenceOutdated } from '../lib/task-confidence';
 import { getTaskChecks } from './check-suite-state';
+import { mergeConfidence } from './confidence';
 import { store } from './core';
 import type { Task } from './types';
 
@@ -23,7 +24,7 @@ export function isTaskReadyToMergeLocally(task: Task): boolean {
   if (task.gitIsolation !== 'worktree') return false;
   // A coordinator lands its subtasks, failed landings included; Merge would go around it.
   if (task.coordinatedBy || task.landingState) return false;
-  const confidence = task.confidence;
+  const confidence = mergeConfidence(task);
   return isReadyToMergeLocally({
     git: store.taskGitStatus[task.id],
     confidence,

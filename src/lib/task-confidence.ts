@@ -3,7 +3,10 @@ import {
   type ConfidencePayload,
 } from '../../electron/shared/task-confidence';
 
-/** A published rating plus when it arrived and which code it rated. */
+/**
+ * A rating plus when it arrived and which code it rated. The Confidence card
+ * holds it as card values; `cardConfidence` reads it back in this shape.
+ */
 export interface TaskConfidence extends ConfidencePayload {
   publishedAt: number;
   /** Fingerprint of the diff at publish time; unset until it has been read. */
@@ -12,9 +15,14 @@ export interface TaskConfidence extends ConfidencePayload {
   origin?: 'review';
   /** The commit a review read, set only when the worktree had no uncommitted changes. */
   headSha?: string;
+  /** Scores below this need attention; the card's own bar, else LOW_CONFIDENCE_SCORE. */
+  warnBelow?: number;
 }
 
-/** Restores a persisted rating; a malformed one is dropped rather than shown. */
+/**
+ * Restores a rating saved as `task.confidence`, before the Confidence card
+ * held it; a malformed one is dropped rather than shown.
+ */
 export function restoreTaskConfidence(value: unknown): TaskConfidence | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
@@ -38,6 +46,14 @@ export function restoreTaskConfidence(value: unknown): TaskConfidence | undefine
 
 /** Scores below this are the ones worth reading; the rest need no attention. */
 export const LOW_CONFIDENCE_SCORE = 60;
+
+/**
+ * The bar a rating's scores must reach for Finish and the merge check. The
+ * Confidence card's own bar can raise it, never lower it.
+ */
+export function confidenceBar(rating: Pick<TaskConfidence, 'warnBelow'>): number {
+  return Math.max(LOW_CONFIDENCE_SCORE, rating.warnBelow ?? LOW_CONFIDENCE_SCORE);
+}
 
 /**
  * The order the Confidence card shows scores in: correctness first, so the

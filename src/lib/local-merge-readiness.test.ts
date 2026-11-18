@@ -80,6 +80,19 @@ describe('isReadyToMergeLocally', () => {
     expect(isReadyToMergeLocally(input({ confidence: low }))).toBe(false);
   });
 
+  it('lets the card raise the score bar but never lower it below 60', () => {
+    const scored = (score: number, warnBelow: number) =>
+      review({ scores: [{ label: 'Correct', score, why: 'x' }], warnBelow });
+    expect(isReadyToMergeLocally(input({ confidence: scored(65, 70) }))).toBe(false);
+    expect(isReadyToMergeLocally(input({ confidence: scored(70, 70) }))).toBe(true);
+    expect(isReadyToMergeLocally(input({ confidence: scored(55, 40) }))).toBe(false);
+    expect(isReadyToMergeLocally(input({ confidence: scored(60, 40) }))).toBe(true);
+  });
+
+  it('holds back a review without any scores', () => {
+    expect(isReadyToMergeLocally(input({ confidence: review({ scores: [] }) }))).toBe(false);
+  });
+
   it('holds back open gaps and risks until they are dismissed, but not unconfirmed doubts', () => {
     const text = 'The retry loop never gives up.';
     const risky = review({ findings: [{ kind: 'risk', text }] });

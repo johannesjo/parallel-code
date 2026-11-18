@@ -24,6 +24,8 @@ vi.mock('./taskStatus', () => ({
   normalizeCurrentFrame: (text: string) => text,
 }));
 
+import { legacyRatingValues } from '../lib/confidence-card';
+import { taskConfidence } from './confidence';
 import { store, setStore } from './core';
 import type { Task } from './types';
 import { cancelTaskReview, setTaskReviewModel, startTaskReview } from './task-review';
@@ -104,7 +106,7 @@ describe('startTaskReview', () => {
       'No real provider. (CI covers it)',
     ])
       expect(request.prompt).toContain(text);
-    expect(task().confidence).toMatchObject({
+    expect(taskConfidence(task())).toMatchObject({
       ...RATING,
       source: 'Review by opus',
       publishedAt: expect.any(Number),
@@ -126,8 +128,8 @@ describe('startTaskReview', () => {
       cancel: vi.fn(),
     });
     await startTaskReview('t1');
-    expect(task().confidence?.origin).toBe('review');
-    expect(task().confidence).not.toHaveProperty('headSha');
+    expect(task().cards?.confidence?.origin).toBe('review');
+    expect(task().cards?.confidence).not.toHaveProperty('headSha');
   });
 
   it('asks the reviewer only once the checks started with it have ended', async () => {
@@ -182,7 +184,7 @@ describe('startTaskReview', () => {
       model: 'gpt-5',
       effort: 'high',
     });
-    expect(task().confidence?.source).toBe('Review by gpt-5');
+    expect(taskConfidence(task())?.source).toBe('Review by gpt-5');
     // Settings › Review is untouched; it stays the default for other tasks.
     expect(store.reviewModel).toEqual({ provider: 'claude', model: 'opus' });
   });
@@ -198,19 +200,19 @@ describe('startTaskReview', () => {
     reply.resolve(JSON.stringify(RATING));
     await first;
     expect(task().reviewStatus).toBeUndefined();
-    expect(task().confidence?.scores).toHaveLength(3);
+    expect(taskConfidence(task())?.scores).toHaveLength(3);
   });
 
   it('keeps the last rating and says why when the review fails', async () => {
-    const old = { scores: [], findings: [], publishedAt: 1 };
-    setStore('tasks', 't1', 'confidence', old);
+    const old = legacyRatingValues({ scores: [], findings: [], publishedAt: 1 });
+    setStore('tasks', 't1', 'cards', { confidence: old });
     mockStartRequest.mockReturnValue({
       result: Promise.reject(new Error('claude not found')),
       cancel: vi.fn(),
     });
     await startTaskReview('t1');
     expect(task().reviewStatus).toEqual({ state: 'failed', message: 'claude not found' });
-    expect(task().confidence).toEqual(old);
+    expect(task().cards?.confidence).toEqual(old);
     expect(mockNotify).toHaveBeenCalledWith(expect.stringContaining('failed: claude not found'));
   });
 
@@ -218,7 +220,7 @@ describe('startTaskReview', () => {
     mockStartRequest.mockReturnValue({ result: Promise.resolve('Looks good!'), cancel: vi.fn() });
     await startTaskReview('t1');
     expect(task().reviewStatus?.state).toBe('failed');
-    expect(task().confidence).toBeUndefined();
+    expect(task().cards?.confidence).toBeUndefined();
   });
 
   it('writes no rating for a task that closed while the model read', async () => {
@@ -230,13 +232,13 @@ describe('startTaskReview', () => {
     reply.resolve(JSON.stringify(RATING));
     await run;
     expect(task().reviewStatus).toBeUndefined();
-    expect(task().confidence).toBeUndefined();
+    expect(task().cards?.confidence).toBeUndefined();
     expect(mockNotify).not.toHaveBeenCalled();
   });
 
   it('can be cancelled, leaving the last rating and no error', async () => {
-    const old = { scores: [], findings: [], publishedAt: 1 };
-    setStore('tasks', 't1', 'confidence', old);
+    const old = legacyRatingValues({ scores: [], findings: [], publishedAt: 1 });
+    setStore('tasks', 't1', 'cards', { confidence: old });
     const reply = pendingReply();
     const run = startTaskReview('t1');
     await settle();
@@ -244,7 +246,7 @@ describe('startTaskReview', () => {
     await run;
     expect(reply.cancel).toHaveBeenCalled();
     expect(task().reviewStatus).toBeUndefined();
-    expect(task().confidence).toEqual(old);
+    expect(task().cards?.confidence).toEqual(old);
     expect(mockNotify).not.toHaveBeenCalled();
     // A cancelled review frees the task for the next one.
     mockStartRequest.mockReturnValue({
@@ -252,6 +254,6 @@ describe('startTaskReview', () => {
       cancel: vi.fn(),
     });
     await startTaskReview('t1');
-    expect(task().confidence?.scores).toHaveLength(3);
+    expect(taskConfidence(task())?.scores).toHaveLength(3);
   });
 });

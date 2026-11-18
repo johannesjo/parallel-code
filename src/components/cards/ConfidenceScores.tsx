@@ -1,11 +1,11 @@
 import { For, Show, type JSX } from 'solid-js';
-import type { ReviewScore, ReviewScores } from '../../lib/review-summary';
-import { LOW_CONFIDENCE_SCORE, inConfidenceOrder } from '../../lib/task-confidence';
+import type { ScoreEntry } from '../../lib/card-slots';
+import { inConfidenceOrder } from '../../lib/task-confidence';
 import { HoverHint } from '../understanding/HoverHint';
 import { createFlashOnChange } from './flash';
 
 /** Why a score is not higher, and what the rater checked to back it. */
-function ScoreDetail(props: { entry: ReviewScore }) {
+function ScoreDetail(props: { entry: ScoreEntry }) {
   return (
     <>
       <strong class="tour-hint-heading">
@@ -27,7 +27,7 @@ function ScoreDetail(props: { entry: ReviewScore }) {
 }
 
 /** One score in the row; its detail opens on hover or focus. */
-function Score(props: { entry: ReviewScore; lead?: boolean; children: JSX.Element }) {
+function Score(props: { entry: ScoreEntry; low: boolean; lead?: boolean; children: JSX.Element }) {
   return (
     <HoverHint hint={() => <ScoreDetail entry={props.entry} />}>
       {(describedBy) => (
@@ -36,7 +36,7 @@ function Score(props: { entry: ReviewScore; lead?: boolean; children: JSX.Elemen
           // Focusable, so the keyboard reaches the detail too.
           tabindex="0"
           aria-describedby={describedBy()}
-          data-low={props.entry.score < LOW_CONFIDENCE_SCORE ? '' : undefined}
+          data-low={props.low ? '' : undefined}
         >
           {props.children}
         </span>
@@ -52,37 +52,44 @@ function Score(props: { entry: ReviewScore; lead?: boolean; children: JSX.Elemen
  * in the card, since that is the one thing to act on. The Finish review shows
  * the rating in full.
  */
-export function ConfidenceScores(props: { scores: ReviewScores }) {
-  const weakest = () => props.scores.weakest;
+export function ConfidenceScores(props: { scores: ScoreEntry[]; warnBelow?: number }) {
+  const low = (entry: ScoreEntry) => props.warnBelow !== undefined && entry.score < props.warnBelow;
+  const weakest = () =>
+    props.scores.reduce<ScoreEntry | undefined>(
+      (min, entry) => (!min || entry.score < min.score ? entry : min),
+      undefined,
+    );
+  const lowWeakest = () => {
+    const entry = weakest();
+    return entry && low(entry) ? entry : undefined;
+  };
   let el: HTMLDivElement | undefined;
   // A new rating gets noticed in a pane left open; the same numbers again are no news.
   createFlashOnChange(
     () => el,
-    () => props.scores.all.map((entry) => `${entry.label}:${entry.score}`).join(),
+    () => props.scores.map((entry) => `${entry.label}:${entry.score}`).join(),
   );
   return (
     <div ref={el} class="confidence">
       <div class="confidence-scores" role="group" aria-label="Scores">
-        <For each={inConfidenceOrder(props.scores.all)}>
+        <For each={inConfidenceOrder(props.scores)}>
           {(entry) => (
             <Show
               when={entry === weakest()}
               fallback={
-                <Score entry={entry}>
+                <Score entry={entry} low={low(entry)}>
                   {entry.label} <span class="confidence-number">{entry.score}%</span>
                 </Score>
               }
             >
-              <Score entry={entry} lead>
+              <Score entry={entry} low={low(entry)} lead>
                 <span class="confidence-number">{entry.score}%</span> <strong>{entry.label}</strong>
               </Score>
             </Show>
           )}
         </For>
       </div>
-      <Show when={props.scores.low && weakest()}>
-        {(entry) => <p class="confidence-why">{entry().why}</p>}
-      </Show>
+      <Show when={lowWeakest()}>{(entry) => <p class="confidence-why">{entry().why}</p>}</Show>
     </div>
   );
 }

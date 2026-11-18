@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  defaultConfidenceSlots,
   confidenceCard,
   freeCardId,
   withProjectSetting,
@@ -34,7 +35,7 @@ describe('restoreCardDefinitions', () => {
         description: expect.any(String) as string,
         builtIn: 'confidence',
         source: { kind: 'agent' },
-        slots: [],
+        slots: defaultConfidenceSlots(),
         enabled: false,
       },
     ]);

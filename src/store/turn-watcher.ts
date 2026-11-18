@@ -1,4 +1,5 @@
 import { createEffect, createRoot, untrack } from 'solid-js';
+import { CONFIDENCE_CARD_ID } from '../../electron/shared/card-publish';
 import type { CardDefinition } from '../lib/cards';
 import { refreshBranchFacts } from './app-facts';
 import { runAfterTurnCheckCards } from './card-checks';
@@ -32,7 +33,7 @@ function readsDiff(card: CardDefinition): boolean {
 function isTracked(taskId: string): boolean {
   const task = store.tasks[taskId];
   if (!task) return false;
-  return !!task.confidence || enabledCards(task.projectId).some(readsDiff);
+  return !!task.cards?.[CONFIDENCE_CARD_ID] || enabledCards(task.projectId).some(readsDiff);
 }
 
 /**

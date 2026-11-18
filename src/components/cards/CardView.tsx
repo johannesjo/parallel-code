@@ -1,13 +1,17 @@
 import { For, Show, type JSX } from 'solid-js';
-import { readCard, showsSlotLabel, valueFor, type CardReading } from '../../lib/card-display';
+import {
+  readCard,
+  shownSlots,
+  showsSlotLabel,
+  valueFor,
+  type CardReading,
+} from '../../lib/card-display';
 import type { CardDefinition } from '../../lib/cards';
 import { formatRelativeAge } from '../../lib/relativeAge';
-import { buildReviewSummary } from '../../lib/review-summary';
 import { cardTaskState, getCheckCardRun, getModelCardRun, store } from '../../store/store';
 import type { Task } from '../../store/types';
 import { CardSlot } from './CardSlot';
 import { CheckCardActions } from './CheckCardActions';
-import { ConfidenceScores } from './ConfidenceScores';
 import { ModelCardActions } from './ModelCardActions';
 
 interface CardViewProps {
@@ -108,25 +112,6 @@ function RunError(props: { card: CardDefinition; task: Task }) {
   );
 }
 
-/** The rating at a glance, or what will fill it. */
-function ConfidenceBody(props: { task: Task }) {
-  const scores = () =>
-    buildReviewSummary({
-      confidence: props.task.confidence,
-      codeFingerprint: props.task.codeFingerprint,
-    }).scores;
-  return (
-    <Show
-      when={scores()}
-      fallback={
-        <p class="card-empty">Ask the agent to rate its confidence, or review at Finish.</p>
-      }
-    >
-      {(rated) => <ConfidenceScores scores={rated()} />}
-    </Show>
-  );
-}
-
 /**
  * One card in the popover, the cards pane or Finish: a quiet top line, then each slot in its final
  * layout. Always open: the pin row already is the compact view, so folding cards only hid what the
@@ -167,8 +152,13 @@ export function CardView(props: CardViewProps) {
         </span>
       </div>
       <div class="card-body">
-        <Show when={!confidence()} fallback={<ConfidenceBody task={props.task} />}>
-          <For each={props.card.slots}>
+        <Show
+          when={!confidence() || state().cards?.[props.card.id]}
+          fallback={
+            <p class="card-empty">Ask the agent to rate its confidence, or review at Finish.</p>
+          }
+        >
+          <For each={shownSlots(props.card)}>
             {(slot) => (
               <CardSlot
                 slot={slot}
@@ -177,14 +167,14 @@ export function CardView(props: CardViewProps) {
               />
             )}
           </For>
-          <Show when={props.card.source.kind === 'check'}>
-            <CheckCardActions card={props.card} task={props.task} />
-          </Show>
-          <Show when={props.card.source.kind === 'model'}>
-            <ModelCardActions card={props.card} task={props.task} />
-          </Show>
-          <RunError card={props.card} task={props.task} />
         </Show>
+        <Show when={props.card.source.kind === 'check'}>
+          <CheckCardActions card={props.card} task={props.task} />
+        </Show>
+        <Show when={props.card.source.kind === 'model'}>
+          <ModelCardActions card={props.card} task={props.task} />
+        </Show>
+        <RunError card={props.card} task={props.task} />
       </div>
     </section>
   );

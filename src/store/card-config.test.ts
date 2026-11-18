@@ -147,12 +147,26 @@ describe('changeCardConfig: changes made at once', () => {
     expect(() => remove('nope')).toThrow('There is no card "nope"');
   });
 
-  it('changes only the switches and pins of Confidence', () => {
+  it('keeps the Confidence layout when only its switch is sent', () => {
+    save({ ...card('confidence'), slots: [{ id: 'scores', type: 'scores', label: 'Mine' }] });
+    save({ id: 'confidence', enabled: true });
+    expect(card('confidence')?.slots).toEqual([
+      { id: 'scores', type: 'scores', label: 'Mine', warnBelow: 60 },
+    ]);
+  });
+
+  it('changes the name, switches and pins of Confidence but keeps its source', () => {
     expect(
-      save({ id: 'confidence', name: 'Sureness', enabled: false, pinned: ['scores'] }),
+      save({
+        id: 'confidence',
+        name: 'Sureness',
+        enabled: false,
+        pinned: ['scores'],
+        source: { kind: 'model', model: 'default', prompt: 'x', inputs: [], trigger: 'manual' },
+      }),
     ).toMatchObject({
       status: 'saved',
-      card: { name: 'Confidence', pinned: ['scores'] },
+      card: { name: 'Sureness', pinned: ['scores'], source: { kind: 'agent' } },
     });
     expect(card('confidence')).toMatchObject({ builtIn: 'confidence', pinned: ['scores'] });
   });

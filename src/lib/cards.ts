@@ -15,6 +15,7 @@ import {
   type SlotDefinition,
   type SlotValue,
 } from './card-slots';
+import { LOW_CONFIDENCE_SCORE } from './task-confidence';
 
 export type CardModelId = BriefModelId;
 export type ModelInput = 'task-name' | 'prompts' | 'agent-message' | 'diff';
@@ -51,7 +52,7 @@ export interface CardDefinition {
   name: string;
   /** The user's own words; regenerates the layout when edited. */
   description: string;
-  /** Built-in: values live in the task's own storage, not `task.cards`; never deleted. */
+  /** Built-in: never deleted, its source stays the agent, and the app's reviewer fills it too. */
   builtIn?: 'confidence';
   source: CardSource;
   /** Ordered, at most eight. */
@@ -78,6 +79,12 @@ export interface CardValues {
   fingerprint?: string;
   /** Model cards: the agent reply the run read, so a new reply counts as news. */
   replyFingerprint?: string;
+  /** Who filled it, when the publisher named itself, e.g. a skill name. */
+  source?: string;
+  /** `review`: the app's own reviewer wrote it, not the task's agent rating itself. */
+  origin?: 'review';
+  /** The commit a review read, set only when the worktree had no uncommitted changes. */
+  headSha?: string;
 }
 
 /**
@@ -102,27 +109,69 @@ export const CARD_LIMITS = {
 } as const;
 
 /**
- * The built-in Confidence card. Its ratings stay in `task.confidence`, shown as
- * they are today, so it has no generic slots.
+ * The Confidence card's layout as shipped. Slot ids are the field names of a
+ * confidence_publish payload, so that payload maps onto them one to one. Only
+ * the scores show in the card; the rest feed the Finish review and the merge
+ * check, and the user can show, move, relabel or remove any of them.
  */
-export function confidenceCard(enabled: boolean): CardDefinition {
+export function defaultConfidenceSlots(): SlotDefinition[] {
+  return [
+    {
+      id: 'scores',
+      type: 'scores',
+      label: 'Scores',
+      warnBelow: LOW_CONFIDENCE_SCORE,
+      hint: 'Name each score as your rating defines it; why: what keeps it from being higher; verified: what you checked.',
+    },
+    {
+      id: 'findings',
+      type: 'items',
+      label: 'Findings',
+      hidden: true,
+      hint: 'block: a confirmed gap or risk; warn: a doubt you did not confirm; info: a change nobody asked for. tag: the score it lowers.',
+    },
+    {
+      id: 'changes',
+      type: 'items',
+      label: 'What changed',
+      hidden: true,
+      hint: 'text: what a user notices now; detail: what happened before; tag: the kinds of tests that cover it.',
+    },
+    {
+      id: 'keyLine',
+      type: 'items',
+      label: 'Read first',
+      hidden: true,
+      hint: 'One item: why this line matters most, with file as path:line.',
+    },
+    {
+      id: 'asked',
+      type: 'line',
+      label: 'Asked',
+      hidden: true,
+      hint: 'What the user asked for, in one sentence.',
+    },
+  ];
+}
+
+/**
+ * The built-in Confidence card: an agent card the app's reviewer fills too.
+ * Its layout is the user's to edit; `slots` replaces the default one.
+ */
+export function confidenceCard(enabled: boolean, slots = defaultConfidenceSlots()): CardDefinition {
   return {
     id: CONFIDENCE_CARD_ID,
     name: 'Confidence',
     description: 'Ratings from the agent or the Finish review.',
     builtIn: 'confidence',
     source: { kind: 'agent' },
-    slots: [],
+    slots,
     enabled,
   };
 }
 
-/** What the Confidence card pins: its scores, as the pin row's first group. */
-export const CONFIDENCE_PIN = 'scores';
-
-/** Slots a card can pin; Confidence pins its scores as one group. */
+/** Slots a card can pin. */
 export function pinnableSlots(card: CardDefinition): { id: string; label: string }[] {
-  if (card.builtIn === 'confidence') return [{ id: CONFIDENCE_PIN, label: 'Scores' }];
   return card.slots.map(({ id, label }) => ({ id, label }));
 }
 
@@ -229,12 +278,29 @@ export function restoreCardSource(raw: unknown): CardSource | undefined {
   }
 }
 
+/**
+ * A rating replaces the last one, so its lists never add up; and the merge
+ * check never takes a score under 60, so the card warns from there too.
+ */
+function confidenceSlot(slot: SlotDefinition): SlotDefinition {
+  const { addUp: _addUp, ...rest } = slot;
+  if (slot.type !== 'scores') return rest;
+  return { ...rest, warnBelow: Math.max(LOW_CONFIDENCE_SCORE, slot.warnBelow ?? 0) };
+}
+
 function restoreCard(raw: Record<string, unknown>, id: string): CardDefinition | undefined {
   if (id === CONFIDENCE_CARD_ID) {
+    // Saved before its layout was editable, it has no slots: it gets the default one.
+    const saved = restoreSlots(raw.slots).map(confidenceSlot);
+    const card = confidenceCard(raw.enabled === true, saved.length ? saved : undefined);
     const projects = restoreProjects(raw.projects);
-    const pinned = restorePinned(raw.pinned, [CONFIDENCE_PIN]);
+    const pinned = restorePinned(
+      raw.pinned,
+      card.slots.map((slot) => slot.id),
+    );
     return {
-      ...confidenceCard(raw.enabled === true),
+      ...card,
+      name: clipLine(raw.name, CARD_LIMITS.name) || card.name,
       ...(projects && { projects }),
       ...(pinned && { pinned }),
     };
@@ -283,6 +349,18 @@ export function restoreCardDefinitions(raw: unknown): CardDefinition[] {
   return seen.has(CONFIDENCE_CARD_ID) ? cards : [confidenceCard(false), ...cards];
 }
 
+/** Who filled a card's values, as `CardValues` keeps it; anything malformed is dropped. */
+export function restoreValuesOrigin(
+  entry: Record<string, unknown>,
+): Pick<CardValues, 'source' | 'origin' | 'headSha'> {
+  const source = clipLine(entry.source, 60);
+  return {
+    ...(source && { source }),
+    ...(entry.origin === 'review' && { origin: 'review' as const }),
+    ...(typeof entry.headSha === 'string' && { headSha: entry.headSha.slice(0, 64) }),
+  };
+}
+
 /**
  * Restores a task's card values. Each value is checked against the type it
  * was stored with; whether it still fits the card's current layout is decided
@@ -308,6 +386,7 @@ export function restoreTaskCards(raw: unknown): Record<string, CardValues> | und
       ...(typeof entry.replyFingerprint === 'string' && {
         replyFingerprint: entry.replyFingerprint.slice(0, 64),
       }),
+      ...restoreValuesOrigin(entry),
     };
   }
   return Object.keys(cards).length ? cards : undefined;

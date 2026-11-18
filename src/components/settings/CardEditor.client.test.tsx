@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CardDefinition } from '../../lib/cards';
+import { confidenceCard, type CardDefinition } from '../../lib/cards';
 
 const { mockRequest } = vi.hoisted(() => ({ mockRequest: vi.fn() }));
 vi.mock('../../lib/model-request', () => ({ startModelRequest: mockRequest }));
@@ -390,9 +390,14 @@ describe('Edit card', () => {
   it('keeps the bar options out of the slot rows, in one group', () => {
     button('Edit').click();
     const slots = document.body.querySelector('ul[aria-label="Slots"]');
-    // A list slot keeps its own add-up box; what goes in the bar is no longer set per slot.
+    // A list slot keeps its own add-up box and every slot its show box; what goes in the bar is
+    // no longer set per slot.
     const slotBoxes = [...(slots?.querySelectorAll('label:has(input[type="checkbox"])') ?? [])];
-    expect(slotBoxes.map((l) => l.textContent?.trim())).toEqual(['Add up across turns']);
+    expect(slotBoxes.map((l) => l.textContent?.trim())).toEqual([
+      'Add up across turns',
+      'Show in card',
+      'Show in card',
+    ]);
     const group = document.body.querySelector('[aria-label="In the bar below the title"]');
     expect([...(group?.querySelectorAll('label') ?? [])].map((l) => l.textContent?.trim())).toEqual(
       ['Card summary', 'Risks', 'Old note'],
@@ -408,6 +413,7 @@ describe('Edit card', () => {
       ['line', 'Line'],
       ['text', 'Text block'],
       ['score', 'Score 0–100'],
+      ['scores', 'Score list'],
       ['stat', 'Number'],
       ['items', 'List'],
       ['checklist', 'Checklist'],
@@ -456,5 +462,55 @@ describe('Edit card', () => {
     expect(store.cardDefinitions[0].name).toBe('Risks');
     expect(store.cardDefinitions[0].source).not.toHaveProperty('checkId');
     expect(store.tasks.t1.cards?.risks?.values).toEqual({ risks: { type: 'items', items: [] } });
+  });
+});
+
+describe('Edit Confidence', () => {
+  beforeEach(() => {
+    setStore('cardDefinitions', [confidenceCard(true), structuredClone(RISKS)]);
+  });
+
+  it('edits its slots like a user card, without a source, description or Remove', () => {
+    button('Edit Confidence').click();
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).not.toContain('Description');
+    expect(dialog?.textContent).not.toContain('Remove card');
+    expect(() => button('Remove Confidence')).toThrow();
+    const labels = [...(dialog?.querySelectorAll('input[aria-label="Slot label"]') ?? [])];
+    expect(labels.map((input) => (input as HTMLInputElement).value)).toEqual([
+      'Scores',
+      'Findings',
+      'What changed',
+      'Read first',
+      'Asked',
+    ]);
+  });
+
+  it('warns that removing the findings keeps every task from looking ready to merge', () => {
+    button('Edit Confidence').click();
+    const note = () => document.body.querySelector('[role="dialog"] [role="note"]');
+    expect(note()).toBeNull();
+    button('Remove Findings').click();
+    expect(note()?.textContent).toContain('no task shows as ready to merge');
+    button('Save').click();
+    const saved = store.cardDefinitions.find((card) => card.builtIn === 'confidence');
+    expect(saved?.slots.map((slot) => slot.id)).toEqual(['scores', 'changes', 'keyLine', 'asked']);
+    expect(saved?.source).toEqual({ kind: 'agent' });
+  });
+
+  it('adds the score list and findings back from the note', () => {
+    button('Edit Confidence').click();
+    button('Remove Findings').click();
+    button('Add them back').click();
+    expect(document.body.querySelector('[role="dialog"] [role="note"]')).toBeNull();
+    button('Save').click();
+    const saved = store.cardDefinitions.find((card) => card.builtIn === 'confidence');
+    expect(saved?.slots.map((slot) => slot.id)).toEqual([
+      'scores',
+      'findings',
+      'changes',
+      'keyLine',
+      'asked',
+    ]);
   });
 });

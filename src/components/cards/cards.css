@@ -291,6 +291,11 @@ li[data-state='warn'] .slot-mark {
   font-size: 11px;
   color: var(--fg-muted);
 }
+.slot-item-detail {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
 .slot-row-value,
 .slot-item-tag {
   flex-shrink: 0;

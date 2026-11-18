@@ -2,7 +2,7 @@ import type { CheckSuite } from '../../electron/shared/checks';
 import type { SubtaskVerification } from '../../electron/shared/completion-report';
 import type { VerificationRun, WorktreeStatus } from '../ipc/types';
 import { buildReviewSummary, type ReviewDismissal } from './review-summary';
-import { LOW_CONFIDENCE_SCORE, type TaskConfidence } from './task-confidence';
+import { confidenceBar, type TaskConfidence } from './task-confidence';
 import { isFailedRunStatus, summarizeVerificationRun } from './verification-run';
 
 export interface LocalMergeReadinessInput {
@@ -47,7 +47,10 @@ export function isReadyToMergeLocally(input: LocalMergeReadinessInput): boolean 
   // so they alone would let a review of older code vouch for a new commit.
   if (confidence?.origin !== 'review' || confidence.headSha !== head) return false;
   if (input.reviewOutdated) return false;
-  if (confidence.scores.some((entry) => entry.score < LOW_CONFIDENCE_SCORE)) return false;
+  // No scores at all vouch for nothing.
+  const bar = confidenceBar(confidence);
+  if (!confidence.scores.length || confidence.scores.some((entry) => entry.score < bar))
+    return false;
   // The same risks the Finish dialog lists; doubts the reviewer did not
   // confirm stay listed there but do not hold the merge.
   const { risks } = buildReviewSummary({ confidence, dismissed: input.dismissed });

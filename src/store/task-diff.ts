@@ -4,7 +4,6 @@
  */
 
 import { produce } from 'solid-js/store';
-import { parseConfidencePayload } from '../../electron/shared/task-confidence';
 import { getTaskDiffBaseBranch, loadTaskDiff } from '../lib/load-task-diff';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { diffFingerprint } from '../lib/diff-excerpt';
@@ -94,22 +93,4 @@ export function publishTarget(taskId: string): Task {
   if (!Object.hasOwn(store.tasks, taskId) || !task || task.closingStatus)
     throw new Error('Task not available.');
   return task;
-}
-
-/** Stores a rating the agent published. */
-export function publishTaskConfidence(taskId: string, input: unknown): void {
-  const payload = parseConfidencePayload(input);
-  const task = publishTarget(taskId);
-  const publishedAt = Date.now();
-  // Replaced, not merged: a field the new rating leaves out must not survive from the old one.
-  setStore(
-    produce((s) => {
-      const target = s.tasks[taskId];
-      if (target) target.confidence = { ...payload, publishedAt };
-    }),
-  );
-  fingerprintAfterPublish(task, (fingerprint) => {
-    if (store.tasks[taskId]?.confidence?.publishedAt !== publishedAt) return;
-    setStore('tasks', taskId, 'confidence', 'fingerprint', fingerprint);
-  });
 }

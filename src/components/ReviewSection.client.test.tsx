@@ -73,6 +73,8 @@ vi.mock('../store/review', () => ({
 }));
 
 import { reviewItemId } from '../lib/review-summary';
+import { legacyRatingValues } from '../lib/confidence-card';
+import type { TaskConfidence } from '../lib/task-confidence';
 import { setStore, store } from '../store/core';
 import type { Project, Task } from '../store/types';
 import { ReviewSection } from './ReviewSection';
@@ -106,6 +108,37 @@ afterEach(() => {
 
 const OPEN = 'Remember-me path not handled.';
 
+const RATING: TaskConfidence = {
+  scores: [
+    {
+      label: 'Correctness',
+      score: 88,
+      why: 'Tested.',
+      verified: ['read both callers', 'unit tests passed'],
+    },
+    {
+      label: 'Completeness',
+      score: 50,
+      why: 'Misses remember-me.',
+      verified: ['read the login form'],
+    },
+  ],
+  findings: [
+    { kind: 'gap', text: OPEN },
+    { kind: 'extra', text: 'Renamed parseNext.' },
+  ],
+  publishedAt: 3_000,
+  fingerprint: 'same',
+};
+
+/** The task with its rating changed; the rest of the card stays. */
+function rated(task: Task, patch: Partial<TaskConfidence>): Task {
+  return {
+    ...task,
+    cards: { ...task.cards, confidence: legacyRatingValues({ ...RATING, ...patch }) },
+  };
+}
+
 function baseTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task',
@@ -118,28 +151,7 @@ function baseTask(overrides: Partial<Task> = {}): Task {
     notes: '',
     lastPrompt: '',
     gitIsolation: 'worktree',
-    confidence: {
-      scores: [
-        {
-          label: 'Correctness',
-          score: 88,
-          why: 'Tested.',
-          verified: ['read both callers', 'unit tests passed'],
-        },
-        {
-          label: 'Completeness',
-          score: 50,
-          why: 'Misses remember-me.',
-          verified: ['read the login form'],
-        },
-      ],
-      findings: [
-        { kind: 'gap', text: OPEN },
-        { kind: 'extra', text: 'Renamed parseNext.' },
-      ],
-      publishedAt: 3_000,
-      fingerprint: 'same',
-    },
+    cards: { confidence: legacyRatingValues(RATING) },
     ...overrides,
   };
 }
@@ -201,7 +213,7 @@ const settings = (root: HTMLElement) => button(root, 'Change settings');
 describe('ReviewSection', () => {
   it('asks what to run on the first review in a project and saves the pick', () => {
     setProject({ reviewChecks: undefined });
-    const { root } = mount(baseTask({ confidence: undefined }));
+    const { root } = mount(baseTask({ cards: undefined }));
     toggle(root).click();
     expect(mockRate).not.toHaveBeenCalled();
     const boxes = [...root.querySelectorAll<HTMLInputElement>('fieldset input[type="checkbox"]')];
@@ -235,7 +247,7 @@ describe('ReviewSection', () => {
 
   it('sets up missing checks with AI, saving only the suggestions picked', () => {
     setProject({ reviewChecks: undefined, verifyCommand: undefined });
-    const { root } = mount(baseTask({ confidence: undefined }));
+    const { root } = mount(baseTask({ cards: undefined }));
     toggle(root).click();
     button(root, 'Set up checks with AI').click();
     const labels = [...root.querySelectorAll<HTMLInputElement>('fieldset input[type="checkbox"]')];
@@ -267,7 +279,7 @@ describe('ReviewSection', () => {
 
   it('says when there is no verify command, and Cancel runs nothing', () => {
     setProject({ reviewChecks: undefined, verifyCommand: undefined });
-    const { root } = mount(baseTask({ confidence: undefined }));
+    const { root } = mount(baseTask({ cards: undefined }));
     toggle(root).click();
     expect(root.querySelector('fieldset')?.textContent).toContain('No verify command set');
     button(root, 'Cancel').click();
@@ -318,18 +330,16 @@ describe('ReviewSection', () => {
 
   it('shows what changed and the key line from the reviewer alone, the ask on hover', () => {
     const task = baseTask();
-    const { root, onOpenFile } = mount({
-      ...task,
-      confidence: task.confidence && {
-        ...task.confidence,
+    const { root, onOpenFile } = mount(
+      rated(task, {
         asked: 'Keep ?next= through sign-in.',
         changes: [
           { now: 'You land where you were going', before: 'instead of /.', tested: 'unit' },
           { now: 'Lost return URLs are remembered' },
         ],
         keyLine: { file: 'src/auth.ts', line: 72, why: 'The only redirect guard.' },
-      },
-    });
+      }),
+    );
     expand(root);
     const text = root.textContent ?? '';
     expect(text).not.toContain('Keep ?next=');
@@ -348,7 +358,7 @@ describe('ReviewSection', () => {
   });
 
   it('stays one follow-up until asked, and Run review runs the saved pick at once', () => {
-    const { root } = mount(baseTask({ confidence: undefined }));
+    const { root } = mount(baseTask({ cards: undefined }));
     expect(heading(root)).toBe('Run review');
     expect(toggle(root).title).toContain('Checks the work against what you asked');
     // Nothing to open yet, so the action is no disclosure.
@@ -363,7 +373,7 @@ describe('ReviewSection', () => {
 
   it('closes the first review settings from the review button', () => {
     setProject({ reviewChecks: undefined });
-    const { root } = mount(baseTask({ confidence: undefined }));
+    const { root } = mount(baseTask({ cards: undefined }));
     toggle(root).click();
     expect(toggle(root).getAttribute('aria-expanded')).toBe('true');
     expect(toggle(root).title).toBe('Close the review settings');
@@ -375,7 +385,7 @@ describe('ReviewSection', () => {
   it("picks the reviewer for this task in the review's settings", () => {
     setProject({ reviewChecks: undefined });
     setStore('reviewModel', { provider: 'claude', model: 'opus' });
-    const { root } = mount(baseTask({ confidence: undefined }));
+    const { root } = mount(baseTask({ cards: undefined }));
     toggle(root).click();
     // The open settings carry the pick; the chevron beside the button waits.
     expect(chevron(root).disabled).toBe(true);
@@ -398,7 +408,7 @@ describe('ReviewSection', () => {
 
   it('shows the review running on the reviewer model, and can be cancelled', () => {
     const { root, setState } = mount(
-      baseTask({ confidence: undefined, reviewStatus: { state: 'running', startedAt: 5_000 } }),
+      baseTask({ cards: undefined, reviewStatus: { state: 'running', startedAt: 5_000 } }),
     );
     expect(heading(root)).toBe('Reviewing with opus');
     expect(toggle(root).querySelector('.inline-spinner')).not.toBeNull();
@@ -410,9 +420,7 @@ describe('ReviewSection', () => {
     expect(mockCancel).toHaveBeenCalledWith('task');
     // The × goes away with the run; focus stays on the review instead of falling to the page.
     expect(document.activeElement).toBe(toggle(root));
-    const rated = baseTask().confidence;
-    if (!rated) throw new Error('Missing rating');
-    setState({ confidence: { ...rated, publishedAt: 6_000 }, reviewStatus: undefined });
+    setState({ ...rated(baseTask(), { publishedAt: 6_000 }), reviewStatus: undefined });
     expect(heading(root)).toBe('Review · 50% · 1 open');
   });
 
@@ -430,7 +438,7 @@ describe('ReviewSection', () => {
 
   it('says why a review failed and offers it again, with another reviewer', () => {
     const { root } = mount(
-      baseTask({ confidence: undefined, reviewStatus: { state: 'failed', message: 'No CLI' } }),
+      baseTask({ cards: undefined, reviewStatus: { state: 'failed', message: 'No CLI' } }),
     );
     expect(heading(root)).toBe('Retry review');
     expect(root.querySelector('[role="alert"]')?.textContent).toBe('The review failed: No CLI');
@@ -504,10 +512,8 @@ describe('ReviewSection', () => {
 
   it('keeps every low score with its reason', () => {
     const task = baseTask({ codeFingerprint: { fingerprint: 'same', at: 4_000 } });
-    const rated = task.confidence;
-    if (!rated) throw new Error('Missing rating');
-    const scores = [...rated.scores, { label: 'Tested', score: 55, why: 'No e2e.' }];
-    const { root } = mount({ ...task, confidence: { ...rated, scores } });
+    const scores = [...RATING.scores, { label: 'Tested', score: 55, why: 'No e2e.' }];
+    const { root } = mount(rated(task, { scores }));
     expand(root);
     const card = root.querySelector('[aria-label="Confidence"]');
     expect(card?.textContent).toContain('Tested 55% · No e2e.');
@@ -517,15 +523,10 @@ describe('ReviewSection', () => {
   /** A rating of the current code that finds nothing to act on. */
   function cleanTask(overrides: Partial<Task> = {}): Task {
     const task = baseTask({ codeFingerprint: { fingerprint: 'same', at: 4_000 }, ...overrides });
-    return {
-      ...task,
-      confidence: {
-        scores: [{ label: 'Correctness', score: 88, why: 'Tested.' }],
-        findings: [],
-        publishedAt: 3_000,
-        fingerprint: 'same',
-      },
-    };
+    return rated(task, {
+      scores: [{ label: 'Correctness', score: 88, why: 'Tested.' }],
+      findings: [],
+    });
   }
 
   it('leaves a clean review folded, its verdict on the button', async () => {
@@ -576,11 +577,11 @@ describe('ReviewSection', () => {
   it('opens a review that finishes while the dialog is open', () => {
     const { root, setState } = mount(
       baseTask({
-        confidence: undefined,
+        cards: undefined,
         reviewStatus: { state: 'running', startedAt: 1 },
       }),
     );
-    setState('confidence', baseTask().confidence);
+    setState('cards', baseTask().cards);
     setState('codeFingerprint', { fingerprint: 'same', at: 4_000 });
     setState('reviewStatus', undefined);
     expect(toggle(root).getAttribute('aria-expanded')).toBe('true');
@@ -644,12 +645,10 @@ describe('ReviewSection', () => {
 
   it('names where a risk came from and the score it lowers on hover only', () => {
     const task = baseTask({ codeFingerprint: { fingerprint: 'same', at: 4_000 } });
-    const rated = task.confidence;
-    if (!rated) throw new Error('Missing rating');
     const findings = [
       { kind: 'risk' as const, text: 'Races on logout.', file: 'src/auth.ts', axis: 'Correctness' },
     ];
-    const { root } = mount({ ...task, confidence: { ...rated, findings } });
+    const { root } = mount(rated(task, { findings }));
     expand(root);
     const row = [...root.querySelectorAll('li')].find((li) =>
       li.textContent?.includes('Races on logout.'),
@@ -675,13 +674,11 @@ describe('ReviewSection', () => {
 
   it('folds long lists behind a show-more button', () => {
     const task = baseTask();
-    const confidence = task.confidence;
-    if (!confidence) throw new Error('Missing confidence');
     const findings = Array.from({ length: 7 }, (_, i) => ({
       kind: 'extra' as const,
       text: `Extra ${i}.`,
     }));
-    const { root } = mount({ ...task, confidence: { ...confidence, findings } });
+    const { root } = mount(rated(task, { findings }));
     expand(root);
     expect(buttons(root).filter((b) => b.textContent?.includes('Revert'))).toHaveLength(5);
     button(root, 'Show 2 more').click();
@@ -707,10 +704,7 @@ describe('ReviewSection', () => {
 
   it('shows no rework footer when there is nothing to pick', () => {
     const task = baseTask();
-    const { root } = mount({
-      ...task,
-      confidence: { ...task.confidence, scores: [], findings: [], publishedAt: 3_000 },
-    });
+    const { root } = mount(rated(task, { scores: [], findings: [] }));
     expand(root);
     expect(heading(root)).toBe('Review · No open risks');
     expect(buttons(root).some((b) => b.textContent?.startsWith('Rework'))).toBe(false);

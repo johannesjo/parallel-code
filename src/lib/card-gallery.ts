@@ -92,6 +92,15 @@ export function sampleValue(slot: SlotDefinition): SlotValue {
       return { type: 'text', text: 'Login retries back off instead of failing at once.' };
     case 'score':
       return { type: 'score', score: 78, why: 'Covered by tests; docs not updated.' };
+    case 'scores':
+      return {
+        type: 'scores',
+        scores: [
+          { label: 'Correct', score: 86, why: 'Read every caller; one path untested.' },
+          { label: 'Complete', score: 54, why: 'Retry limit is not configurable yet.' },
+          { label: 'Minimal', score: 91, why: 'One unrelated rename.' },
+        ],
+      };
     case 'stat':
       return { type: 'stat', value: 6, unit: '' };
     case 'items':
@@ -133,6 +142,8 @@ function rawSample(value: SlotValue): unknown {
       return value.items;
     case 'status':
       return value.rows;
+    case 'scores':
+      return value.scores;
     default: {
       const { type: _type, ...rest } = value;
       return rest;

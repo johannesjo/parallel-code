@@ -6,7 +6,7 @@
 
 import { resolveIncludeSelection, splitIncludeSelection } from '../lib/worktree-includes';
 import { publishAgentTour } from './agent-tour';
-import { publishTaskConfidence } from './task-diff';
+import { publishTaskConfidence } from './confidence';
 import { changeCardConfig, readCardConfig } from './card-config';
 import { listAgentCards, publishCardValues } from './card-publish';
 import { publishAgentPrDraft } from './pr-draft';

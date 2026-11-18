@@ -11,7 +11,7 @@ import type {
   ConfidenceKeyLine,
 } from '../../electron/shared/task-confidence';
 import { countLabel } from './plural';
-import { LOW_CONFIDENCE_SCORE, isConfidenceOutdated, type TaskConfidence } from './task-confidence';
+import { confidenceBar, isConfidenceOutdated, type TaskConfidence } from './task-confidence';
 
 export type ReviewItemKind = 'risk' | 'extra';
 
@@ -55,6 +55,8 @@ export interface ReviewScores {
   weakest?: ReviewScore;
   /** Whether the lowest score is below the bar and should draw the eye. */
   low: boolean;
+  /** Scores below this draw the eye; see `confidenceBar`. */
+  bar: number;
   source?: string;
   /** The code changed after the rating. */
   stale: boolean;
@@ -121,7 +123,8 @@ function scoresOf(input: ReviewSummaryInput, confidence: TaskConfidence): Review
   return {
     all,
     ...(weakest && { weakest }),
-    low: !!weakest && weakest.score < LOW_CONFIDENCE_SCORE,
+    low: !!weakest && weakest.score < confidenceBar(confidence),
+    bar: confidenceBar(confidence),
     ...(confidence.source && { source: confidence.source }),
     stale: isConfidenceOutdated(confidence, input.codeFingerprint),
   };

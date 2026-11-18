@@ -50,21 +50,26 @@ export function CardPlacesFields(props: DraftProps) {
           />
         </span>
       </div>
-      <div class="card-editor-field" role="group" aria-label="Also shown">
-        <span class="card-editor-label">Also shown</span>
-        <span class="card-editor-inputs">
-          <label>
-            <input
-              type="checkbox"
-              checked={!!props.draft.showAtFinish}
-              onChange={(e) => props.setDraft('showAtFinish', e.currentTarget.checked || undefined)}
-            />
-            In the Finish dialog
-          </label>
-        </span>
-      </div>
+      {/* Confidence has its own place in Finish, the review. */}
+      <Show when={!props.draft.builtIn}>
+        <div class="card-editor-field" role="group" aria-label="Also shown">
+          <span class="card-editor-label">Also shown</span>
+          <span class="card-editor-inputs">
+            <label>
+              <input
+                type="checkbox"
+                checked={!!props.draft.showAtFinish}
+                onChange={(e) =>
+                  props.setDraft('showAtFinish', e.currentTarget.checked || undefined)
+                }
+              />
+              In the Finish dialog
+            </label>
+          </span>
+        </div>
+      </Show>
       {/* A card that fills only when run would stay hidden, its Run button with it. */}
-      <Show when={fillsOnItsOwn(props.draft.source)}>
+      <Show when={!props.draft.builtIn && fillsOnItsOwn(props.draft.source)}>
         <div class="card-editor-field" role="group" aria-label="While empty">
           <span class="card-editor-label">While empty</span>
           <span class="card-editor-inputs">

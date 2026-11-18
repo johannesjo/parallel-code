@@ -15,16 +15,18 @@ const SLOT_TYPE_NAMES: Record<SlotType, string> = {
   line: 'Line',
   text: 'Text block',
   score: 'Score 0–100',
+  scores: 'Score list',
   stat: 'Number',
   items: 'List',
   checklist: 'Checklist',
   status: 'Status list',
 };
 
-/** Model, agent and JSON check cards fill slots the user lays out; app and pass/fail ones are fixed. */
+/** Confidence, model, agent and JSON check cards fill slots the user lays out; app and pass/fail ones are fixed. */
 function layoutEditable(draft: DraftProps['draft']): boolean {
   const { source } = draft;
   return (
+    !!draft.builtIn ||
     source.kind === 'model' ||
     source.kind === 'agent' ||
     (source.kind === 'check' && source.mode === 'json')
@@ -38,8 +40,14 @@ function SlotRow(props: DraftProps & { slot: SlotDefinition; index: number; edit
   const setType = (type: SlotType) =>
     props.setDraft(
       produce((d) => {
-        const { id, label, hint } = d.slots[props.index];
-        d.slots[props.index] = { id, label, type, ...(hint && { hint }) };
+        const { id, label, hint, hidden } = d.slots[props.index];
+        d.slots[props.index] = {
+          id,
+          label,
+          type,
+          ...(hint && { hint }),
+          ...(hidden && { hidden }),
+        };
       }),
     );
   const move = (by: number) =>
@@ -119,13 +127,14 @@ function SlotRow(props: DraftProps & { slot: SlotDefinition; index: number; edit
               onInput={(e) => set({ hint: e.currentTarget.value || undefined })}
             />
           </Show>
-          <Show when={props.slot.type === 'score'}>
+          <Show when={props.slot.type === 'score' || props.slot.type === 'scores'}>
             <label>
               Warn below
               <input
                 class="input-field"
                 type="number"
-                min="0"
+                // Confidence's merge bar never goes under 60, so neither does its warning.
+                min={props.draft.builtIn ? '60' : '0'}
                 max="100"
                 value={props.slot.warnBelow ?? ''}
                 onInput={(e) => set({ warnBelow: number(e.currentTarget.value) })}
@@ -144,7 +153,8 @@ function SlotRow(props: DraftProps & { slot: SlotDefinition; index: number; edit
               />
             </label>
           </Show>
-          <Show when={props.slot.type === 'items'}>
+          {/* A rating replaces the last one, so Confidence's lists never add up. */}
+          <Show when={props.slot.type === 'items' && !props.draft.builtIn}>
             <label>
               <input
                 type="checkbox"
@@ -154,6 +164,15 @@ function SlotRow(props: DraftProps & { slot: SlotDefinition; index: number; edit
               Add up across turns
             </label>
           </Show>
+          {/* A hidden slot still fills and can be pinned; Confidence keeps its findings this way. */}
+          <label>
+            <input
+              type="checkbox"
+              checked={!props.slot.hidden}
+              onChange={(e) => set({ hidden: e.currentTarget.checked ? undefined : true })}
+            />
+            Show in card
+          </label>
         </div>
       </Show>
     </li>

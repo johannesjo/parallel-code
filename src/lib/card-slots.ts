@@ -8,6 +8,7 @@ export const SLOT_TYPES = [
   'line',
   'text',
   'score',
+  'scores',
   'stat',
   'items',
   'checklist',
@@ -22,12 +23,18 @@ export interface SlotDefinition {
   label: string;
   /** Per-slot instruction for model cards. */
   hint?: string;
-  /** score: warning colour only below this. */
+  /** score, scores: warning colour only below this. */
   warnBelow?: number;
   /** stat: warning colour only above this. */
   limit?: number;
   /** items: each run's items are added to the earlier ones instead of replacing them. */
   addUp?: boolean;
+  /**
+   * Left out of the card itself (its body, summary and attention) but still
+   * filled, stored and pinnable; the Confidence card keeps its findings here
+   * for the Finish review and the merge check.
+   */
+  hidden?: boolean;
 }
 
 export type ItemSeverity = 'info' | 'warn' | 'block';
@@ -38,8 +45,20 @@ export interface CardItem {
   text: string;
   severity: ItemSeverity;
   file?: string;
+  /** A short label at the end of the row, e.g. the score a finding lowers. */
+  tag?: string;
+  /** A second, quieter line, e.g. what happened before a change. */
+  detail?: string;
   /** Add-up mode: the turn the run that added it belongs to. */
   turn?: number;
+}
+/** One score of a score list; each carries its own name, as a rater names them. */
+export interface ScoreEntry {
+  label: string;
+  score: number;
+  why: string;
+  /** What the rater checked directly that backs the score. */
+  verified?: string[];
 }
 export interface ChecklistEntry {
   text: string;
@@ -55,20 +74,30 @@ export type SlotValue =
   | { type: 'line'; text: string }
   | { type: 'text'; text: string }
   | { type: 'score'; score: number; why: string }
+  | { type: 'scores'; scores: ScoreEntry[] }
   | { type: 'stat'; value: number; unit: string; limit?: number }
   | { type: 'items'; items: CardItem[] }
   | { type: 'checklist'; items: ChecklistEntry[] }
   | { type: 'status'; rows: StatusRow[] };
 
 export const SLOT_LIMITS = {
-  line: 200,
+  // 240 holds the question a confidence_publish payload may carry.
+  line: 240,
   text: 2_000,
   why: 240,
   unit: 16,
-  items: 8,
+  // 10, 240 and 310 hold every finding a confidence_publish payload may carry, and its
+  // key line as "path:line".
+  items: 10,
   addUpItems: 20,
-  itemText: 200,
-  file: 200,
+  itemText: 240,
+  file: 310,
+  tag: 60,
+  detail: 200,
+  scores: 6,
+  scoreLabel: 32,
+  verified: 3,
+  verifiedText: 120,
   checklist: 12,
   status: 8,
   statusText: 120,
@@ -115,12 +144,35 @@ function parseItem(raw: unknown, keepTurn: boolean): CardItem | undefined {
   const text = clipLine(main, SLOT_LIMITS.itemText);
   if (!text) return undefined;
   const file = clipLine(rest.file, SLOT_LIMITS.file);
+  const tag = clipLine(rest.tag, SLOT_LIMITS.tag);
+  const detail = clipLine(rest.detail, SLOT_LIMITS.detail);
   const turn = finite(rest.turn);
   return {
     text,
     severity: pick(rest.severity, SEVERITIES) ?? 'info',
     ...(file && { file }),
+    ...(tag && { tag }),
+    ...(detail && { detail }),
     ...(keepTurn && turn !== undefined && turn >= 0 && { turn: Math.floor(turn) }),
+  };
+}
+
+function parseScoreEntry(raw: unknown): ScoreEntry | undefined {
+  if (!isRecord(raw)) return undefined;
+  const label = clipLine(raw.label, SLOT_LIMITS.scoreLabel);
+  const score = finite(raw.score);
+  if (!label || score === undefined || score < 0 || score > 100) return undefined;
+  const verified = Array.isArray(raw.verified)
+    ? raw.verified
+        .map((entry) => clipLine(entry, SLOT_LIMITS.verifiedText))
+        .filter(Boolean)
+        .slice(0, SLOT_LIMITS.verified)
+    : [];
+  return {
+    label,
+    score: Math.round(score),
+    why: clipLine(raw.why, SLOT_LIMITS.why),
+    ...(verified.length && { verified }),
   };
 }
 
@@ -177,6 +229,11 @@ export function parseSlotValue(slot: SlotDefinition, raw: unknown): SlotValue | 
       if (score === undefined || score < 0 || score > 100) return undefined;
       return { type: 'score', score: Math.round(score), why: clipLine(rest.why, SLOT_LIMITS.why) };
     }
+    case 'scores': {
+      // A score list is never empty: no scores is no rating, not a result.
+      const scores = parseList(unwrap(raw, 'scores').main, parseScoreEntry, SLOT_LIMITS.scores);
+      return scores?.length ? { type: 'scores', scores } : undefined;
+    }
     case 'stat': {
       const { main, rest } = unwrap(raw, 'value');
       const value = finite(main);
@@ -218,6 +275,7 @@ export function restoreSlotValue(slot: SlotDefinition, raw: unknown): SlotValue 
     line: rest.text,
     text: rest.text,
     score: rest,
+    scores: rest.scores,
     stat: rest,
     items: rest.items,
     checklist: rest.items,
@@ -243,9 +301,10 @@ export function restoreSlotDefinition(raw: unknown): SlotDefinition | undefined 
     type,
     label,
     ...(hint && { hint }),
-    ...(type === 'score' && warnBelow !== undefined && { warnBelow }),
+    ...((type === 'score' || type === 'scores') && warnBelow !== undefined && { warnBelow }),
     ...(type === 'stat' && limit !== undefined && { limit }),
     ...(type === 'items' && raw.addUp === true && { addUp: true }),
+    ...(raw.hidden === true && { hidden: true }),
   };
 }
 

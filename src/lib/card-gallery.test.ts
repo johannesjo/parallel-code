@@ -50,11 +50,12 @@ describe('exampleCheckOutput', () => {
       'my-line',
       'my-text',
       'my-score',
+      'my-scores',
       'my-stat',
       'my-items',
       'my-checklist',
       'my-status',
     ]);
-    expect(Object.keys(parseCardValues(card, example))).toHaveLength(7);
+    expect(Object.keys(parseCardValues(card, example))).toHaveLength(8);
   });
 });

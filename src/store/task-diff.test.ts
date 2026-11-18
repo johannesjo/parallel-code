@@ -9,14 +9,10 @@ vi.mock('../lib/load-task-diff', () => ({
 vi.mock('./projects', () => ({ getProjectPath: () => '/repo' }));
 
 import { diffFingerprint } from '../lib/diff-excerpt';
+import { publishTaskConfidence, taskConfidence } from './confidence';
 import { store, setStore } from './core';
 import type { Task } from './types';
-import {
-  noteCodeFingerprint,
-  promptsSince,
-  publishTaskConfidence,
-  refreshCodeFingerprint,
-} from './task-diff';
+import { noteCodeFingerprint, promptsSince, refreshCodeFingerprint } from './task-diff';
 
 const DIFF = 'diff --git a/src/a.ts b/src/a.ts\n+change';
 
@@ -86,13 +82,14 @@ describe('promptsSince', () => {
 describe('publishTaskConfidence', () => {
   it('stores a published rating with the fingerprint of the code it rated', async () => {
     publishTaskConfidence('t1', { scores: [{ label: 'Confidence', score: 70, why: 'x' }] });
-    expect(task().confidence).toMatchObject({ scores: [{ score: 70 }], findings: [] });
-    await vi.waitFor(() => expect(task().confidence?.fingerprint).toBe(diffFingerprint(DIFF)));
+    expect(taskConfidence(task())).toMatchObject({ scores: [{ score: 70 }], findings: [] });
+    await vi.waitFor(() => expect(taskConfidence(task())?.fingerprint).toBe(diffFingerprint(DIFF)));
     // The agent's own rating replaces a review whole, so it never inherits the reviewer's mark.
-    setStore('tasks', 't1', 'confidence', { origin: 'review', headSha: 'abc' });
+    setStore('tasks', 't1', 'cards', 'confidence', 'origin', 'review');
+    setStore('tasks', 't1', 'cards', 'confidence', 'headSha', 'abc');
     publishTaskConfidence('t1', { scores: [{ label: 'Confidence', score: 90, why: 'x' }] });
-    expect(task().confidence).not.toHaveProperty('origin');
-    expect(task().confidence).not.toHaveProperty('headSha');
+    expect(task().cards?.confidence).not.toHaveProperty('origin');
+    expect(task().cards?.confidence).not.toHaveProperty('headSha');
     expect(() => publishTaskConfidence('t1', { scores: [] })).toThrow('scores must be');
     expect(() =>
       publishTaskConfidence('missing', { scores: [{ label: 'C', score: 1, why: 'x' }] }),

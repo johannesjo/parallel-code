@@ -77,7 +77,7 @@ describe('describeAgentCard', () => {
           type: 'line',
           label: 'Note',
           hint: 'One sentence',
-          value: 'one line, at most 200 characters',
+          value: 'one line, at most 240 characters',
         },
       ],
     });

@@ -118,5 +118,5 @@ export function cardTaskState(task: Task, now = Date.now()): CardTaskState {
     if (values) cards[id] = values;
     else delete cards[id];
   }
-  return { cards, confidence: task.confidence, codeFingerprint: task.codeFingerprint };
+  return { cards, codeFingerprint: task.codeFingerprint };
 }

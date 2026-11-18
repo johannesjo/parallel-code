@@ -1,5 +1,7 @@
 import { reconcile } from 'solid-js/store';
 import { afterEach, expect, it, vi } from 'vitest';
+import { legacyRatingValues } from '../lib/confidence-card';
+import type { TaskConfidence } from '../lib/task-confidence';
 import { setStore, store } from '../store/core';
 import {
   extraPrWatchId,
@@ -114,7 +116,7 @@ it('keeps a subtask whose landing needs review in Needs you despite running CI',
 });
 
 it('moves finished work the app review vouches for to Ready to merge, until the code changes', () => {
-  const confidence: NonNullable<Task['confidence']> = {
+  const confidence: TaskConfidence = {
     scores: [{ label: 'Confidence', score: 90, why: 'Tested.' }],
     findings: [],
     publishedAt: 100,
@@ -122,7 +124,7 @@ it('moves finished work the app review vouches for to Ready to merge, until the 
     origin: 'review',
     headSha: 'a'.repeat(40),
   };
-  const reviewed: Task = { ...task, confidence };
+  const reviewed: Task = { ...task, cards: { confidence: legacyRatingValues(confidence) } };
   setStore('tasks', reconcile({ 'task-1': reviewed }));
   setStore('taskGitStatus', 'task-1', {
     has_committed_changes: true,
@@ -140,7 +142,7 @@ it('moves finished work the app review vouches for to Ready to merge, until the 
   // A rating the agent published about itself does not vouch for the work.
   const selfRated: Task = {
     ...reviewed,
-    confidence: { ...confidence, origin: undefined },
+    cards: { confidence: legacyRatingValues({ ...confidence, origin: undefined }) },
   };
   setStore('tasks', reconcile({ 'task-1': selfRated }));
   expect(boardLaneOf(selfRated)).toBe('stopped');

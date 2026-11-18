@@ -28,8 +28,9 @@ export function slotPayloadChars(slot: SlotDefinition): number {
     line: L.line,
     text: L.text,
     score: L.why,
+    scores: L.scores * (L.scoreLabel + L.why + L.verified * (L.verifiedText + 8) + ENTRY_OVERHEAD),
     stat: L.unit,
-    items: items * (L.itemText + L.file + ENTRY_OVERHEAD),
+    items: items * (L.itemText + L.file + L.tag + L.detail + ENTRY_OVERHEAD),
     checklist: L.checklist * (L.itemText + ENTRY_OVERHEAD),
     status: L.status * (L.statusText + L.statusValue + ENTRY_OVERHEAD),
   };
@@ -44,8 +45,9 @@ export function slotShape(slot: SlotDefinition): string {
     line: `one line, at most ${L.line} characters`,
     text: `plain text, at most ${L.text} characters`,
     score: `{score: 0-100, why: one line, at most ${L.why} characters}`,
+    scores: `1 to ${L.scores} of {label: at most ${L.scoreLabel} characters, score: 0-100, why: one line, verified?: at most ${L.verified} short items}`,
     stat: `{value: number, unit?: at most ${L.unit} characters}`,
-    items: `at most ${items} of {text, severity?: "info" | "warn" | "block", file?}`,
+    items: `at most ${items} of {text, severity?: "info" | "warn" | "block", file?, tag?: at most ${L.tag} characters, detail?: one line}`,
     checklist: `at most ${L.checklist} of {text, state: "done" | "current" | "todo"}`,
     status: `at most ${L.status} of {state: "ok" | "warn" | "fail" | "running" | "unknown", text, value?}`,
   };

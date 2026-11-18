@@ -108,7 +108,8 @@ describe('publishCardValues', () => {
     expect(() => publishCardValues('t1', 'ci', { runs: [] })).toThrow(/not by the agent/);
     expect(() => publishCardValues('t1', 'elsewhere', { note: 'x' })).toThrow(/is off/);
     expect(() => publishCardValues('t1', 'missing', { note: 'x' })).toThrow(/no card "missing"/);
-    expect(() => publishCardValues('t1', 'confidence', { scores: [] })).toThrow(/no card/);
+    // Confidence takes ratings, checked as confidence_publish checks them.
+    expect(() => publishCardValues('t1', 'confidence', { scores: [] })).toThrow(/scores must be/);
     expect(store.tasks.t1.cards).toBeUndefined();
   });
 });

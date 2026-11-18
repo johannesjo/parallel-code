@@ -38,8 +38,10 @@ const SHAPES: Record<SlotType, string> = {
   line: 'string (one sentence)',
   text: 'string (may span lines)',
   score: '{"score":0-100,"why":string}',
+  scores: '[{"label":string,"score":0-100,"why":string,"verified"?:string[]}] (at most 6)',
   stat: '{"value":number,"unit":string}',
-  items: '[{"text":string,"severity":"info"|"warn"|"block","file"?:string}] (at most 8)',
+  items:
+    '[{"text":string,"severity":"info"|"warn"|"block","file"?:string,"tag"?:string,"detail"?:string}] (at most 10)',
   checklist: '[{"text":string,"state":"done"|"current"|"todo"}] (at most 12)',
   status:
     '[{"state":"ok"|"warn"|"fail"|"running"|"unknown","text":string,"value"?:string}] (at most 8)',

@@ -75,14 +75,22 @@ describe('parseCardConfig', () => {
     expect(parseCardConfig(json).slots).toEqual([{ id: 'note', type: 'line', label: 'Note' }]);
   });
 
-  it('keeps only what Confidence can change', () => {
+  it('keeps Confidence built in, with its default layout when sent no slots', () => {
     const card = parseCardConfig({ id: 'confidence', name: 'Sureness', enabled: true, slots: [] });
     expect(card).toMatchObject({
       id: 'confidence',
-      name: 'Confidence',
+      name: 'Sureness',
       builtIn: 'confidence',
+      source: { kind: 'agent' },
       enabled: true,
     });
+    expect(card.slots.map((slot) => slot.id)).toEqual([
+      'scores',
+      'findings',
+      'changes',
+      'keyLine',
+      'asked',
+    ]);
   });
 });
 

@@ -1,7 +1,6 @@
 import { For, Show } from 'solid-js';
 import { sf } from '../lib/fontScale';
 import type { ReviewScore, ReviewScores } from '../lib/review-summary';
-import { LOW_CONFIDENCE_SCORE } from '../lib/task-confidence';
 import { theme } from '../lib/theme';
 
 const tabular = { 'font-weight': '600', 'font-variant-numeric': 'tabular-nums' } as const;
@@ -32,13 +31,13 @@ export function ReviewScoreCard(props: {
 }) {
   const weakest = () => props.scores.weakest;
   const others = () => props.scores.all.filter((entry) => entry !== weakest());
-  const low = () => others().filter((entry) => entry.score < LOW_CONFIDENCE_SCORE);
-  const fine = () => others().filter((entry) => entry.score >= LOW_CONFIDENCE_SCORE);
+  const low = () => others().filter((entry) => entry.score < props.scores.bar);
+  const fine = () => others().filter((entry) => entry.score >= props.scores.bar);
   const scoreText = (entry: ReviewScore) => (
     <span
       style={{
         ...tabular,
-        color: entry.score < LOW_CONFIDENCE_SCORE ? theme.warning : theme.fg,
+        color: entry.score < props.scores.bar ? theme.warning : theme.fg,
       }}
     >
       {entry.score}%

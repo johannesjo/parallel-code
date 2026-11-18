@@ -1,6 +1,7 @@
 import { For, Show, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { ChecklistState, SlotDefinition, SlotValue, StatusState } from '../../lib/card-slots';
 import { isEmptyList, slotWarns } from '../../lib/card-display';
+import { ConfidenceScores } from './ConfidenceScores';
 import { errMessage, warn as logWarn } from '../../lib/log';
 import { createFlashOnChange } from './flash';
 
@@ -70,9 +71,12 @@ function ItemsList(props: { value: Extract<SlotValue, { type: 'items' }>; addUp?
               <Show when={item.file}>
                 <span class="slot-item-file">{item.file}</span>
               </Show>
+              <Show when={item.detail}>
+                <span class="slot-item-detail">{item.detail}</span>
+              </Show>
             </span>
-            <Show when={!item.file && item.turn !== undefined}>
-              <span class="slot-item-tag">turn {item.turn}</span>
+            <Show when={item.tag ?? (!item.file && item.turn !== undefined && `turn ${item.turn}`)}>
+              {(tag) => <span class="slot-item-tag">{tag()}</span>}
             </Show>
           </li>
         )}
@@ -166,6 +170,8 @@ function slotBody(slot: SlotDefinition, value: SlotValue): JSX.Element {
           </Show>
         </>
       );
+    case 'scores':
+      return <ConfidenceScores scores={value.scores} warnBelow={slot.warnBelow} />;
     case 'stat': {
       const limit = value.limit ?? slot.limit;
       return (

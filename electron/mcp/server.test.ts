@@ -713,10 +713,10 @@ describe('mind map tools', () => {
     expect(client.publishConfidence).toHaveBeenCalledTimes(1);
   });
 
-  it('publishes a card for the session task, routing Confidence to its own storage', async () => {
+  it('publishes a card for the session task, the Confidence card included', async () => {
     const client = {
       publishCard: vi.fn().mockResolvedValue({ ok: true, card: 'notes' }),
-      publishConfidence: vi.fn().mockResolvedValue({ ok: true, scores: 1 }),
+      publishConfidence: vi.fn(),
     } as unknown as MCPClient;
     const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
     const notes = { card: 'notes', values: { note: 'Ready' } };
@@ -725,17 +725,18 @@ describe('mind map tools', () => {
     ).not.toHaveProperty('isError');
     expect(client.publishCard).toHaveBeenCalledWith('own-task', notes);
 
-    const scores = [{ label: 'Correct', score: 90, why: 'Tested.' }];
-    await handleMCPToolCall(context, 'card_publish', { card: 'confidence', values: { scores } });
-    expect(client.publishConfidence).toHaveBeenCalledWith('own-task', { scores, findings: [] });
-    expect(
-      await handleMCPToolCall(context, 'card_publish', { card: 'confidence', values: {} }),
-    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('scores') }] });
+    // The app checks the classic payload against the editable card; it arrives as sent.
+    const rating = {
+      card: 'confidence',
+      values: { scores: [{ label: 'C', score: 90, why: 'x' }] },
+    };
+    await handleMCPToolCall(context, 'card_publish', rating);
+    expect(client.publishCard).toHaveBeenLastCalledWith('own-task', rating);
     expect(
       await handleMCPToolCall(context, 'card_publish', { card: 'Notes!', values: {} }),
     ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('card id') }] });
-    expect(client.publishCard).toHaveBeenCalledTimes(1);
-    expect(client.publishConfidence).toHaveBeenCalledTimes(1);
+    expect(client.publishCard).toHaveBeenCalledTimes(2);
+    expect(client.publishConfidence).not.toHaveBeenCalled();
   });
 
   it('lets a coordinator session list and publish cards for itself', async () => {

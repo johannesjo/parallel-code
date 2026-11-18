@@ -1,11 +1,14 @@
 import { Show, createSignal } from 'solid-js';
 import { createStore, unwrap } from 'solid-js/store';
+import { SLOT_LIMITS, type SlotDefinition } from '../../../lib/card-slots';
 import {
   CARD_LIMITS,
+  defaultConfidenceSlots,
   persistCardDefinitions,
   restoreCardDefinitions,
   type CardDefinition,
 } from '../../../lib/cards';
+import { holdsMergeEvidence } from '../../../lib/confidence-card';
 import { errMessage } from '../../../lib/log';
 import { addCard, draftCard, saveCard, store } from '../../../store/store';
 import { Dialog } from '../../Dialog';
@@ -18,7 +21,30 @@ import { CardSourceFields } from './CardSourceFields';
 /** The draft as it would be saved: clipped and checked the way a reload restores it. */
 function tidy(draft: CardDefinition): CardDefinition | undefined {
   const restored = restoreCardDefinitions(persistCardDefinitions([draft]));
-  return restored.find((card) => card.id === draft.id && !card.builtIn);
+  return restored.find((card) => card.id === draft.id && card.builtIn === draft.builtIn);
+}
+
+/** The draft with the default score list and findings in front, in place of any slot using their ids. */
+function withMergeEvidence(slots: SlotDefinition[]): SlotDefinition[] {
+  const evidence = defaultConfidenceSlots().filter((slot) => MERGE_SLOTS.has(slot.id));
+  const rest = slots.filter((slot) => !MERGE_SLOTS.has(slot.id));
+  return [...evidence, ...rest].slice(0, SLOT_LIMITS.slots);
+}
+
+const MERGE_SLOTS = new Set(['scores', 'findings']);
+
+/** Why a Confidence layout without the score list or the findings never lets a task merge. */
+function MergeNote(props: { draft: CardDefinition; onRestore: () => void }) {
+  return (
+    <Show when={props.draft.builtIn === 'confidence' && !holdsMergeEvidence(props.draft)}>
+      <p class="card-editor-hint" role="note">
+        Without the default score list and findings, no task shows as ready to merge.{' '}
+        <button type="button" class="btn-secondary" onClick={() => props.onRestore()}>
+          Add them back
+        </button>
+      </p>
+    </Show>
+  );
 }
 
 /** A layout drafted from the edited description, waiting to be used or discarded. */
@@ -134,47 +160,54 @@ export function CardEditor(props: CardEditorProps) {
               onInput={(e) => setDraft('name', e.currentTarget.value)}
             />
           </label>
-          <label class="card-editor-field card-editor-stack">
-            <span class="card-editor-label">Description</span>
-            <textarea
-              class="input-field"
-              rows={2}
-              maxLength={CARD_LIMITS.description}
-              value={draft.description}
-              onInput={(e) => setDraft('description', e.currentTarget.value)}
-            />
-          </label>
-          <Show when={draft.source.kind !== 'app'}>
-            <div class="card-editor-redraft-row">
-              <button
-                type="button"
-                class="btn-secondary card-editor-redraft"
-                disabled={busy() || !draft.description.trim()}
-                onClick={() => void redraft()}
-              >
-                {busy() ? 'Drafting…' : 'Draft new layout'}
-              </button>
-              <span class="card-editor-hint">
-                The default AI model proposes a source and slots from the description; nothing
-                changes until you use them.
-              </span>
+          {/* Confidence is filled by ratings, so it has no description or source to set. */}
+          <Show when={!draft.builtIn}>
+            <label class="card-editor-field card-editor-stack">
+              <span class="card-editor-label">Description</span>
+              <textarea
+                class="input-field"
+                rows={2}
+                maxLength={CARD_LIMITS.description}
+                value={draft.description}
+                onInput={(e) => setDraft('description', e.currentTarget.value)}
+              />
+            </label>
+            <Show when={draft.source.kind !== 'app'}>
+              <div class="card-editor-redraft-row">
+                <button
+                  type="button"
+                  class="btn-secondary card-editor-redraft"
+                  disabled={busy() || !draft.description.trim()}
+                  onClick={() => void redraft()}
+                >
+                  {busy() ? 'Drafting…' : 'Draft new layout'}
+                </button>
+                <span class="card-editor-hint">
+                  The default AI model proposes a source and slots from the description; nothing
+                  changes until you use them.
+                </span>
+              </div>
+            </Show>
+            <Show when={next()}>
+              {(layout) => (
+                <LayoutPreview
+                  draft={draft}
+                  next={layout()}
+                  onUse={() => useLayout(layout())}
+                  onDiscard={() => setNext(undefined)}
+                />
+              )}
+            </Show>
+            <div class="card-editor-section">
+              <CardSourceFields draft={draft} setDraft={setDraft} />
             </div>
           </Show>
-          <Show when={next()}>
-            {(layout) => (
-              <LayoutPreview
-                draft={draft}
-                next={layout()}
-                onUse={() => useLayout(layout())}
-                onDiscard={() => setNext(undefined)}
-              />
-            )}
-          </Show>
-          <div class="card-editor-section">
-            <CardSourceFields draft={draft} setDraft={setDraft} />
-          </div>
           <div class="card-editor-section">
             <CardSlotsEditor draft={draft} setDraft={setDraft} />
+            <MergeNote
+              draft={draft}
+              onRestore={() => setDraft('slots', withMergeEvidence(unwrap(draft).slots))}
+            />
           </div>
           <div class="card-editor-section">
             <CardPlacesFields draft={draft} setDraft={setDraft} />

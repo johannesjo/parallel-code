@@ -12,7 +12,7 @@ import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
 import { parseCanvasRequest } from '../shared/canvas-view.js';
 import { parseAgentTourPayload } from '../shared/agent-tour.js';
 import { parseConfidencePayload } from '../shared/task-confidence.js';
-import { CONFIDENCE_CARD_ID, parseCardPublishRequest } from '../shared/card-publish.js';
+import { parseCardPublishRequest } from '../shared/card-publish.js';
 import { parseCardConfigChange } from '../shared/card-config.js';
 import { parsePrDraft } from '../shared/pr-draft.js';
 import { parseFinishItems } from '../shared/finish-items.js';
@@ -225,11 +225,8 @@ export async function handleMCPToolCall(
         const id = taskId || coordinatorId;
         if (!id) throw new Error('A task-scoped MCP session is required.');
         const request = parseCardPublishRequest(params);
-        // The Confidence card keeps its own storage, so its payload takes the confidence_publish path.
-        const result =
-          request.card === CONFIDENCE_CARD_ID
-            ? await client.publishConfidence(id, parseConfidencePayload(request.values))
-            : await client.publishCard(id, request);
+        // The app checks the values against the card, the Confidence card's classic payload included.
+        const result = await client.publishCard(id, request);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       case 'pr_draft_publish': {

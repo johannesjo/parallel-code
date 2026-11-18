@@ -1,6 +1,7 @@
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it } from 'vitest';
 import { appFactCard } from '../../lib/app-facts';
+import { legacyRatingValues } from '../../lib/confidence-card';
 import { confidenceCard, type CardDefinition } from '../../lib/cards';
 import type { Task } from '../../store/types';
 import { CardView } from './CardView';
@@ -62,7 +63,7 @@ describe('CardView for the Confidence card', () => {
       source: '/cf',
       publishedAt: 0,
     };
-    show({ id: 't1', confidence });
+    show({ id: 't1', cards: { confidence: legacyRatingValues(confidence) } });
     expect(document.body.querySelector('.card-name')).toBeNull();
     expect(document.body.querySelector('.card-meta')?.textContent).toContain('/cf');
     const scores = document.body.querySelector('.confidence-scores');
@@ -85,7 +86,7 @@ describe('the right end of a card top line', () => {
   });
 
   it('sets who filled the card apart from its age, so only that part waits for the pointer', () => {
-    show({ id: 't1', confidence: rating() });
+    show({ id: 't1', cards: { confidence: legacyRatingValues(rating()) } });
     expect(source()?.textContent).toBe('/cf · ');
     // Read as one line all the same.
     expect(meta()?.textContent).toBe('/cf · 1m');
@@ -94,7 +95,7 @@ describe('the right end of a card top line', () => {
   it('keeps "outdated" and what a card waits for outside the part that hides', () => {
     show({
       id: 't1',
-      confidence: rating({ fingerprint: 'a' }),
+      cards: { confidence: legacyRatingValues(rating({ fingerprint: 'a' })) },
       codeFingerprint: { fingerprint: 'b', at: 30_000 },
     });
     expect(source()?.textContent).toBe('/cf · ');
@@ -147,7 +148,7 @@ describe('the open Confidence card', () => {
   const hint = () => document.body.querySelector<HTMLElement>('[role="tooltip"]');
 
   it('fits every score on one row and keeps reasons and evidence out of the card', () => {
-    show({ id: 't1', confidence: rated(72) });
+    show({ id: 't1', cards: { confidence: legacyRatingValues(rated(72)) } });
     // The lowest score leads; no sentence around it, so three scores fit a narrow pane.
     expect(score('Correct').textContent).toBe('72% Correct');
     expect(score('Correct').classList.contains('confidence-lead')).toBe(true);
@@ -161,14 +162,16 @@ describe('the open Confidence card', () => {
   it('always shows correctness first, even when another score is the lowest', () => {
     show({
       id: 't1',
-      confidence: {
-        scores: [
-          { label: 'Minimal', score: 90, why: 'Small diff.' },
-          { label: 'Complete', score: 70, why: 'One case untested.' },
-          { label: 'Correctness', score: 85, why: 'Tested.' },
-        ],
-        findings: [],
-        publishedAt: 0,
+      cards: {
+        confidence: legacyRatingValues({
+          scores: [
+            { label: 'Minimal', score: 90, why: 'Small diff.' },
+            { label: 'Complete', score: 70, why: 'One case untested.' },
+            { label: 'Correctness', score: 85, why: 'Tested.' },
+          ],
+          findings: [],
+          publishedAt: 0,
+        }),
       },
     });
     const labels = [...document.body.querySelectorAll<HTMLElement>('.confidence-score')].map(
@@ -179,7 +182,7 @@ describe('the open Confidence card', () => {
   });
 
   it('says why a score is not higher, and what backs it, in a popover on focus', () => {
-    show({ id: 't1', confidence: rated(72) });
+    show({ id: 't1', cards: { confidence: legacyRatingValues(rated(72)) } });
     const correct = score('Correct');
     expect(correct.tabIndex).toBe(0);
     correct.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
@@ -194,7 +197,7 @@ describe('the open Confidence card', () => {
   });
 
   it('opens the popover of the score under the pointer', () => {
-    show({ id: 't1', confidence: rated(72) });
+    show({ id: 't1', cards: { confidence: legacyRatingValues(rated(72)) } });
     score('Minimal').parentElement?.dispatchEvent(new MouseEvent('mouseenter'));
     expect(hint()?.textContent).toContain('Minimal 88%');
     expect(hint()?.textContent).toContain('Small diff.');
@@ -202,7 +205,7 @@ describe('the open Confidence card', () => {
   });
 
   it('keeps the reason in the card, on one line, while the rating is low', () => {
-    show({ id: 't1', confidence: rated(54) });
+    show({ id: 't1', cards: { confidence: legacyRatingValues(rated(54)) } });
     expect(body()?.querySelector('.confidence-why')?.textContent).toBe(
       'Retry limit path has no test.',
     );

@@ -218,9 +218,16 @@ interface Asker {
   id: string;
 }
 
+/** Confidence sent without slots, as before its layout was editable, keeps the layout it has. */
+function keptLayout(card: CardDefinition, raw: unknown, previous?: CardDefinition) {
+  const sentSlots = !!raw && typeof raw === 'object' && 'slots' in raw;
+  return card.builtIn && previous && !sentSlots ? { ...card, slots: previous.slots } : card;
+}
+
 function save(asker: Asker, raw: unknown, position: number | undefined) {
-  const card = parseCardConfig(raw);
-  const previous = existing(card.id);
+  const parsed = parseCardConfig(raw);
+  const previous = existing(parsed.id);
+  const card = keptLayout(parsed, raw, previous);
   if (!previous && store.cardDefinitions.length >= CARD_LIMITS.cards)
     throw new Error(`There are already ${CARD_LIMITS.cards} cards. Remove one first.`);
   const change = saveInWords(card, previous);

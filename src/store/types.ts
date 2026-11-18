@@ -31,7 +31,6 @@ import type { CardDefinition, CardValues } from '../lib/cards';
 import type { TaskFacts } from '../lib/app-facts';
 import type { PlanStep } from '../../electron/shared/agent-plan';
 import type { CloseSuggestion } from '../../electron/shared/close-suggestion';
-import type { TaskConfidence } from '../lib/task-confidence';
 import type { TaskVisit } from '../lib/task-visit';
 import type { TaskFinishItems } from '../lib/finish-items';
 import type { ReviewDismissal } from '../lib/review-summary';
@@ -435,8 +434,6 @@ export interface Task {
   codeFingerprint?: { fingerprint: string; at: number };
   /** Runtime-only: what the fingerprint tracker gathered for app-fact cards. */
   facts?: TaskFacts;
-  /** Latest rating: from a review, or published by the agent through `confidence_publish`. */
-  confidence?: TaskConfidence;
   /** When the user last had this task open, the baseline for "since you looked". */
   lastVisit?: TaskVisit;
   /** Loose ends the agent recorded through `finish_items_publish`, shown in the Finish dialog. */
@@ -560,7 +557,7 @@ export interface PersistedTask {
   cards?: unknown;
   /** Validated on load. */
   agentPlan?: unknown;
-  /** Validated on load. */
+  /** A rating saved before the Confidence card held it; restored into `cards.confidence`. */
   confidence?: unknown;
   /** Validated on load. */
   lastVisit?: unknown;

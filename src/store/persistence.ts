@@ -3,15 +3,10 @@ import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { parseCloseSuggestion } from '../../electron/shared/close-suggestion';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
 import { appFactCard, defaultCards } from '../lib/app-facts';
-import {
-  CARD_LIMITS,
-  persistCardDefinitions,
-  restoreCardDefinitions,
-  restoreTaskCards,
-} from '../lib/cards';
+import { CARD_LIMITS, persistCardDefinitions, restoreCardDefinitions } from '../lib/cards';
 import { restoreTaskAgentPlan } from '../lib/task-plan';
 import { restoreReviewChecks } from '../lib/review-checks';
-import { restoreTaskConfidence } from '../lib/task-confidence';
+import { restoreRatedTaskCards } from '../lib/confidence-card';
 import { restoreTaskVisit } from '../lib/task-visit';
 import { restoreTaskFinishItems } from '../lib/finish-items';
 import { restoreReviewDismissed } from '../lib/review-summary';
@@ -513,7 +508,6 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     evidence: persistedCheckSuite(task.evidence),
     cards: task.cards,
     agentPlan: task.agentPlan,
-    confidence: task.confidence,
     lastVisit: task.lastVisit,
     finishItems: task.finishItems,
     reviewDismissed: task.reviewDismissed,
@@ -1416,9 +1410,8 @@ export async function loadState(): Promise<void> {
           lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
           lastVisit: restoreTaskVisit(pt.lastVisit),
           evidence: restoredCheckSuite(pt.evidence),
-          cards: restoreTaskCards(pt.cards),
+          cards: restoreRatedTaskCards(pt.cards, pt.confidence),
           agentPlan: restoreTaskAgentPlan(pt.agentPlan),
-          confidence: restoreTaskConfidence(pt.confidence),
           finishItems: restoreTaskFinishItems(pt.finishItems),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:
@@ -1581,9 +1574,8 @@ export async function loadState(): Promise<void> {
           lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
           lastVisit: restoreTaskVisit(pt.lastVisit),
           evidence: restoredCheckSuite(pt.evidence),
-          cards: restoreTaskCards(pt.cards),
+          cards: restoreRatedTaskCards(pt.cards, pt.confidence),
           agentPlan: restoreTaskAgentPlan(pt.agentPlan),
-          confidence: restoreTaskConfidence(pt.confidence),
           finishItems: restoreTaskFinishItems(pt.finishItems),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:

@@ -1,4 +1,4 @@
-import { createEffect, createRoot } from 'solid-js';
+import { batch, createEffect, createRoot } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { modelToRun } from '../lib/ask-code-model';
 import { startModelRequest } from '../lib/model-request';
@@ -14,6 +14,7 @@ import {
   withReviewEffort,
   type ReviewModelSettings,
 } from '../lib/task-review';
+import { storeRating } from './confidence';
 import { store, setStore } from './core';
 import { setPendingAction } from './focus';
 import { isLandedTaskState } from './landing';
@@ -167,22 +168,17 @@ export async function startTaskReview(
     const payload = parseTaskReviewResponse(response, `Review by ${reviewer}`);
     // Before the status clears: an open review section takes the flag as the run ends.
     unseen.add(taskId);
-    // Replaced, not merged: a field the new rating leaves out must not survive from the old one.
+    // Replaced, not merged: a part the new rating leaves out must not survive from the old one.
     // Dated when it started, so code changed while the model read counts as newer.
-    setStore(
-      produce((s) => {
-        const target = s.tasks[taskId];
-        if (!target) return;
-        target.confidence = {
-          ...payload,
-          publishedAt: startedAt,
-          ...(fingerprint && { fingerprint }),
-          origin: 'review',
-          ...(headSha && { headSha }),
-        };
-        target.reviewStatus = undefined;
-      }),
-    );
+    batch(() => {
+      storeRating(taskId, payload, {
+        at: startedAt,
+        ...(fingerprint && { fingerprint }),
+        origin: 'review',
+        ...(headSha && { headSha }),
+      });
+      setStore('tasks', taskId, 'reviewStatus', undefined);
+    });
     logInfo('taskReview', 'Review finished', { taskId, durationMs: Date.now() - startedAt });
     // The review is read in the Finish dialog; where that is off or cannot open, or a
     // section on screen already took the flag, a plain notice says it is done.

@@ -1,5 +1,6 @@
 import { createEffect, createRoot, on } from 'solid-js';
 import { changesSinceVisit } from '../lib/task-visit';
+import { taskConfidence } from './confidence';
 import { store, setStore } from './core';
 
 /** HEAD from the latest git status read; an errored read says nothing. */
@@ -48,7 +49,7 @@ export function getTaskChangesSinceVisit(taskId: string): string[] {
   return changesSinceVisit({
     visit: task.lastVisit,
     headSha: currentHeadSha(taskId),
-    confidence: task.confidence,
+    confidence: taskConfidence(task),
     codeFingerprint: task.codeFingerprint,
     verificationRun: task.verificationRun,
     checks: task.evidence?.checks,

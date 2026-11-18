@@ -10,6 +10,7 @@ import {
   getTaskSnoozedUntil,
   isTaskBackgrounded,
 } from '../store/background-tasks';
+import { legacyRatingValues } from '../lib/confidence-card';
 import { invoke } from '../lib/ipc';
 import { setTaskExtraPrs } from '../store/pr-checks-state';
 import type { Task } from '../store/types';
@@ -174,11 +175,13 @@ it('leaves Create PR out where Finish is not offered', () => {
 it('marks Finish with its reports, fading those of older code', () => {
   const finish = container.querySelector<HTMLButtonElement>('.task-finish-btn');
   expect(finish?.querySelector('.task-finish-reports')).toBeNull();
-  setStore('tasks', 'one', 'confidence', {
-    scores: [{ label: 'Correct', score: 82, why: '' }],
-    findings: [],
-    publishedAt: 100,
-    fingerprint: 'a',
+  setStore('tasks', 'one', 'cards', {
+    confidence: legacyRatingValues({
+      scores: [{ label: 'Correct', score: 82, why: '' }],
+      findings: [],
+      publishedAt: 100,
+      fingerprint: 'a',
+    }),
   });
   expect(finish?.querySelectorAll('.task-finish-reports svg')).toHaveLength(1);
   expect(finish?.title).toContain('Current for the latest commit:\n· Review (lowest score 82%)');

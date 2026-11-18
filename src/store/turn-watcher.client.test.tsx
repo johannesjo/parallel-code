@@ -27,6 +27,7 @@ vi.mock('./taskStatus', () => ({
 import { appFactCard } from '../lib/app-facts';
 import { confidenceCard, type CardDefinition } from '../lib/cards';
 import { checkCard } from '../lib/check-card';
+import { legacyRatingValues } from '../lib/confidence-card';
 import { IPC } from '../../electron/ipc/channels';
 import { isConfidenceOutdated, type TaskConfidence } from '../lib/task-confidence';
 import { diffFingerprint } from '../lib/diff-excerpt';
@@ -94,16 +95,26 @@ function modelCard(id: string, trigger: 'after-turn' | 'manual'): CardDefinition
 describe('startTurnWatcher', () => {
   it('dates a rating after a code change while a card is on', async () => {
     setStore('cardDefinitions', [structuredClone(AGENT_CARD)]);
-    const rating = { publishedAt: 1, fingerprint: diffFingerprint('') } as TaskConfidence;
-    setStore('tasks', 't1', 'confidence', rating);
+    const rating: TaskConfidence = {
+      scores: [],
+      findings: [],
+      publishedAt: 1,
+      fingerprint: diffFingerprint(''),
+    };
+    setStore('tasks', 't1', 'cards', { confidence: legacyRatingValues(rating) });
     await runTurn();
     expect(store.tasks.t1.codeFingerprint?.fingerprint).toBe(diffFingerprint(CHANGED));
     expect(isConfidenceOutdated(rating, store.tasks.t1.codeFingerprint)).toBe(true);
   });
 
   it('dates a rating after a code change with no card on', async () => {
-    const rating = { publishedAt: 1, fingerprint: diffFingerprint('') } as TaskConfidence;
-    setStore('tasks', 't1', 'confidence', rating);
+    const rating: TaskConfidence = {
+      scores: [],
+      findings: [],
+      publishedAt: 1,
+      fingerprint: diffFingerprint(''),
+    };
+    setStore('tasks', 't1', 'cards', { confidence: legacyRatingValues(rating) });
     await runTurn();
     expect(isConfidenceOutdated(rating, store.tasks.t1.codeFingerprint)).toBe(true);
   });

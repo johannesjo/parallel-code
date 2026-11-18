@@ -131,7 +131,6 @@ function structuralSnapshot(): string {
             evidence: t.evidence,
             cards: t.cards,
             agentPlan: t.agentPlan,
-            confidence: t.confidence,
             lastVisit: t.lastVisit,
             finishItems: t.finishItems,
             reviewDismissed: t.reviewDismissed,

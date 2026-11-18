@@ -8,16 +8,18 @@ import { describeAgentCard, parseCardValues } from '../lib/card-publish';
 import { CONFIDENCE_CARD_ID } from '../../electron/shared/card-publish';
 import { isCardEnabled } from './cards';
 import { storeCardRun } from './card-values';
+import { confidenceCardDefinition, publishConfidenceCard } from './confidence';
 import { store, setStore } from './core';
 import { fingerprintAfterPublish, publishTarget } from './task-diff';
 
-/** How the Confidence card is filled; it takes the `confidence_publish` payload, not slots. */
-const CONFIDENCE_ENTRY = {
-  card: CONFIDENCE_CARD_ID,
-  name: 'Confidence',
-  values:
-    'The confidence_publish payload (scores, optional findings and source), sent as "values".',
-};
+/** The Confidence card's slots, and the classic payload it takes as well. */
+function confidenceEntry() {
+  return {
+    ...describeAgentCard(confidenceCardDefinition()),
+    accepts:
+      'Values keyed by these slots, or the confidence_publish payload (scores, findings, source, asked, changes, keyLine); parts whose slot is gone are dropped.',
+  };
+}
 
 /** The cards the task's agent may fill: Confidence, then its project's agent cards. */
 export function listAgentCards(taskId: string) {
@@ -26,7 +28,7 @@ export function listAgentCards(taskId: string) {
     .filter((card) => !card.builtIn && card.source.kind === 'agent')
     .filter((card) => isCardEnabled(card, task.projectId))
     .map(describeAgentCard);
-  return { cards: [CONFIDENCE_ENTRY, ...cards] };
+  return { cards: [confidenceEntry(), ...cards] };
 }
 
 /**
@@ -34,6 +36,8 @@ export function listAgentCards(taskId: string) {
  * does not fit leaves the card as it was, and the error names the slot.
  */
 export function publishCardValues(taskId: string, cardId: string, input: unknown): void {
+  // Like confidence_publish, it lands whether the card is on or not: the merge check reads it.
+  if (cardId === CONFIDENCE_CARD_ID) return publishConfidenceCard(taskId, input);
   const task = publishTarget(taskId);
   const card = store.cardDefinitions.find((entry) => entry.id === cardId);
   if (!card || card.builtIn) throw new Error(`There is no card "${cardId}". Call card_list.`);
