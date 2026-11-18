@@ -2,6 +2,7 @@ import { For, Show } from 'solid-js';
 import {
   pinGroups,
   showsInPinRow,
+  shownSlots,
   showsSlotLabel,
   sourceLabel,
   valueFor,
@@ -88,7 +89,7 @@ export function CardPreview(props: { card: CardDefinition }) {
               </span>
             </div>
             <div class="card-body">
-              <For each={props.card.slots}>
+              <For each={shownSlots(props.card)}>
                 {(slot) => (
                   <CardSlot
                     slot={slot}

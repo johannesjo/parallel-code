@@ -41,12 +41,19 @@ const MERGE_SLOTS = new Set(['scores', 'findings']);
 function MergeNote(props: { draft: CardDefinition; onRestore: () => void }) {
   return (
     <Show when={props.draft.builtIn === 'confidence' && !holdsMergeEvidence(props.draft)}>
-      <p class="card-editor-hint" role="note">
-        Without the default score list and findings, no task shows as ready to merge.{' '}
-        <button type="button" class="btn-secondary" onClick={() => props.onRestore()}>
+      {/* Laid out like the redraft row: a routine button beside a plain hint. */}
+      <div class="card-editor-redraft-row" role="note">
+        <button
+          type="button"
+          class="btn-secondary card-editor-redraft"
+          onClick={() => props.onRestore()}
+        >
           Add them back
         </button>
-      </p>
+        <span class="card-editor-hint">
+          Without the default score list and findings, no task shows as ready to merge.
+        </span>
+      </div>
     </Show>
   );
 }
