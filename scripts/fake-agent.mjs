@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* global process, setInterval, setTimeout */
 
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 
 function argValue(name, fallback = '') {
@@ -17,6 +18,9 @@ const bracketedPaste = process.argv.includes('--bracketed-paste');
 // Showcase recordings: print a canned session instead of the test banner.
 const transcriptPath = argValue('--transcript');
 const busyLabel = argValue('--busy');
+// Reliability benchmark: steady output of this many bytes per second, like a
+// busy agent printing build and test logs.
+const floodBytesPerSecond = Number(argValue('--flood', '0'));
 
 function write(text) {
   process.stdout.write(text);
@@ -54,8 +58,41 @@ function transientPromptRedraw() {
   }, 250);
 }
 
+const FLOOD_TICK_MS = 50;
+
+function flood() {
+  const perTick = Math.max(1, Math.round((floodBytesPerSecond * FLOOD_TICK_MS) / 1000));
+  let line = 0;
+  let written = 0;
+  // Bytes still owed: a tick's last line overshoots, and the next tick pays it back.
+  let budget = 0;
+  setInterval(() => {
+    let chunk = '';
+    budget += perTick;
+    while (budget > 0) {
+      line++;
+      const text = `\x1b[2m${new Date().toISOString()}\x1b[0m \x1b[32m✓\x1b[0m test ${line} passed in ${line % 97} ms\r\n`;
+      chunk += text;
+      budget -= Buffer.byteLength(text);
+    }
+    // Terminal writes block while the app holds the PTY paused (its flow
+    // control), so the count is what the app actually took in.
+    write(chunk);
+    written += Buffer.byteLength(chunk);
+  }, FLOOD_TICK_MS);
+  // Temp file and rename, so the benchmark never reads a half-written count.
+  setInterval(() => {
+    writeFileSync(`${transcriptPath}.written.tmp`, String(written));
+    renameSync(`${transcriptPath}.written.tmp`, `${transcriptPath}.written`);
+  }, 1000);
+}
+
 function replayTranscript() {
   write(readFileSync(transcriptPath, 'utf8').replace(/\r?\n/g, '\r\n'));
+  if (floodBytesPerSecond > 0) {
+    flood();
+    return;
+  }
   if (!busyLabel) return;
   const frames = ['·', '✢', '✳', '✶', '✻', '✽'];
   let frame = 0;

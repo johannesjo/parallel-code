@@ -62,6 +62,8 @@ type DemoAgent =
       agentName: string;
       /** Spinner label; the agent keeps printing and reads as working. */
       busy?: string;
+      /** Bytes per second of steady log output after the transcript (benchmarks). */
+      flood?: number;
     };
 
 export type DemoTask = DemoAgent & {
@@ -296,6 +298,7 @@ const agentFields = (
   const transcript = path.join(dir, 'transcripts', `${task.slug}.ansi`);
   writeFiles(path.dirname(transcript), { [path.basename(transcript)]: task.session.transcript });
   const busyArgs = task.busy ? ['--busy', task.busy] : [];
+  const floodArgs = task.flood ? ['--flood', String(task.flood)] : [];
   return {
     prompt: task.session.prompt,
     agentDef: {
@@ -303,7 +306,7 @@ const agentFields = (
       // Its own id, so the app never swaps in a real agent's settings.
       id: `demo-${task.slug}`,
       name: task.agentName,
-      args: ['--transcript', transcript, ...busyArgs],
+      args: ['--transcript', transcript, ...busyArgs, ...floodArgs],
     },
   };
 };

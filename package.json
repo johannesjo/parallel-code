@@ -36,6 +36,7 @@
     "test:webgl-atlas": "RUN_WEBGL_ATLAS_TEST=1 vitest run scripts/xterm-webgl-atlas.test.mjs",
     "test:coordinator-pty": "RUN_COORDINATOR_PTY_TEST=1 vitest run electron/mcp/coordinator-real-pty.integration.test.ts",
     "test:coverage": "vitest run --coverage",
+    "bench:reliability": "npm run compile && npm run build:mcp && npm run build:frontend && playwright test --config scripts/bench/playwright.config.ts reliability.spec.ts",
     "showcase:capture": "npm run compile && npm run build:mcp && npm run build:frontend && npm run build:remote && playwright test --config scripts/showcase/playwright.config.ts",
     "test:ci": "vitest run --coverage && npm run test:client",
     "check:coordinator-log": "node scripts/check-coordinator-run.mjs",

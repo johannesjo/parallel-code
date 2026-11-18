@@ -30,7 +30,15 @@ export const VIDEO_SIZE = {
 export type ShowcaseApp = {
   app: ElectronApplication;
   page: Page;
+  /** The profile's saved session, for checks of what survives a restart. */
+  statePath: string;
   close: () => Promise<void>;
+  /**
+   * Ends this run, by a normal quit or by killing the main process as a crash
+   * would, and starts the app again on the same profile and workspace.
+   * `between` runs while no app is running, to inspect what the end left behind.
+   */
+  restart: (how: 'quit' | 'kill', between?: () => void) => Promise<ShowcaseApp>;
 };
 
 // An allowlist rather than all of process.env: the parent shell can carry API
@@ -199,7 +207,7 @@ const startApp = async (page: Page, app: ElectronApplication): Promise<void> => 
 // A fixed, short path: the app shows worktree paths, and a random temp name
 // would end up in every screenshot. The marker proves a leftover is ours, and
 // holds the pid of the run that owns it.
-const DEMO_DIR = path.join(os.tmpdir(), 'pc-demo');
+export const DEMO_DIR = path.join(os.tmpdir(), 'pc-demo');
 const DEMO_MARKER = '.parallel-code-showcase';
 
 const isAlive = (pid: number): boolean => {
@@ -263,45 +271,95 @@ export const launchShowcaseApp = async (
     seedShellRc(home, blockedAgentsBin);
     const repo = seedDemoWorkspace(dir, home, options);
     if (options.realAgents?.includes('claude')) seedClaudeLogin(home, repo);
-    app = await _electron.launch({
-      executablePath: path.join(REPO_ROOT, 'node_modules', 'electron', 'dist', 'electron'),
-      args: [
-        '--no-sandbox',
-        // Offscreen rendering: no window on the desktop, and no GPU needed. A
-        // windowed run crashes where the GPU device is unavailable (sandboxes, CI).
-        '--ozone-platform=headless',
-        '--disable-gpu',
-        ...recorderLaunchArgs(WINDOW.deviceScaleFactor),
-        path.join(REPO_ROOT, 'dist-electron', 'main.js'),
-      ],
-      cwd: REPO_ROOT,
-      env: showcaseEnv(home, blockedAgentsBin),
-    });
-    const page = await app.firstWindow();
-    await startApp(page, app);
-    const started = app;
-    return {
-      app: started,
-      page,
-      close: async () => {
-        // Headless GTK cannot show the running-terminals confirmation dialog.
-        // Stop this isolated showcase's terminals before requesting a normal quit.
-        await page.evaluate(() =>
-          (
-            window as unknown as {
-              electron: { ipcRenderer: { invoke: (channel: string) => Promise<unknown> } };
-            }
-          ).electron.ipcRenderer.invoke('kill_all_agents'),
-        );
-        await started.close();
-        removeDir();
-      },
-    };
+    const env = showcaseEnv(home, blockedAgentsBin);
+    app = await launchElectron(env);
+    return await runHandle({ app, env, statePath: statePathIn(home), removeDir });
   } catch (error) {
     await app?.close();
     removeDir();
     throw error;
   }
+};
+
+// The seed writes the session where the unpackaged app reads it (Electron-dev).
+const statePathIn = (home: string): string =>
+  path.join(home, '.config', 'Electron-dev', 'state.json');
+
+const launchElectron = (env: Record<string, string>): Promise<ElectronApplication> =>
+  _electron.launch({
+    executablePath: path.join(REPO_ROOT, 'node_modules', 'electron', 'dist', 'electron'),
+    args: [
+      '--no-sandbox',
+      // Offscreen rendering: no window on the desktop, and no GPU needed. A
+      // windowed run crashes where the GPU device is unavailable (sandboxes, CI).
+      '--ozone-platform=headless',
+      '--disable-gpu',
+      ...recorderLaunchArgs(WINDOW.deviceScaleFactor),
+      path.join(REPO_ROOT, 'dist-electron', 'main.js'),
+    ],
+    cwd: REPO_ROOT,
+    env,
+  });
+
+type RunContext = {
+  app: ElectronApplication;
+  env: Record<string, string>;
+  statePath: string;
+  removeDir: () => void;
+};
+
+// Headless GTK cannot show the running-terminals confirmation dialog, so a
+// normal quit stops this isolated run's terminals first.
+const killAllAgents = (page: Page): Promise<unknown> =>
+  page.evaluate(() =>
+    (
+      window as unknown as {
+        electron: { ipcRenderer: { invoke: (channel: string) => Promise<unknown> } };
+      }
+    ).electron.ipcRenderer.invoke('kill_all_agents'),
+  );
+
+/** Kills the main process without letting it save or clean up, as a crash would. */
+const crash = async (app: ElectronApplication): Promise<void> => {
+  const main = app.process();
+  if (main.exitCode !== null || main.signalCode !== null) return;
+  const exited = new Promise((resolve) => main.once('exit', resolve));
+  main.kill('SIGKILL');
+  await exited;
+};
+
+const runHandle = async (context: RunContext): Promise<ShowcaseApp> => {
+  const { app, env, statePath, removeDir } = context;
+  const page = await app.firstWindow();
+  await startApp(page, app);
+  const end = async (how: 'quit' | 'kill'): Promise<void> => {
+    if (how === 'kill') return crash(app);
+    await killAllAgents(page);
+    await app.close();
+  };
+  return {
+    app,
+    page,
+    statePath,
+    close: async () => {
+      try {
+        await end('quit');
+      } finally {
+        removeDir();
+      }
+    },
+    restart: async (how, between) => {
+      await end(how);
+      between?.();
+      const next = await launchElectron(env);
+      try {
+        return await runHandle({ ...context, app: next });
+      } catch (error) {
+        await next.close();
+        throw error;
+      }
+    },
+  };
 };
 
 /**
