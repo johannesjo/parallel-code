@@ -37,6 +37,7 @@ docs/*
 !docs/phone.md
 !docs/market/
 !docs/cards.md
+!docs/plan-handoff-design.md
 
 # Sandbox bind-mount artifacts from user home (not project files).
 # Root-anchored so legitimate nested files with these names are still tracked.
