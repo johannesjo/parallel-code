@@ -51,6 +51,8 @@ import { Sidebar } from './components/Sidebar';
 import { TilingLayout } from './components/TilingLayout';
 import { HelpDialog } from './components/HelpDialog';
 import { IdeaDialog, toggleIdeaDialog } from './components/IdeaDialog';
+import { PromptPeek } from './components/PromptPeek';
+import { syncAttentionBadge } from './lib/attention-badge';
 import { TaskSwitcher } from './components/TaskSwitcher';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WorkspaceControls } from './components/WorkspaceControls';
@@ -381,6 +383,8 @@ function App() {
 
     setWindowState({ ...geometry, maximized });
   };
+
+  syncAttentionBadge();
 
   // Re-derive effective theme whenever OS dark mode or appearance mode/slots change
   createEffect(() => {
@@ -1135,6 +1139,7 @@ function App() {
           <UsageStatusBar />
         </Show>
         <IdeaDialog />
+        <PromptPeek />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
         <TaskSwitcher
           open={taskSwitcherOpen()}

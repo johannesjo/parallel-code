@@ -1,0 +1,164 @@
+/* The peek: an agent's question beside its card or sidebar row. */
+.prompt-peek {
+  position: fixed;
+  z-index: var(--z-modal);
+  width: 384px;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px 14px 10px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  font: 13px/1.45 var(--font-ui);
+  animation: promptPeekIn var(--motion-enter) var(--ease-out);
+}
+@keyframes promptPeekIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+.prompt-peek:focus,
+.prompt-peek-body:focus {
+  outline: none;
+}
+.prompt-peek-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.prompt-peek-head {
+  margin: 0;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.prompt-peek-note {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.prompt-peek-text {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font: 12px/1.4 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.prompt-peek-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.prompt-peek-choices button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.prompt-peek-choices button:hover,
+.prompt-peek-choices button:focus-visible {
+  background: var(--bg-hover);
+}
+.prompt-peek kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font: 10px var(--font-mono);
+  color: var(--fg-muted);
+}
+.prompt-peek-reply {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.prompt-peek-input {
+  flex: 1;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+}
+.prompt-peek-send {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.prompt-peek-send:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--bg-hover);
+}
+/* Nothing typed yet: Send waits, faded, rather than ignoring a click. */
+.prompt-peek-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Kept in the flow while empty so an error never shifts the keys below it. */
+.prompt-peek-error {
+  margin: 0;
+  min-height: 1.2em;
+  color: var(--error);
+  font-size: 12px;
+}
+.prompt-peek-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+.prompt-peek-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prompt-peek {
+    animation: none;
+  }
+}

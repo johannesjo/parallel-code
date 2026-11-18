@@ -13,8 +13,11 @@ import { ProjectSwatch } from './ProjectSwatch';
 import { getTaskOpenQuestion, isTaskTerminalBusy } from '../store/taskStatus';
 import { retryCloseTask } from '../store/tasks';
 import type { Task } from '../store/types';
+import { createPromptPeek } from '../store/promptPeek';
+import { CardAnswers, questionText } from './board/CardAnswers';
 import { activityLine, agentName, boardNow, stateLabel } from './board/task-state';
 import { ASK_ACTION, AskRow, TaskGlyph, TaskLine, TaskPr, openBeside } from './board/TaskStatus';
+import { openPromptPeek } from './PromptPeek';
 import { focusBoardCard } from './task-board-keys';
 import { boardCheckLabel, boardTaskState, type BoardLaneId } from './task-board-lanes';
 import { createTaskContextMenu } from './task-context-menu';
@@ -124,12 +127,32 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
     // Spelled out on the card, not only in a tooltip, so keyboard users see why.
     const closeError = closeErrorText();
     if (closeError) return closeError;
+    const shownQuestion = answers();
+    if (shownQuestion) return questionText(shownQuestion.menu);
     return busy() || (fromAgent() ? props.task.branchName : activity().text);
   };
   const shown = () => store.boardPeek && store.activeTaskId === props.task.id;
   const question = () => getTaskOpenQuestion(props.task.id);
   const ask = () =>
     props.lane === 'needs' && !props.task.closingStatus ? ASK_ACTION[state()] : undefined;
+  // The agent's own choices, read off its screen, answer it from the card.
+  const peek = createPromptPeek(() =>
+    ask() && state() === 'needs_input' ? question()?.agentId : undefined,
+  );
+  const answers = () => {
+    const agentId = question()?.agentId;
+    const menu = peek()?.menu;
+    return agentId && menu ? { target: { taskId: props.task.id, agentId }, menu } : undefined;
+  };
+  // A number key on a focused card presses that answer, the way the dialog takes it.
+  const onCardKeyDown = (event: KeyboardEvent) => {
+    if (!answers() || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!/^[1-9]$/.test(event.key) || event.target instanceof HTMLInputElement) return;
+    const button = cardEl?.querySelector<HTMLElement>(`[data-answer="${event.key}"]`);
+    if (!button) return;
+    event.preventDefault();
+    button.click();
+  };
   // Without a pull request, Ready to merge means the app's review vouches for the
   // work; Merge opens Finish on it, where the merge itself is confirmed.
   const localMerge = () =>
@@ -182,6 +205,7 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
         subtask: !!parentTask(props.task),
       }}
       onContextMenu={(event) => menu.onContextMenu(event)}
+      onKeyDown={onCardKeyDown}
     >
       <button
         type="button"
@@ -201,8 +225,9 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
       <TaskLine
         text={activityText()}
         classList={{
-          branch: fromAgent() && !closing() && !closeErrorText() && !busy(),
-          busy: !closing() && !closeErrorText() && !!busy(),
+          branch: fromAgent() && !closing() && !closeErrorText() && !busy() && !answers(),
+          busy: !closing() && !closeErrorText() && !!busy() && !answers(),
+          question: !closing() && !closeErrorText() && !!answers(),
         }}
         prUrl={taskLinkedPrUrl(props.task)}
         issueUrl={props.task.githubUrl}
@@ -236,7 +261,16 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
       <Show when={localMerge()}>
         <AskRow quiet label={localMergeLabel(props.task)} action="Merge" onAct={openFinish} />
       </Show>
-      <Show when={ask()}>
+      <Show when={answers()}>
+        {(a) => (
+          <CardAnswers
+            target={a().target}
+            menu={a().menu}
+            onReply={(anchor) => openPromptPeek(props.task.id, anchor, true)}
+          />
+        )}
+      </Show>
+      <Show when={!answers() && ask()}>
         {(action) => (
           <AskRow
             label={stateLabel(props.task, state())}

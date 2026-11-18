@@ -681,6 +681,17 @@ html[data-look^='islands-'] .task-board {
   font: 11px/16px var(--font-mono, monospace);
   color: var(--fg-muted);
 }
+/* The agent's question keeps its line breaks. A long dialog is cut at the top,
+   since its last line asks the question; the peek shows it whole. */
+.task-board-activity.question {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: auto;
+  max-height: 96px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .task-board-activity.branch {
   color: var(--fg-subtle, var(--fg-muted));
 }
@@ -689,10 +700,14 @@ html[data-look^='islands-'] .task-board {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 16px;
+  min-height: 16px;
   margin: 0;
   padding-left: 17px;
   min-width: 0;
+}
+/* Badges stay on a wrapped question's first line. */
+.task-board-line:has(> .question) {
+  align-items: flex-start;
 }
 .task-board-line > .task-board-activity {
   flex: 1;
@@ -1223,4 +1238,41 @@ main.board-panel-left > .plan-board-shell {
 .task-workspace.board-side-panel.panel-left > .board-side-panel-close {
   left: auto;
   right: -8px;
+}
+
+/* Answers read off the agent's dialog. The first choice, the dialog's own
+   default, is marked by full-strength text; the rest stay muted. */
+.task-board-answers {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-board-answers .task-board-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 0;
+  padding: 0 8px;
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.task-board-answers .task-board-act.primary {
+  color: var(--fg);
+  font-weight: 500;
+}
+/* Pressed: the choices fade while the agent redraws, so a click visibly took. */
+.task-board-answers .task-board-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.task-board-answer-n {
+  font: 10px var(--font-mono);
+  color: var(--fg-subtle);
+}
+.task-board-answer-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

@@ -10,8 +10,13 @@ import { setDelegationStates } from '../store/delegation';
 import type { Task } from '../store/types';
 import { startTaskVisitTracker } from '../store/task-visits';
 import { AttentionTray } from './AttentionTray';
+import { openPromptPeek } from './PromptPeek';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(async () => ({})) }));
+vi.mock('./PromptPeek', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./PromptPeek')>()),
+  openPromptPeek: vi.fn(),
+}));
 vi.mock('../store/tasks', () => ({
   uncollapseTask: vi.fn(),
   clearTaskLandingReview: vi.fn(),
@@ -92,7 +97,14 @@ it('routes every asker in hidden projects and preserves row focus when another a
   expect(rows()).toHaveLength(2);
   expect(rows()[0]).toBe(question);
   expect(document.activeElement).toBe(question);
+  // A click peeks at the question beside the row; the menu's Open goes to the asker.
   question.click();
+  expect(openPromptPeek).toHaveBeenCalledWith('child', question);
+  expect(store.activeTaskId).toBeNull();
+  question.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 9, clientY: 9 }));
+  [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    .find((item) => item.textContent?.trim() === 'Open')
+    ?.click();
   expect(store.activeAgentId).toBe('two');
   expect(store.focusedPanel.child).toBe('ai-terminal:two');
   expect(store.tasks.child.needsReview).toBe(true);

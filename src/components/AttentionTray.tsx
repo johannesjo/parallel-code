@@ -13,6 +13,7 @@ import { sf } from '../lib/fontScale';
 import { theme } from '../lib/theme';
 import { DelegationReviewDialog } from './DelegationReviewDialog';
 import { IconButton } from './IconButton';
+import { canPeekTask, openPromptPeek } from './PromptPeek';
 import { ProjectSwatch } from './ProjectSwatch';
 import { StatusDot } from './StatusDot';
 import { createTaskContextMenu } from './task-context-menu';
@@ -27,7 +28,12 @@ function opensReview(entry: AttentionEntry): boolean {
   );
 }
 
-function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () => void }) {
+function AttentionRow(props: {
+  entry: AttentionEntry;
+  nowMs: number;
+  /** With the row as anchor, a question opens the peek beside it instead of the task. */
+  onOpen: (anchor?: HTMLElement) => void;
+}) {
   const task = () => store.tasks[props.entry.taskId];
   const project = () => store.projects.find((p) => p.id === task()?.projectId);
   const resume = () => task()?.collapsed && !opensReview(props.entry);
@@ -45,6 +51,7 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
             class="task-item sidebar-attention-row"
             aria-current={store.activeTaskId === props.entry.taskId ? 'true' : undefined}
             data-attention={getTaskAttentionState(props.entry.taskId)}
+            data-attention-task={props.entry.taskId}
             title={[
               t().name,
               props.entry.label,
@@ -53,7 +60,7 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
             ]
               .filter(Boolean)
               .join(' — ')}
-            onClick={() => props.onOpen()}
+            onClick={(event) => props.onOpen(event.currentTarget)}
             onContextMenu={(event) => menu.onContextMenu(event)}
             style={{
               display: 'flex',
@@ -158,10 +165,12 @@ export function AttentionTray(props: { nowMs: number }) {
     const id = reviewTaskId();
     return id ? store.tasks[id] : undefined;
   };
-  function open(entry: AttentionEntry) {
+  function open(entry: AttentionEntry, anchor?: HTMLElement) {
     // A removed/resolved action must not revive a task from a stale click.
     if (!entries().some((current) => current.key === entry.key)) return;
     if (opensReview(entry)) setReviewTaskId(entry.taskId);
+    else if (anchor && entry.kind === 'question' && canPeekTask(entry.taskId))
+      openPromptPeek(entry.taskId, anchor);
     else jumpToWaitingTask(entry.taskId, entry.panel);
   }
   return (
@@ -183,7 +192,11 @@ export function AttentionTray(props: { nowMs: number }) {
             {(key) => (
               <Show when={entries().find((entry) => entry.key === key)}>
                 {(entry) => (
-                  <AttentionRow entry={entry()} nowMs={props.nowMs} onOpen={() => open(entry())} />
+                  <AttentionRow
+                    entry={entry()}
+                    nowMs={props.nowMs}
+                    onOpen={(anchor) => open(entry(), anchor)}
+                  />
                 )}
               </Show>
             )}

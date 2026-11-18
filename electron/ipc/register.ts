@@ -23,6 +23,7 @@ import {
   handoffClaudeTerminal,
 } from './pty.js';
 import { loadEnvFile } from './env-file.js';
+import { registerAttentionHandlers } from './register-attention.js';
 import { projectAgentEnv, setProjectAgentEnv } from './project-env.js';
 import { setProjectWorktreeSettings } from './project-worktree.js';
 import { getResourceSnapshot } from './resources.js';
@@ -994,6 +995,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     }
     return writeToAgent(args.agentId, args.data);
   });
+  registerAttentionHandlers(
+    win,
+    (taskId) => mcp.coordinator()?.isAutomationWriteInFlight(taskId) ?? false,
+  );
   ipcMain.handle(IPC.ResizeAgent, (_e, args) => {
     assertString(args.agentId, 'agentId');
     assertInt(args.cols, 'cols');
