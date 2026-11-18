@@ -9,8 +9,13 @@ module.exports = {
         'Use IPC channels instead.',
       from: {
         path: '^src/',
-        // An end-to-end test of the phone client against the real phone server; never bundled.
-        pathNot: '^src/remote/live-updates\\.test\\.ts$',
+        // End-to-end tests that drive main-process code into the renderer; never bundled:
+        // the phone client against the real phone server, and recorded agent sessions
+        // through the hook pipeline into task status.
+        pathNot: [
+          '^src/remote/live-updates\\.test\\.ts$',
+          '^src/store/recorded-session-replay\\.test\\.ts$',
+        ],
       },
       to: {
         path: '^electron/',

@@ -131,3 +131,18 @@ export function nextTerminalInputPending(currentPending: boolean, data: string):
 export function submitsTerminalDraft(currentPending: boolean, data: string): boolean {
   return scanTerminalInput(currentPending, data).submitted;
 }
+
+/** Whether `data` sends a draft, and whether one is pending after it. */
+export function followTerminalDraft(
+  currentPending: boolean,
+  data: string,
+): { submitted: boolean; pending: boolean } {
+  // History recall can populate a draft without printable input. Cursor,
+  // editing and function keys, Escape and Backspace preserve a draft but
+  // cannot create one on an empty line.
+  const draftActivity = hasTerminalUserActivity(data) && hasTerminalDraftActivity(data);
+  return {
+    submitted: submitsTerminalDraft(currentPending, data),
+    pending: nextTerminalInputPending(currentPending || draftActivity, data),
+  };
+}

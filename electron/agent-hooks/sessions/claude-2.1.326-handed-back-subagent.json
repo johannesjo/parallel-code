@@ -1,0 +1,107 @@
+{
+  "command": "claude",
+  "hooks": "claude",
+  "version": "2.1.326",
+  "summary": "A background sub-agent hands back and stops, yet Claude keeps listing it as running; the lead replies, ends its turn, and runs one more turn.",
+  "recorded": "Excerpt of hook payloads from an interactive Claude Code 2.1.326 session: event order and the fields listed are as recorded; other fields were dropped. Copied from subagents.test.ts, which keeps its own copy. It starts at the sub-agent start, so the turn that launched it is not in it.",
+  "steps": [
+    {
+      "hook": {
+        "hook_event_name": "SubagentStart",
+        "agent_id": "a1"
+      }
+    },
+    {
+      "hook": {
+        "hook_event_name": "Stop",
+        "last_assistant_message": "started",
+        "background_tasks": [
+          {
+            "id": "a1",
+            "type": "subagent",
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "SubagentHandback",
+        "agent_id": "a1"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStop",
+        "agent_id": "a1",
+        "background_tasks": [
+          {
+            "id": "a1",
+            "type": "subagent",
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Read"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "Stop",
+        "last_assistant_message": "started",
+        "background_tasks": [
+          {
+            "id": "a1",
+            "type": "subagent",
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "idle"
+    },
+    {
+      "hook": {
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "commit"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "Stop",
+        "last_assistant_message": "started",
+        "background_tasks": [
+          {
+            "id": "a1",
+            "type": "subagent",
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "idle"
+    }
+  ]
+}

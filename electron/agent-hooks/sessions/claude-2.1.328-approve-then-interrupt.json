@@ -1,0 +1,1093 @@
+{
+  "command": "claude",
+  "hooks": "claude",
+  "version": "2.1.328",
+  "summary": "Haiku is asked to create a file; the user approves the Bash permission question and the turn finishes. The user then asks for a 30-second foreground loop, approves it and presses Esc after 5 seconds: Claude Code shows \"Interrupted\" and sends no Stop hook.",
+  "recorded": "Recorded with PARALLEL_CODE_RECORD_SESSIONS in the headless showcase app (scripts/showcase/scenes/record-status.spec.ts, Haiku). Temp paths became /tmp, the user name became user, session and tool ids and the plan name were replaced. Untrimmed.",
+  "steps": [
+    {
+      "wait": 227
+    },
+    {
+      "output": "\u001b7\u001b[r\u001b8\u001b[?25h"
+    },
+    {
+      "wait": 53
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-5-5"
+      }
+    },
+    {
+      "wait": 60
+    },
+    {
+      "output": "\u001b[?2004h\u001b[?2031h\u001b[?1004h"
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "input": "\u001b[O"
+    },
+    {
+      "output": "\u001b[?1049h\u001b[2J\u001b[H\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h\u001b[?25l\u001b[?25l\u001b[H\r\u001b[11C\u001b[1B\u001b[1mClaude Code\u001b[24G\u001b[22m\u001b[38;2;153;153;153mv2.1.328\r\u001b[11C\u001b[1BHaiku 5.5 with medium effort · Claude plan\r\u001b[11C\u001b[1B/create-a-file-notes-md-containing-the-766e…\r\u001b[39C\u001b[14B◐ medium · /effort\r\u001b[1B\u001b[38;2;136;136;136m───────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ \u001b[7m \r\u001b[1B\u001b[27m\u001b[38;2;136;136;136m───────────────────────────────────────────────────────────\r\u001b[2C\u001b[2B\u001b[38;2;153;153;153m⏸ manual mode on\u001b[39m\u001b[23;1H\u001b[20;3H"
+    },
+    {
+      "wait": 60
+    },
+    {
+      "output": "\u001b[H\r\u001b[6B\u001b[38;2;177;185;249m───────────────────────────────────────────────────────────\r\u001b[2C\u001b[1B\u001b[1mMake auto mode your default permission mode?\r\u001b[2C\u001b[2B\u001b[22m\u001b[39mAuto\u001b[8Gmode\u001b[13Glets\u001b[18GClaude\u001b[25Ghandle\u001b[32Gpermission\u001b[43Gprompts\r\u001b[2C\u001b[1Bautomatically.\u001b[18GClaude\u001b[25Gchecks\u001b[32Geach\u001b[37Gtool\u001b[42Gcall\u001b[47Gfor\u001b[51Grisky\r\u001b[2C\u001b[1Bactions\u001b[11Gand\u001b[15Gprompt\u001b[22Ginjection\u001b[32Gbefore\u001b[39Gexecuting,\u001b[50Gruns\u001b[55Gthe\r\u001b[2C\u001b[1Bones\u001b[8Git\u001b[11Gassesses\u001b[20Gas\u001b[23Glower-risk,\u001b[35Gand\u001b[39Gblocks\u001b[46Gthe\u001b[50Grest.\r\u001b[2C\u001b[2B\u001b[38;2;177;185;249m❯\u001b[5GYes, set auto mode as my default permission mode\r\u001b[4C\u001b[1B\u001b[39mNo,\u001b[9Gkeep\u001b[14Gmanual\u001b[21Gmode\r\u001b[39C\u001b[2B\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[K\r\u001b[2C\u001b[2B\u001b[K\u001b[23;1H\u001b[15;3H"
+    },
+    {
+      "output": "\u001b[>0q\u001b[?u"
+    },
+    {
+      "output": "\u001b]7501;?\u0007\u001b[c"
+    },
+    {
+      "wait": 26
+    },
+    {
+      "input": "\u001bP>|xterm.js(6.1.0-beta.337)\u001b\\\u001b[?1;2c"
+    },
+    {
+      "output": "\u001b[?2026$p"
+    },
+    {
+      "output": "\u001b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\u001b\\\u001b[16t\u001b[?1016$p\u001b[c"
+    },
+    {
+      "input": "\u001b[?2026;2$y"
+    },
+    {
+      "output": "\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h"
+    },
+    {
+      "output": "\u001b[2J\u001b[H\r\u001b[11C\u001b[1B\u001b[1mClaude Code\u001b[24G\u001b[22m\u001b[38;2;153;153;153mv2.1.328\r\u001b[11C\u001b[1BHaiku 5.5 with medium effort · Claude plan\r\u001b[11C\u001b[1B/…/create-a-file-notes-md-containing-the-766e13\r\u001b[3B\u001b[38;2;177;185;249m──────────────────────────────────────────────────────────────\r\u001b[2C\u001b[1B\u001b[1mMake auto mode your default permission mode?\r\u001b[2C\u001b[2B\u001b[22m\u001b[39mAuto\u001b[8Gmode\u001b[13Glets\u001b[18GClaude\u001b[25Ghandle\u001b[32Gpermission\u001b[43Gprompts\r\u001b[2C\u001b[1Bautomatically.\u001b[18GClaude\u001b[25Gchecks\u001b[32Geach\u001b[37Gtool\u001b[42Gcall\u001b[47Gfor\u001b[51Grisky\r\u001b[2C\u001b[1Bactions\u001b[11Gand\u001b[15Gprompt\u001b[22Ginjection\u001b[32Gbefore\u001b[39Gexecuting,\u001b[50Gruns\u001b[55Gthe\r\u001b[2C\u001b[1Bones\u001b[8Git\u001b[11Gassesses\u001b[20Gas\u001b[23Glower-risk,\u001b[35Gand\u001b[39Gblocks\u001b[46Gthe\u001b[50Grest.\r\u001b[2C\u001b[2B\u001b[38;2;177;185;249m❯\u001b[5GYes, set auto mode as my default permission mode\r\u001b[4C\u001b[1B\u001b[39mNo,\u001b[9Gkeep\u001b[14Gmanual\u001b[21Gmode\u001b[23;1H\u001b[15;3H"
+    },
+    {
+      "input": "\u001b[?1016;2$y\u001b[?1;2c"
+    },
+    {
+      "wait": 77
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[3B\u001b[38;2;215;119;87m ▐\u001b[48;2;0;0;0m▛███▛█\u001b[39m\u001b[49m\u001b[23;1H\u001b[15;3H\u001b[?2026l"
+    },
+    {
+      "wait": 184
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[3B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m█▟\u001b[7G█▟\u001b[39m\u001b[49m\u001b[23;1H\u001b[15;3H\u001b[?2026l"
+    },
+    {
+      "wait": 92
+    },
+    {
+      "input": "\u001b[I\u001b[B\r"
+    },
+    {
+      "output": "\u001b[16t\u001b[c"
+    },
+    {
+      "output": "\u001b]104;255\u0007"
+    },
+    {
+      "input": "\u001b[?1;2c"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[6B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[2B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[2B\u001b[K\r\u001b[4C\u001b[1B\u001b[K\r\u001b[3B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ \u001b[7m \r\u001b[1B\u001b[27m\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[2C\u001b[2B\u001b[38;2;153;153;153m⏸ manual mode on\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[18C\u001b[22B\u001b[38;2;153;153;153m · ← for agents\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "input": "\u001b[?997;1n"
+    },
+    {
+      "wait": 60
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[3B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m▟█\u001b[7G▟█\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 182
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[3B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m▛\u001b[7G▛\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 123
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2B\u001b[38;2;215;119;87m ▐\u001b[48;2;0;0;0m▛███▛█\r\u001b[1B\u001b[49m▝▜\u001b[48;2;0;0;0m█\u001b[7G█\u001b[49m█▀\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 61
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[38;2;215;119;87m▗▟\u001b[48;2;0;0;0m▛███▛█\u001b[49m▄\r\u001b[1C\u001b[1B▜\u001b[48;2;0;0;0m█\u001b[7G█\u001b[49m█▘\r\u001b[1B ▝▝   ▝▝ \u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 243
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[38;2;215;119;87m ▐\u001b[9G\u001b[39m \r\u001b[1B\u001b[38;2;215;119;87m▝\u001b[9G▀\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 122
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[1B\u001b[48;2;215;119;87m\u001b[38;2;0;0;0m▂\u001b[7G▂\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 61
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[1B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m▛\u001b[7G▛\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 3766
+    },
+    {
+      "input": "\u001b[I"
+    },
+    {
+      "input": "\u001b[200~Create a file NOTES.md containing the single line \"hello\". Do nothing else.\u001b[201~"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[17B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ Create a file NOTES.md containing the single line \"hello\".\u001b[K\r\u001b[1B  Do\u001b[6Gnothing\u001b[14Gelse.\u001b[7m \r\u001b[18C\u001b[3B\u001b[27m\u001b[K\u001b[23;1H\u001b[20;19H\u001b[?2026l"
+    },
+    {
+      "wait": 42
+    },
+    {
+      "input": "\r"
+    },
+    {
+      "wait": 21
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[6B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mCreate a file NOTES.md containing the single line \"hello\". \u001b[39m \r\u001b[1B  \u001b[38;2;255;255;255mDo nothing else.\u001b[39m                                            \r\u001b[9B\u001b[49m\u001b[38;2;215;119;87m✽\u001b[3GCrafting… \r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[38;2;153;153;153m❯ \u001b[39m\u001b[7m \u001b[27m\u001b[K\r\u001b[18C\u001b[3B\u001b[38;2;153;153;153m · esc to interrupt · ← for agents\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[12C\u001b[16B\u001b[38;2;153;153;153m(running UserPromptSubmit hook · 0s)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "Create a file NOTES.md containing the single line \"hello\". Do nothing else."
+      }
+    },
+    {
+      "wait": 42
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[13G\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 67
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 225
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 133
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m·\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 214
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[9B\u001b[38;2;153;153;153m \u001b[3G\u001b[39mRunning\u001b[11G\u001b[1m1\u001b[13G\u001b[22mshell\u001b[19Gcommand…\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 23
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[9B\u001b[38;2;153;153;153m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 125
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "wait": 68
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 57
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[9BCreating NOTES.md with the\u001b[30Gline\u001b[35Ghello\u001b[41Gand\u001b[45Gverifying\u001b[55Git\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ printf 'hello\\n' > NOTES.md && cat NOTES.md\r\u001b[2C\u001b[6B\u001b[38;2;233;154;122mCrafting…\u001b[13G\u001b[38;2;153;153;153m(running PreToolUse hook · 1s)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "printf 'hello\\n' > NOTES.md && cat NOTES.md",
+          "description": "Create NOTES.md with the line hello and verify it"
+        },
+        "tool_use_id": "toolu_000000000000000000000001"
+      }
+    },
+    {
+      "wait": 24
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "printf 'hello\\n' > NOTES.md && cat NOTES.md",
+          "description": "Create NOTES.md with the line hello and verify it"
+        },
+        "permission_suggestions": [
+          {
+            "type": "addDirectories",
+            "directories": [
+              "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13"
+            ],
+            "destination": "session"
+          }
+        ]
+      }
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m●\u001b[39m Creating\u001b[12GNOTES.md with the line hello and verifying it\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ printf 'h\u001b[18Gllo\\n' > NOTES.md && ca\u001b[42G NOTES.md\u001b[39m\u001b[K\r\u001b[2B\u001b[38;2;177;185;249m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m \u001b[38;2;177;185;249m\u001b[1mBash command\u001b[22m\u001b[39m\u001b[K\r\u001b[1B \u001b[1mTip: auto mode handles these prompts for you — choose \u001b[22m\u001b[K\r\u001b[1C\u001b[1B\u001b[1m\"switch to auto mode\" below\r\u001b[1B\u001b[22m \u001b[38;2;153;153;153mCreate NOTES.md with the line hello and verify it\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\r\u001b[1C\u001b[1B\u001b[39mprintf\u001b[9G'hello\\n'\u001b[19G>\u001b[21GNOTES.md\u001b[30G&&\u001b[33Gcat\u001b[37GNOTES.md\r\u001b[1B\u001b[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\r\u001b[1C\u001b[1B\u001b[39mDo\u001b[5Gyou\u001b[9Gwant\u001b[14Gto\u001b[17Gproceed?\r\u001b[1C\u001b[1B\u001b[38;2;177;185;249m❯\u001b[4G\u001b[38;2;153;153;153m1. \u001b[38;2;177;185;249mYes\r\u001b[3C\u001b[1B\u001b[38;2;153;153;153m2. \u001b[39mYes,\u001b[12Gand\u001b[16Galways\u001b[23Gallow\u001b[29Gaccess\u001b[36Gto\u001b[39G\u001b[1m/tmp/\r\u001b[1B\u001b[22m \u001b[3G    \u001b[1mpc-demo/weather-app/.worktrees/task/create-a-fi\r\u001b[6C\u001b[1Ble-notes-md-containing-the-766e13\u001b[41G\u001b[22mfrom\u001b[46Gthis\u001b[51Gproject\r\u001b[1B   \u001b[38;2;153;153;153m3. \u001b[39mYes, and switch to auto mode\u001b[38;2;153;153;153m · auto mode handles these \u001b[39m\u001b[K\r\u001b[1B   \u001b[7G\u001b[38;2;153;153;153mprompts for you\r\u001b[1B\u001b[39m   \u001b[38;2;153;153;153m4. \u001b[39mNo\u001b[K\r\u001b[1C\u001b[2B\u001b[38;2;153;153;153mEsc to cancel · Tab\u001b[22Gto amend\u001b[39m\u001b[K\u001b[23;1H\u001b[15;2H\u001b[?2026l"
+    },
+    {
+      "wait": 316
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2B\u001b[38;2;153;153;153m \u001b[39m\u001b[23;1H\u001b[15;2H\u001b[?2026l"
+    },
+    {
+      "wait": 188
+    },
+    {
+      "expect": "needs_input"
+    },
+    {
+      "input": "\r"
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[38;2;215;119;87m ▐\u001b[48;2;0;0;0m▛███▛█\u001b[12G\u001b[39m\u001b[49m\u001b[1mClaude Code\u001b[24G\u001b[22m\u001b[38;2;153;153;153mv2.1.328\r\u001b[1B\u001b[38;2;215;119;87m▝▜\u001b[48;2;0;0;0m█████\u001b[49m█▀\u001b[39m \u001b[12G\u001b[38;2;153;153;153mHaiku 5.5 with medium effort · Claude plan\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;215;119;87m ▝▝   ▝▝ \u001b[39m  \u001b[38;2;153;153;153m/…/cr\u001b[18Gate-a-file-notes-md-con\u001b[42Gaining-the-766e13\r\u001b[2B\u001b[39m\u001b[K\r\u001b[1B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mCreate a file NOTES.md containing the single line \"hello\". \u001b[39m \r\u001b[1B  \u001b[38;2;255;255;255mDo nothing else.\u001b[39m                                            \r\u001b[1C\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m \u001b[39m Creating NOTES.md with the line hello and verifying\u001b[55Git\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ printf 'hello\\n' > NOTES.md && cat NOTES.md\u001b[39m\u001b[K\r\u001b[1C\u001b[1B\u001b[K\r\u001b[1B\u001b[K\r\u001b[1C\u001b[1B\u001b[K\r\u001b[1C\u001b[1B\u001b[K\r\u001b[3C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;215;119;87m✽\u001b[3G\u001b[38;2;230;149;117mCrafting…\u001b[38;2;215;119;87m \u001b[38;2;153;153;153m(1s · ↓\u001b[39m \u001b[38;2;153;153;153m108 tokens)\u001b[39m\u001b[K\r\u001b[6C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[38;2;153;153;153m❯ \u001b[39m\u001b[7m \u001b[7G\u001b[27m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1C\u001b[2B\u001b[39m \u001b[38;2;153;153;153m⏸ manual mode on\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[18C\u001b[22B\u001b[38;2;153;153;153m · esc to interrupt · ← for agents\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 26
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13C\u001b[16B\u001b[38;2;153;153;153mrunning Pos\u001b[26GToolUse hook · 1s · ↓\u001b[48G108 tokens)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "printf 'hello\\n' > NOTES.md && cat NOTES.md",
+          "description": "Create NOTES.md with the line hello and verify it"
+        },
+        "tool_response": {
+          "stdout": "hello",
+          "stderr": "",
+          "interrupted": false,
+          "isImage": false,
+          "noOutputExpected": false
+        },
+        "tool_use_id": "toolu_000000000000000000000001",
+        "duration_ms": 47
+      }
+    },
+    {
+      "wait": 20
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13C\u001b[16B\u001b[38;2;153;153;153m1s · ↓\u001b[39m \u001b[38;2;153;153;153m108 \u001b[26Gokens)\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;228;144;112mCrafting…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 98
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;223;134;102mCrafting…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 96
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;220;129;97mCrafting…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[3G\u001b[38;2;218;124;92mCrafting…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[9B\u001b[38;2;153;153;153m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 97
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[3GCrafting…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 118
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[22G\u001b[38;2;153;153;153m10\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 92
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[9B \u001b[3G\u001b[38;2;153;153;153mRan \u001b[1m1\u001b[22m shell command \u001b[39m\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;255;255;255m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 32
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[22C\u001b[16B\u001b[38;2;153;153;153m1\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 76
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[11BI\u001b[5Gcreated\u001b[13G\u001b[38;2;177;185;249mNOTES.md\u001b[22G\u001b[39min\u001b[25Gthe\u001b[29Gworktree\u001b[38Gcontaining\u001b[49Gthe\u001b[53Gsingle\r\u001b[2C\u001b[1Bline\u001b[8G\u001b[38;2;177;185;249mhello\u001b[39m,\u001b[15Gand\u001b[19Gconfirmed\u001b[29Gthe\u001b[33Gcontents.\u001b[43GI\u001b[45Gdid\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[4B\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 102
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[14BBottom\u001b[10Gline:\u001b[16G\u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis\u001b[28Gin\u001b[31Gplace\u001b[37Gwith\u001b[42G\u001b[38;2;177;185;249mhello\u001b[48G\u001b[39mas\u001b[51Gits\u001b[55Gonly\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 39
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "wait": 66
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[15Bline.\u001b[9GNothing\u001b[17Gis\u001b[20Gcommitted\u001b[30Gor\u001b[33Gpushed,\u001b[41Gand\u001b[45GI\u001b[47Gdidn't\u001b[54Gtouch\r\u001b[2C\u001b[1Banything\u001b[12Gelse.\u001b[18G✅\u001b[21GDone\u001b[26G—\u001b[28Gsafe\u001b[33Gto\u001b[36Gdiscard.\u001b[45GThe\u001b[49Gfile\u001b[54Gis\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 63
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "last_assistant_message": "I created `NOTES.md` in the worktree containing the single line `hello`, and confirmed the contents. I did not commit it.\n\nBottom line: `NOTES.md` is in place with `hello` as its only line. Nothing is committed or pushed, and I didn't touch anything else. ✅ Done — safe to discard. The file is uncommitted; say if you want it committed.",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[38;2;215;119;87m ▝▝   ▝▝ \u001b[12G\u001b[38;2;153;153;153m/…/create-a-file-notes-md-containing-the-766e13\r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mCreate a file NOTES.md containing the single line \"hello\". \u001b[39m \r\u001b[1B  \u001b[38;2;255;255;255mDo nothing else.\u001b[39m                                            \r\u001b[2B\u001b[49m  \u001b[38;2;153;153;153mRan \u001b[1m1\u001b[22m shell command \u001b[39m\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;255;255;255m●\u001b[3G\u001b[39mI\u001b[5Gcreated\u001b[13G\u001b[38;2;177;185;249mNOTES.md\u001b[22G\u001b[39min\u001b[25Gthe\u001b[29Gworktree\u001b[38Gcontaining\u001b[49Gthe\u001b[53Gsingle\r\u001b[2C\u001b[1Bline \u001b[38;2;177;185;249mhello\u001b[39m, and confirmed\u001b[29Gthe\u001b[33Gcontents.\u001b[43GI\u001b[45Gdid\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[2B \u001b[3GBottom line: \u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis in plac\u001b[36G with \u001b[38;2;177;185;249mhello\u001b[39m as it\u001b[54G on\u001b[58Gy\r\u001b[6C\u001b[1B. Nothing is committed or\u001b[33Gpush\u001b[38Gd, and\u001b[45GI \u001b[48Gidn't touch\u001b[60G\u001b[K\r\u001b[2C\u001b[1Banything\u001b[12Gelse.\u001b[18G✅\u001b[21GDone\u001b[26G—\u001b[28Gsafe\u001b[33Gto\u001b[36Gdiscard.\u001b[45GThe\u001b[49Gfile\u001b[54Gis\r\u001b[2C\u001b[1Buncom\u001b[9Gitted;\u001b[16Gsay if you wa\u001b[30Gt it committed.\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;215;119;87m·\u001b[3G\u001b[38;2;223;134;102mCrafting…\u001b[38;2;215;119;87m \u001b[38;2;153;153;153m(running Stop hook · 2s · ↓\u001b[39m \u001b[38;2;153;153;153m232 tokens)\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s ·\u001b[22Gdone\u001b[27G2:33\u001b[32GPM\u001b[39m\u001b[K\r\u001b[3B❯ \r\u001b[21C\u001b[3B\u001b[38;2;153;153;153m← for agents\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 2054
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[18C\u001b[22B\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 11916
+    },
+    {
+      "expect": "idle"
+    },
+    {
+      "input": "Run"
+    },
+    {
+      "output": "\u001b(B\u000f\u001b[?2004h\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[19BRun\u001b[7m \u001b[27m\u001b[23;1H\u001b[20;6H\u001b[?2026l"
+    },
+    {
+      "wait": 39
+    },
+    {
+      "input": " this in the foreground, not in the background: `for i in $(seq 1 30)"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[K\r\u001b[2B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mCreate a file NOTES.md containing the single line \"hello\". \u001b[39m \r\u001b[1B  \u001b[38;2;255;255;255mDo nothing else.\u001b[39m                                           \r\u001b[1B\u001b[49m\u001b[K\r\u001b[2C\u001b[1B\u001b[38;2;153;153;153mRan \u001b[1m1\u001b[22m shell command \r\u001b[2C\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;255;255;255m●\u001b[3G\u001b[39mI\u001b[5Gcreated\u001b[13G\u001b[38;2;177;185;249mNOTES.md\u001b[22G\u001b[39min\u001b[25Gthe\u001b[29Gworktree\u001b[38Gcontaining\u001b[49Gthe\u001b[53Gsingle\r\u001b[1B \u001b[3Gline \u001b[38;2;177;185;249mhello\u001b[39m, and confirmed\u001b[29Gthe contents. I did\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1BBottom\u001b[10Gline:\u001b[16G\u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis\u001b[28Gin\u001b[31Gplace\u001b[37Gwith\u001b[42G\u001b[38;2;177;185;249mhello\u001b[48G\u001b[39mas\u001b[51Gits\u001b[55Gonly\r\u001b[2C\u001b[1Bline. Nothing is committed or pushed, and I didn'\u001b[53G t\u001b[56Guch\r\u001b[2C\u001b[1Banything else. ✅ Done — safe\u001b[33Gto discard.\u001b[45GThe file\u001b[54Gis\u001b[K\r\u001b[2C\u001b[1Bu\u001b[5Gcommitt\u001b[13Gd; say if you want i\u001b[34G committed.\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ Run this in the foreground, not in the background: `for i\u001b[K\r\u001b[1B  in $(seq\u001b[12G1\u001b[14G30)\u001b[7m \u001b[27m\u001b[23;1H\u001b[20;17H\u001b[?2026l"
+    },
+    {
+      "wait": 30
+    },
+    {
+      "input": "; do echo $i; sleep 1; done`\r"
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[1B\u001b[38;2;153;153;153mRan \u001b[1m1\u001b[22m shell command \r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;255;255;255m●\u001b[39m I created \u001b[38;2;177;185;249mNOTES.md\u001b[39m in the worktree containing the single\u001b[K\r\u001b[2C\u001b[1Bline\u001b[8G\u001b[38;2;177;185;249mhello\u001b[39m,\u001b[15Gand\u001b[19Gconfirmed\u001b[29Gthe\u001b[33Gcontents.\u001b[43GI\u001b[45Gdid\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1BBottom\u001b[10Gline:\u001b[16G\u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis\u001b[28Gin\u001b[31Gplace\u001b[37Gwith\u001b[42G\u001b[38;2;177;185;249mhello\u001b[48G\u001b[39mas\u001b[51Gits\u001b[55Gonly\r\u001b[1B \u001b[3Gline. Nothing is commi\u001b[26Gt\u001b[28Gd \u001b[32G pushed, and I didn't touch\r\u001b[2C\u001b[1Banything else. ✅ Done — saf\u001b[33Gt\u001b[35G discard.\u001b[45GThe\u001b[49Gfile is\u001b[K\r\u001b[2C\u001b[1Buncommitted;\u001b[16Gsay\u001b[20Gif\u001b[23Gyou\u001b[27Gwant\u001b[32Git\u001b[35Gcommitted.\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\u001b[39m\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;215;119;87m·\u001b[3GCogi\u001b[38;2;235;159;127mtat\u001b[38;2;215;119;87ming… \r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[38;2;153;153;153m❯ \u001b[39m\u001b[7m \u001b[27m\u001b[K\r\u001b[18C\u001b[3B\u001b[38;2;153;153;153m · esc to interrupt\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[14C\u001b[16B\u001b[38;2;153;153;153m(running UserPromptSubmit hook · 0s)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000003",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "Run this in the foreground, not in the background: `for i in $(seq 1 30); do echo $i; sleep 1; done`"
+      }
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[5C\u001b[16B\u001b[38;2;235;159;127mi\u001b[9G\u001b[38;2;215;119;87mt\u001b[15G\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 197
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[5G\u001b[38;2;235;159;127mg\u001b[8G\u001b[38;2;215;119;87ma\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[4G\u001b[38;2;235;159;127mo\u001b[7G\u001b[38;2;215;119;87mt\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 112
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;235;159;127mC\u001b[6G\u001b[38;2;215;119;87mi\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 94
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[14C\u001b[16B\u001b[38;2;153;153;153m(0s · thinking with medium effort)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 32
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[21G\u001b[38;2;158;158;158mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 101
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✽\u001b[5Gg\u001b[21G\u001b[38;2;163;163;163mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[20C\u001b[16B\u001b[38;2;168;168;168mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 56
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "wait": 57
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[3C\u001b[16B\u001b[38;2;215;119;87mo\u001b[16G\u001b[38;2;153;153;153m1\u001b[21G\u001b[38;2;178;178;178mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[20C\u001b[16B\u001b[38;2;183;183;183mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[3GC\u001b[21G\u001b[38;2;188;188;188mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[21G\u001b[38;2;193;193;193mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 117
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[20C\u001b[16B\u001b[38;2;188;188;188mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 97
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m·\u001b[21G\u001b[38;2;183;183;183mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[20C\u001b[16B\u001b[38;2;173;173;173mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "wait": 103
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[38;2;255;255;255m●\u001b[3G\u001b[39mI created \u001b[38;2;177;185;249mNOTES.md\u001b[39m in\u001b[25Gthe\u001b[29Gworktree\u001b[38Gcontaining\u001b[49Gthe\u001b[53Gsingle\r\u001b[2C\u001b[1Bline\u001b[8G\u001b[38;2;177;185;249mhello\u001b[39m,\u001b[15Gand\u001b[19Gconfirmed\u001b[29Gthe\u001b[33Gcontents.\u001b[43GI\u001b[45Gdid\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[1B\u001b[K\r\u001b[2C\u001b[1BBottom line: \u001b[38;2;177;185;249mNOTES.md\u001b[39m is in place wi\u001b[40Gh \u001b[38;2;177;185;249mhello\u001b[39m as its only\u001b[60G\u001b[K\r\u001b[2C\u001b[1Bline.\u001b[9GNothing\u001b[17Gis\u001b[20Gcommitted\u001b[30Gor\u001b[33Gpushed,\u001b[41Gand\u001b[45GI\u001b[47Gdidn't\u001b[54Gtouch\r\u001b[2C\u001b[1Bany\u001b[7Ghing else. ✅ Done —\u001b[28Gsafe to discard. The file is\u001b[K\r\u001b[2C\u001b[1Buncommit\u001b[12Ged; say\u001b[20Gif you want it committe\u001b[44G.\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\u001b[35G\u001b[39m\u001b[K\r\u001b[2B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m \u001b[39m Running \u001b[1m1\u001b[22m shell command…\u001b[K\r\u001b[15C\u001b[2B\u001b[38;2;153;153;153m2\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 31
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[20C\u001b[16B\u001b[38;2;168;168;168mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 83
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[20C\u001b[16B\u001b[38;2;163;163;163mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[21G\u001b[38;2;158;158;158mthinking with medium effort\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[14B\u001b[38;2;153;153;153m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 52
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[3Gline\u001b[8G\u001b[38;2;177;185;249mhello\u001b[39m,\u001b[15Gand\u001b[19Gconfirmed\u001b[29Gthe\u001b[33Gcontents.\u001b[43GI\u001b[45Gdid\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[1B\u001b[K\r\u001b[2C\u001b[1BBottom line: \u001b[38;2;177;185;249mNOTES.md\u001b[39m is in place wi\u001b[40Gh \u001b[38;2;177;185;249mhello\u001b[39m as its only\u001b[60G\u001b[K\r\u001b[2C\u001b[1Bline.\u001b[9GNothing\u001b[17Gis\u001b[20Gcommitted\u001b[30Gor\u001b[33Gpushed,\u001b[41Gand\u001b[45GI\u001b[47Gdidn't\u001b[54Gtouch\r\u001b[2C\u001b[1Bany\u001b[7Ghing else. ✅ Done —\u001b[28Gsafe to discard. The file is\u001b[K\r\u001b[2C\u001b[1Buncommit\u001b[12Ged; say\u001b[20Gif you want it committe\u001b[44G.\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\u001b[35G\u001b[39m\u001b[K\r\u001b[2B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m●\u001b[39m Counting 1 to 30 with one-second pauses in the foreground\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ for i in $(seq 1 30); do echo $i; sleep 1; done\r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;215;119;87m✢\u001b[3G\u001b[38;2;233;154;122mCogitating…\u001b[38;2;215;119;87m \u001b[38;2;153;153;153m(running PreToolUse hook · 2s · \r\u001b[1B\u001b[38;2;158;158;158mthinking with medium effort\u001b[38;2;153;153;153m)\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000003",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "for i in $(seq 1 30); do echo $i; sleep 1; done",
+          "description": "Count 1 to 30 with one-second pauses in the foreground"
+        },
+        "tool_use_id": "toolu_000000000000000000000002"
+      }
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[2C\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m●\u001b[3G\u001b[39mCounting 1 to\u001b[17G30\u001b[20Gwith on\u001b[28G-second pauses in the foreground\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ for i in $(seq 1 30); do echo $i; sleep 1; done\u001b[39m\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;177;185;249m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m \u001b[38;2;177;185;249m\u001b[1mBash command\u001b[22m\u001b[39m\u001b[K\r\u001b[1C\u001b[1B\u001b[1mTip: auto mode handles these prompts for you — choose \r\u001b[1B\u001b[22m \u001b[1m\"switch to auto mode\" below\u001b[22m\u001b[K\r\u001b[1B \u001b[38;2;153;153;153mCount 1 to 30 with one-second pauses in the foreground\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\r\u001b[1B\u001b[39m for i \u001b[10G $(seq\u001b[17G1 30); d\u001b[26G \u001b[28Gcho $i;\u001b[36Gsleep 1; don\u001b[50G\u001b[K\r\u001b[1B\u001b[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\r\u001b[1C\u001b[1B\u001b[39mA\u001b[4Gvariable\u001b[13Gin\u001b[16Gthis\u001b[21Gcommand\u001b[29Gcan't\u001b[35Gbe\u001b[38Gchecked\u001b[46Gbefore\u001b[53Git\u001b[56Gruns\r\u001b[1B\u001b[K\r\u001b[1B Do you want to proceed?\u001b[K\r\u001b[1C\u001b[1B\u001b[38;2;177;185;249m❯\u001b[4G\u001b[38;2;153;153;153m1. \u001b[38;2;177;185;249mYes\r\u001b[1B\u001b[39m   \u001b[38;2;153;153;153m2. \u001b[39mYes, and switch to auto mode\u001b[38;2;153;153;153m · auto mode handles these \u001b[39m\u001b[K\r\u001b[1B   \u001b[7G\u001b[38;2;153;153;153mprompts for you\r\u001b[1B\u001b[39m   \u001b[38;2;153;153;153m3. \u001b[39mNo\u001b[K\r\u001b[1C\u001b[2B\u001b[38;2;153;153;153mEsc to cancel · Tab\u001b[22Gto amend\u001b[39m\u001b[K\u001b[23;1H\u001b[18;2H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-create-a-file-notes-md-containing-the-766e13/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/create-a-file-notes-md-containing-the-766e13",
+        "prompt_id": "00000000-0000-4000-8000-000000000003",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "for i in $(seq 1 30); do echo $i; sleep 1; done",
+          "description": "Count 1 to 30 with one-second pauses in the foreground"
+        },
+        "permission_suggestions": []
+      }
+    },
+    {
+      "wait": 459
+    },
+    {
+      "expect": "needs_input"
+    },
+    {
+      "input": "\r"
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[38;2;255;255;255m●\u001b[39m I created \u001b[38;2;177;185;249mNOTES.md\u001b[39m in the worktree containing the single\u001b[K\r\u001b[1B  line \u001b[38;2;177;185;249mhello\u001b[39m, and confirmed the contents. I did not commit it.\r\u001b[2B \u001b[3GB\u001b[5Gttom line: \u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis in place with \u001b[38;2;177;185;249mhello\u001b[39m as its only\u001b[K\r\u001b[1B  line. Nothing is committed or pushed, and I didn't touch\r\u001b[2C\u001b[1Banything\u001b[12Gelse.\u001b[18G✅\u001b[21GDone\u001b[26G—\u001b[28Gsafe\u001b[33Gto\u001b[36Gdiscard.\u001b[45GThe\u001b[49Gfile\u001b[54Gis\r\u001b[1B  uncommitted; say if you want it committed.\u001b[K\r\u001b[1C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[39m \u001b[38;2;153;153;153mCogitated for 2s · done 2:33 PM\u001b[39m\u001b[K\r\u001b[1C\u001b[1B\u001b[K\r\u001b[1B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[1C\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m●\u001b[39m Counting 1 to 30 with one-second pauses in the foreground\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ for i in $(seq 1 30); do echo $i; sleep 1; done\u001b[56G\u001b[39m\u001b[K\r\u001b[2B\u001b[38;2;215;119;87m✽\u001b[39m \u001b[38;2;230;149;117mCogitating…\u001b[38;2;215;119;87m \u001b[38;2;153;153;153m(2s · ↓\u001b[39m \u001b[38;2;153;153;153m364 tokens)\r\u001b[1C\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[38;2;153;153;153m❯ \u001b[39m\u001b[7m \u001b[7G\u001b[27m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1C\u001b[2B\u001b[39m \u001b[38;2;153;153;153m⏸ manual mode on\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[18C\u001b[22B\u001b[38;2;153;153;153m · esc to interrupt\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 33
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13B\u001b[38;2;153;153;153m \u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 49
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;225;139;107mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;223;134;102mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;220;129;97mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[3G\u001b[38;2;218;124;92mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 114
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[3GCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13B\u001b[38;2;153;153;153m●\r\u001b[3B\u001b[38;2;215;119;87m*\u001b[16G\u001b[38;2;153;153;153m3\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 104
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;218;124;92mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 80
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "wait": 33
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m·\u001b[3G\u001b[38;2;220;129;97mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;225;139;107mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;228;144;112mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 49
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13B\u001b[38;2;153;153;153m \u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 64
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[3G\u001b[38;2;230;149;117mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;233;154;122mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[3G\u001b[38;2;235;159;127mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 112
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[16G\u001b[38;2;153;153;153m4\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 99
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13B\u001b[38;2;153;153;153m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;233;154;122mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 22
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "wait": 91
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✽\u001b[3G\u001b[38;2;228;144;112mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;225;139;107mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;223;134;102mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 97
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H \u001b[3Gline \u001b[38;2;177;185;249mhello\u001b[39m, and confirmed\u001b[29Gthe contents. I did\u001b[49Gnot\u001b[53Gcommit\u001b[60Git.\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1BBottom\u001b[10Gline:\u001b[16G\u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis\u001b[28Gin\u001b[31Gplace\u001b[37Gwith\u001b[42G\u001b[38;2;177;185;249mhello\u001b[48G\u001b[39mas\u001b[51Gits\u001b[55Gonly\r\u001b[2C\u001b[1Bline. Nothing is committed or pushed, and I didn'\u001b[53G t\u001b[56Guch\r\u001b[2C\u001b[1Banything else. ✅ Done — safe\u001b[33Gto discard.\u001b[45GThe file\u001b[54Gis\u001b[K\r\u001b[2C\u001b[1Bu\u001b[5Gcommitt\u001b[13Gd; say if you want i\u001b[34G committed.\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                     \r\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m●\u001b[3G\u001b[39mCounting\u001b[12G1\u001b[14Gto\u001b[17G30\u001b[20Gwith\u001b[25Gone-second\u001b[36Gpauses\u001b[43Gin\u001b[46Gthe\u001b[50Gforeground\u001b[38;2;153;153;153m · \r\u001b[1B\u001b[39m \u001b[3G\u001b[38;2;153;153;153m2s\u001b[39m\u001b[K\r\u001b[3B\u001b[38;2;215;119;87m✻\u001b[3G\u001b[38;2;218;124;92mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 145
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[12B\u001b[38;2;153;153;153m \u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 81
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[3GCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[16G\u001b[38;2;153;153;153m5\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 112
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[3G\u001b[38;2;218;124;92mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 95
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "wait": 133
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m·\u001b[3G\u001b[38;2;223;134;102mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[3GBottom line: \u001b[38;2;177;185;249mNOTES.md\u001b[39m is in place wi\u001b[40Gh \u001b[38;2;177;185;249mhello\u001b[39m as its only\u001b[60G\u001b[K\r\u001b[2C\u001b[1Bline.\u001b[9GNothing\u001b[17Gis\u001b[20Gcommitted\u001b[30Gor\u001b[33Gpushed,\u001b[41Gand\u001b[45GI\u001b[47Gdidn't\u001b[54Gtouch\r\u001b[2C\u001b[1Bany\u001b[7Ghing else. ✅ Done —\u001b[28Gsafe to discard. The file is\u001b[K\r\u001b[2C\u001b[1Buncommit\u001b[12Ged; say\u001b[20Gif you want it committe\u001b[44G.\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\u001b[35G\u001b[39m\u001b[K\r\u001b[2B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m \u001b[39m Counting 1 to 30 with one-second pauses in the foreground\u001b[38;2;153;153;153m · \r\u001b[2C\u001b[1B2s\r\u001b[1C\u001b[1B ⎿  $ for i in $(seq 1 30); do echo $i; sleep 1; done (3s · 4\r\u001b[2C\u001b[1B\u001b[39m  \u001b[6G\u001b[38;2;153;153;153mlines)\r\u001b[1B\u001b[39m     \u001b[38;2;153;153;153m(ctrl+b\u001b[14Gto\u001b[17Grun in background)\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 66
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[10B\u001b[38;2;153;153;153m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 31
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;225;139;107mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;228;144;112mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[11B\u001b[38;2;153;153;153m3\r\u001b[5B\u001b[38;2;215;119;87m✢\u001b[3G\u001b[38;2;233;154;122mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 224
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[3G\u001b[38;2;235;159;127mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[16G\u001b[38;2;153;153;153m6\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[10B\u001b[38;2;153;153;153m \u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 95
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[3G\u001b[38;2;233;154;122mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 39
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "wait": 182
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[56C\u001b[12B\u001b[38;2;153;153;153m4\u001b[62G5\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✽\u001b[3G\u001b[38;2;228;144;112mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 100
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;225;139;107mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;223;134;102mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 64
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[10B\u001b[38;2;153;153;153m●\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 48
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[11B\u001b[38;2;153;153;153m4\r\u001b[5B\u001b[38;2;215;119;87m✻\u001b[3G\u001b[38;2;218;124;92mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 112
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;215;119;87mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 112
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 114
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[16G\u001b[38;2;153;153;153m7\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 101
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[3G\u001b[38;2;218;124;92mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 106
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[10B\u001b[38;2;153;153;153m \r\u001b[2C\u001b[6B\u001b[38;2;220;129;97mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 87
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "input": "\u001b"
+    },
+    {
+      "output": "\u001b(B\u000f\u001b[?2004h\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[56C\u001b[12B\u001b[38;2;153;153;153m5\u001b[62G6\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m·\u001b[3G\u001b[38;2;223;134;102mCogitating…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 32
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\u001b[3G\u001b[K\r\u001b[1B\u001b[38;2;255;255;255m●\u001b[3G\u001b[39mI created \u001b[38;2;177;185;249mNOTES.md\u001b[39m in \u001b[26Gh\u001b[28G w\u001b[32Gktree containing the single\r\u001b[2C\u001b[1Bline \u001b[38;2;177;185;249mhello\u001b[39m, and confirmed th\u001b[33Gc\u001b[35Gntents. I\u001b[45Gdid\u001b[49Gnot commit\u001b[60Git.\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1BBottom\u001b[10Gline:\u001b[16G\u001b[38;2;177;185;249mNOTES.md\u001b[25G\u001b[39mis\u001b[28Gin\u001b[31Gplace\u001b[37Gwith\u001b[42G\u001b[38;2;177;185;249mhello\u001b[48G\u001b[39mas\u001b[51Gits\u001b[55Gonly\r\u001b[1B \u001b[3Gline. Nothing is committed or pushed,\u001b[41Gand\u001b[45GI\u001b[47Gdidn't\u001b[54Gtouch\r\u001b[2C\u001b[1Banything\u001b[12Gelse.\u001b[18G✅\u001b[21GDone\u001b[26G—\u001b[28Gsafe\u001b[33Gto\u001b[36Gdiscard.\u001b[45GThe\u001b[49Gfile\u001b[54Gis\r\u001b[1B  uncommitted; say if you want it committed.\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m✻\u001b[3GCogitated for 2s · done 2:33 PM\r\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mRun this in the foreground, not in the background: \u001b[38;2;177;185;249mfor i in\u001b[39m \r\u001b[1B  \u001b[38;2;177;185;249m$(seq 1 30); do echo $i; sleep 1; done\u001b[39m                      \r\u001b[5C\u001b[1B\u001b[49m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m \u001b[3G\u001b[39mRunning \u001b[1m1\u001b[22m shell command\u001b[38;2;153;153;153m · 4s\u001b[39m…\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  $ for i in $(seq 1 30); do echo $i; sleep 1; done (5s · 6\r\u001b[1B\u001b[39m \u001b[3G   \u001b[38;2;153;153;153mlines)\u001b[39m\u001b[K\r\u001b[3B❯ \r\u001b[18C\u001b[3B\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[14B \u001b[3G\u001b[38;2;153;153;153mNo result recorded for \u001b[1m1\u001b[22m call \r\u001b[4C\u001b[1B \u001b[55G\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  Int\u001b[10Grrupted · What should Claude do instead?\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 4926
+    },
+    {
+      "expect": "idle"
+    }
+  ]
+}

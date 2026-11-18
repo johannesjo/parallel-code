@@ -1,11 +1,6 @@
 import * as pty from 'node-pty';
 import { codexResumeId, isCodexUnsavedSessionExit } from '../shared/codex-resume.js';
-import {
-  hasTerminalDraftActivity,
-  hasTerminalUserActivity,
-  nextTerminalInputPending,
-  submitsTerminalDraft,
-} from '../shared/terminal-input.js';
+import { followTerminalDraft, hasTerminalUserActivity } from '../shared/terminal-input.js';
 import { stopAgentChat, stopAllAgentChats, runningAgentChatIds } from '../chat/sessions.js';
 import { execFileSync, execFile, spawn as cpSpawn } from 'child_process';
 import crypto from 'crypto';
@@ -39,6 +34,12 @@ import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
 import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
 import { hasCodexHookOverride, isCodexCommand } from '../agent-hooks/codex-hooks.js';
 import { createProgramStatusReporter } from '../agent-hooks/program-status.js';
+import {
+  finishSessionRecording,
+  recordSessionInput,
+  recordSessionOutput,
+  startSessionRecording,
+} from '../agent-hooks/session-recorder.js';
 import { debug as logDebug, warn as logWarn } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -686,6 +687,7 @@ function attachPtyOutputHandlers(
 
   session.proc.onData((data: string) => {
     session.queries.feed(data);
+    recordSessionOutput(session.launchId, data);
     const chunk = Buffer.from(data, 'utf8');
 
     tailChunks.push(chunk);
@@ -722,6 +724,7 @@ function attachPtyOutputHandlers(
   session.proc.onExit(({ exitCode, signal }) => {
     session.queries.dispose();
     retireAgentLaunch(args.agentId, session.launchId);
+    finishSessionRecording(session.launchId);
     if (sessions.get(args.agentId) !== session) return;
 
     if (containerName) {
@@ -988,6 +991,8 @@ export async function spawnAgent(
   sessions.set(args.agentId, session);
   replayCarriedScrollback(notify, session);
   attachPtyOutputHandlers(notify, session, args, command);
+  // After the exit handler is attached, which is what writes and forgets it.
+  if (!session.isShell) startSessionRecording(launchId, command);
 
   emitPtyEvent('spawn', args.agentId);
 }
@@ -1027,15 +1032,13 @@ function writeSessionInput(session: PtySession, data: string): void {
   const userActivity = hasTerminalUserActivity(data);
   if (userActivity) session.lastInputAt = Date.now();
   session.proc.write(data);
-  if (submitsTerminalDraft(session.inputPending, data)) {
+  recordSessionInput(session.launchId, data);
+  const draft = followTerminalDraft(session.inputPending, data);
+  if (draft.submitted) {
     invalidateAgentActivity(session.agentId, session.launchId);
     if (!session.isShell) emitPtyEvent('prompt-submitted', session.agentId);
   }
-  // History recall can populate a draft without printable input. Cursor,
-  // editing and function keys, Escape and Backspace preserve a draft but
-  // cannot create one on an empty line.
-  const draftActivity = userActivity && hasTerminalDraftActivity(data);
-  session.inputPending = nextTerminalInputPending(session.inputPending || draftActivity, data);
+  session.inputPending = draft.pending;
   // Claude Code fires no Stop hook for a user interrupt, so consumers that
   // trust hook state (the coordinator) need to hear about the keystroke.
   if (!session.isShell && INTERRUPT_KEYSTROKES.has(data))
@@ -1270,6 +1273,8 @@ export function killAllAgents(): void {
       }
     }
     session.proc.kill();
+    // The app may quit before onExit runs; write the recording while we can.
+    finishSessionRecording(session.launchId);
   }
   // Let onExit handlers clean up sessions individually
 }

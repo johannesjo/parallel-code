@@ -1,0 +1,108 @@
+{
+  "command": "codex",
+  "hooks": "codex",
+  "version": "0.167.0",
+  "summary": "The user approves an edit to a file outside the workspace (`y`), and the turn finishes.",
+  "recorded": "Hook payloads from Codex CLI driven through its terminal UI against a scripted model. Ids and paths are replaced; everything else is as Codex wrote it to the hook.",
+  "steps": [
+    {
+      "hook": {
+        "session_id": "session-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "SessionStart",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "source": "startup"
+      }
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "UserPromptSubmit",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "prompt": "go"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "PreToolUse",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "tool_name": "apply_patch",
+        "tool_input": {
+          "command": "*** Begin Patch\n*** Add File: /outside/note.txt\n+hello\n*** End Patch"
+        },
+        "tool_use_id": "exec-1"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "PermissionRequest",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "tool_name": "apply_patch",
+        "tool_input": {
+          "command": "*** Begin Patch\n*** Add File: /outside/note.txt\n+hello\n*** End Patch"
+        }
+      }
+    },
+    {
+      "expect": "needs_input"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "PostToolUse",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "tool_name": "apply_patch",
+        "tool_input": {
+          "command": "*** Begin Patch\n*** Add File: /outside/note.txt\n+hello\n*** End Patch"
+        },
+        "tool_response": "Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nA /outside/note.txt\n",
+        "tool_use_id": "exec-1"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "transcript_path": "/codex-home/sessions/rollout-1.jsonl",
+        "cwd": "/work",
+        "hook_event_name": "Stop",
+        "model": "gpt-6.1-sol",
+        "permission_mode": "default",
+        "stop_hook_active": false,
+        "last_assistant_message": "Patched."
+      }
+    },
+    {
+      "expect": "idle"
+    }
+  ]
+}

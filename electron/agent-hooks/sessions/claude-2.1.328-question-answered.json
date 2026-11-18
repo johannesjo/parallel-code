@@ -1,0 +1,491 @@
+{
+  "command": "claude",
+  "hooks": "claude",
+  "version": "2.1.328",
+  "summary": "Haiku asks the user a multiple-choice question with AskUserQuestion; after 3 seconds the user picks the first option and the turn finishes.",
+  "recorded": "Recorded with PARALLEL_CODE_RECORD_SESSIONS in the headless showcase app (scripts/showcase/scenes/record-status.spec.ts, Haiku). Temp paths became /tmp, the user name became user, session and tool ids and the plan name were replaced. Untrimmed.",
+  "steps": [
+    {
+      "wait": 232
+    },
+    {
+      "output": "\u001b7\u001b[r\u001b8\u001b[?25h"
+    },
+    {
+      "wait": 51
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-use-your-askuserquestion-tool-to-ask-me-810700/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/use-your-askuserquestion-tool-to-ask-me-810700",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-5-5"
+      }
+    },
+    {
+      "wait": 62
+    },
+    {
+      "output": "\u001b[?2004h\u001b[?2031h\u001b[?1004h"
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "wait": 23
+    },
+    {
+      "output": "\u001b[?1049h\u001b[2J\u001b[H\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h\u001b[?25l\u001b[?25l\u001b[H\r\u001b[11C\u001b[1B\u001b[1mClaude Code\u001b[24G\u001b[22m\u001b[38;2;153;153;153mv2.1.328\r\u001b[11C\u001b[1BHaiku 5.5 with medium effort · Claude plan\r\u001b[11C\u001b[1B/use-your-askuserquestion-tool-to-ask-me-81…\r\u001b[39C\u001b[14B◐ medium · /effort\r\u001b[1B\u001b[38;2;136;136;136m───────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ \u001b[7m \r\u001b[1B\u001b[27m\u001b[38;2;136;136;136m───────────────────────────────────────────────────────────\r\u001b[2C\u001b[2B\u001b[38;2;153;153;153m⏸ manual mode on\u001b[39m\u001b[23;1H\u001b[20;3H"
+    },
+    {
+      "input": "\u001b[O"
+    },
+    {
+      "wait": 52
+    },
+    {
+      "output": "\u001b[H\r\u001b[6B\u001b[38;2;177;185;249m───────────────────────────────────────────────────────────\r\u001b[2C\u001b[1B\u001b[1mMake auto mode your default permission mode?\r\u001b[2C\u001b[2B\u001b[22m\u001b[39mAuto\u001b[8Gmode\u001b[13Glets\u001b[18GClaude\u001b[25Ghandle\u001b[32Gpermission\u001b[43Gprompts\r\u001b[2C\u001b[1Bautomatically.\u001b[18GClaude\u001b[25Gchecks\u001b[32Geach\u001b[37Gtool\u001b[42Gcall\u001b[47Gfor\u001b[51Grisky\r\u001b[2C\u001b[1Bactions\u001b[11Gand\u001b[15Gprompt\u001b[22Ginjection\u001b[32Gbefore\u001b[39Gexecuting,\u001b[50Gruns\u001b[55Gthe\r\u001b[2C\u001b[1Bones\u001b[8Git\u001b[11Gassesses\u001b[20Gas\u001b[23Glower-risk,\u001b[35Gand\u001b[39Gblocks\u001b[46Gthe\u001b[50Grest.\r\u001b[2C\u001b[2B\u001b[38;2;177;185;249m❯\u001b[5GYes, set auto mode as my default permission mode\r\u001b[4C\u001b[1B\u001b[39mNo,\u001b[9Gkeep\u001b[14Gmanual\u001b[21Gmode\r\u001b[39C\u001b[2B\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[K\r\u001b[2C\u001b[2B\u001b[K\u001b[23;1H\u001b[15;3H"
+    },
+    {
+      "output": "\u001b[>0q\u001b[?u\u001b]7501;?\u0007"
+    },
+    {
+      "output": "\u001b[c"
+    },
+    {
+      "wait": 26
+    },
+    {
+      "input": "\u001bP>|xterm.js(6.1.0-beta.337)\u001b\\\u001b[?1;2c"
+    },
+    {
+      "output": "\u001b[?2026$p"
+    },
+    {
+      "output": "\u001b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\u001b\\\u001b[16t\u001b[?1016$p\u001b[c"
+    },
+    {
+      "output": "\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h"
+    },
+    {
+      "output": "\u001b[2J\u001b[H\r\u001b[11C\u001b[1B\u001b[1mClaude Code\u001b[24G\u001b[22m\u001b[38;2;153;153;153mv2.1.328\r\u001b[11C\u001b[1BHaiku 5.5 with medium effort · Claude plan\r\u001b[11C\u001b[1B/use-your-askuserquestion-tool-to-ask-me-810700\r\u001b[3B\u001b[38;2;177;185;249m──────────────────────────────────────────────────────────────\r\u001b[2C\u001b[1B\u001b[1mMake auto mode your default permission mode?\r\u001b[2C\u001b[2B\u001b[22m\u001b[39mAuto\u001b[8Gmode\u001b[13Glets\u001b[18GClaude\u001b[25Ghandle\u001b[32Gpermission\u001b[43Gprompts\r\u001b[2C\u001b[1Bautomatically.\u001b[18GClaude\u001b[25Gchecks\u001b[32Geach\u001b[37Gtool\u001b[42Gcall\u001b[47Gfor\u001b[51Grisky\r\u001b[2C\u001b[1Bactions\u001b[11Gand\u001b[15Gprompt\u001b[22Ginjection\u001b[32Gbefore\u001b[39Gexecuting,\u001b[50Gruns\u001b[55Gthe\r\u001b[2C\u001b[1Bones\u001b[8Git\u001b[11Gassesses\u001b[20Gas\u001b[23Glower-risk,\u001b[35Gand\u001b[39Gblocks\u001b[46Gthe\u001b[50Grest.\r\u001b[2C\u001b[2B\u001b[38;2;177;185;249m❯\u001b[5GYes, set auto mode as my default permission mode\r\u001b[4C\u001b[1B\u001b[39mNo,\u001b[9Gkeep\u001b[14Gmanual\u001b[21Gmode\u001b[23;1H\u001b[15;3H"
+    },
+    {
+      "input": "\u001b[?2026;2$y"
+    },
+    {
+      "input": "\u001b[?1016;2$y\u001b[?1;2c"
+    },
+    {
+      "wait": 72
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[3B\u001b[38;2;215;119;87m ▐\u001b[48;2;0;0;0m▛███▛█\u001b[39m\u001b[49m\u001b[23;1H\u001b[15;3H\u001b[?2026l"
+    },
+    {
+      "wait": 184
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[3B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m█▟\u001b[7G█▟\u001b[39m\u001b[49m\u001b[23;1H\u001b[15;3H\u001b[?2026l"
+    },
+    {
+      "wait": 109
+    },
+    {
+      "input": "\u001b[I\u001b[B\r"
+    },
+    {
+      "output": "\u001b[16t\u001b[c\u001b]104;255\u0007"
+    },
+    {
+      "input": "\u001b[?1;2c\u001b[?997;1n"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[6B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[2B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[1B\u001b[K\r\u001b[2C\u001b[2B\u001b[K\r\u001b[4C\u001b[1B\u001b[K\r\u001b[3B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ \u001b[7m \r\u001b[1B\u001b[27m\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[2C\u001b[2B\u001b[38;2;153;153;153m⏸ manual mode on\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[18C\u001b[22B\u001b[38;2;153;153;153m · ← for agents\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 60
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[3B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m▟█\u001b[7G▟█\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 183
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[3B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m▛\u001b[7G▛\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 123
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2B\u001b[38;2;215;119;87m ▐\u001b[48;2;0;0;0m▛███▛█\r\u001b[1B\u001b[49m▝▜\u001b[48;2;0;0;0m█\u001b[7G█\u001b[49m█▀\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 61
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[38;2;215;119;87m▗▟\u001b[48;2;0;0;0m▛███▛█\u001b[49m▄\r\u001b[1C\u001b[1B▜\u001b[48;2;0;0;0m█\u001b[7G█\u001b[49m█▘\r\u001b[1B ▝▝   ▝▝ \u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 305
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[1B\u001b[38;2;215;119;87m ▐\u001b[9G\u001b[39m \r\u001b[1B\u001b[38;2;215;119;87m▝\u001b[9G▀\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 122
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[1B\u001b[48;2;215;119;87m\u001b[38;2;0;0;0m▂\u001b[7G▂\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 62
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[1B\u001b[48;2;0;0;0m\u001b[38;2;215;119;87m▛\u001b[7G▛\u001b[39m\u001b[49m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 3695
+    },
+    {
+      "input": "\u001b[I"
+    },
+    {
+      "input": "\u001b[200~Use your AskUserQuestion tool to ask me one question: should the greeting be \"hi\" or \"hello\"? Then reply with my answer and do nothing else.\u001b[201~"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m❯ Use\u001b[7Gyour\u001b[12GAskUserQuestion\u001b[28Gtool\u001b[33Gto\u001b[36Gask\u001b[40Gme\u001b[43Gone\u001b[47Gquestion:\r\u001b[1B  should the greeting be \"hi\" or \"hello\"? Then reply with my\u001b[K\r\u001b[1B  answer\u001b[10Gand\u001b[14Gdo\u001b[17Gnothing\u001b[25Gelse.\u001b[7m \r\u001b[18C\u001b[3B\u001b[27m\u001b[K\u001b[23;1H\u001b[20;30H\u001b[?2026l"
+    },
+    {
+      "wait": 41
+    },
+    {
+      "input": "\r"
+    },
+    {
+      "output": "\u001b]0;◐ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[6B\u001b[48;2;55;55;55m\u001b[38;2;153;153;153m❯ \u001b[38;2;255;255;255mUse your AskUserQuestion tool to ask me one question: \u001b[39m      \r\u001b[1B  \u001b[38;2;255;255;255mshould the greeting be \"hi\" or \"hello\"? Then reply with my \u001b[39m \r\u001b[1B  \u001b[38;2;255;255;255manswer and do nothing else.\u001b[39m                                 \r\u001b[8B\u001b[49m\u001b[38;2;215;119;87m✽\u001b[39m \u001b[38;2;215;119;87mDetermining… \u001b[39m\u001b[K\r\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[38;2;153;153;153m❯ \u001b[39m\u001b[7m \u001b[27m\u001b[K\r\u001b[18C\u001b[3B\u001b[38;2;153;153;153m · esc to interrupt · ← for agents\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[15C\u001b[16B\u001b[38;2;153;153;153m(running UserPromptSubmit hook · 0s)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-use-your-askuserquestion-tool-to-ask-me-810700/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/use-your-askuserquestion-tool-to-ask-me-810700",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "Use your AskUserQuestion tool to ask me one question: should the greeting be \"hi\" or \"hello\"? Then reply with my answer and do nothing else."
+      }
+    },
+    {
+      "wait": 41
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[15C\u001b[16B\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✻\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 67
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 225
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 123
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 87
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m·\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 380
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "wait": 79
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 225
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✶\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 51
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;235;159;127mDetermining…\u001b[16G\u001b[38;2;153;153;153m(running PreToolUse hook · 1s)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-use-your-askuserquestion-tool-to-ask-me-810700/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/use-your-askuserquestion-tool-to-ask-me-810700",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PreToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_input": {
+          "questions": [
+            {
+              "question": "Should the greeting be \"hi\" or \"hello\"?",
+              "header": "Greeting",
+              "options": [
+                {
+                  "label": "hi",
+                  "description": "Use the casual greeting \"hi\"."
+                },
+                {
+                  "label": "hello",
+                  "description": "Use the more formal greeting \"hello\"."
+                }
+              ],
+              "multiSelect": false
+            }
+          ]
+        },
+        "tool_use_id": "toolu_000000000000000000000001"
+      }
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[9B\u001b[38;2;153;153;153m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[48;2;177;185;249m\u001b[38;2;0;0;0m ☐ Greeting \r\u001b[2B\u001b[49m\u001b[38;2;255;255;255m\u001b[1mShould the greeting be \"hi\" or \"hello\"?\r\u001b[2B\u001b[22m\u001b[38;2;177;185;249m❯\u001b[3G\u001b[38;2;153;153;153m1.\u001b[6G\u001b[38;2;177;185;249mhi\r\u001b[5C\u001b[1B\u001b[38;2;153;153;153mUse the casual greeting \"hi\".\r\u001b[1B\u001b[39m \u001b[3G\u001b[38;2;153;153;153m2.\u001b[39m hello\u001b[K\r\u001b[5C\u001b[1B\u001b[38;2;153;153;153mUse the more formal greeting \"hello\".\r\u001b[1B\u001b[39m  \u001b[38;2;153;153;153m3. Type something.\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;153;153;153m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[39m  4. Chat about this\u001b[K\r\u001b[2B\u001b[38;2;153;153;153mEnter to select\u001b[17G· ↑/↓ to\u001b[26Gnav\u001b[30Ggate · Esc\u001b[41Gto cancel\u001b[39m\u001b[K\u001b[23;1H\u001b[15;1H\u001b[?2026l"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-use-your-askuserquestion-tool-to-ask-me-810700/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/use-your-askuserquestion-tool-to-ask-me-810700",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "AskUserQuestion",
+        "tool_input": {
+          "questions": [
+            {
+              "question": "Should the greeting be \"hi\" or \"hello\"?",
+              "header": "Greeting",
+              "options": [
+                {
+                  "label": "hi",
+                  "description": "Use the casual greeting \"hi\"."
+                },
+                {
+                  "label": "hello",
+                  "description": "Use the more formal greeting \"hello\"."
+                }
+              ],
+              "multiSelect": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "wait": 3184
+    },
+    {
+      "expect": "needs_input"
+    },
+    {
+      "input": "\r"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-use-your-askuserquestion-tool-to-ask-me-810700/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/use-your-askuserquestion-tool-to-ask-me-810700",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PostToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_input": {
+          "questions": [
+            {
+              "question": "Should the greeting be \"hi\" or \"hello\"?",
+              "header": "Greeting",
+              "options": [
+                {
+                  "label": "hi",
+                  "description": "Use the casual greeting \"hi\"."
+                },
+                {
+                  "label": "hello",
+                  "description": "Use the more formal greeting \"hello\"."
+                }
+              ],
+              "multiSelect": false
+            }
+          ],
+          "answers": {
+            "Should the greeting be \"hi\" or \"hello\"?": "hi"
+          },
+          "annotations": {}
+        },
+        "tool_response": {
+          "questions": [
+            {
+              "question": "Should the greeting be \"hi\" or \"hello\"?",
+              "header": "Greeting",
+              "options": [
+                {
+                  "label": "hi",
+                  "description": "Use the casual greeting \"hi\"."
+                },
+                {
+                  "label": "hello",
+                  "description": "Use the more formal greeting \"hello\"."
+                }
+              ],
+              "multiSelect": false
+            }
+          ],
+          "answers": {
+            "Should the greeting be \"hi\" or \"hello\"?": "hi"
+          },
+          "annotations": {}
+        },
+        "tool_use_id": "toolu_000000000000000000000001",
+        "duration_ms": 1
+      }
+    },
+    {
+      "output": "\u001b]0;◑ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[9B\u001b[K\r\u001b[1B\u001b[K\r\u001b[2B\u001b[K\r\u001b[2B\u001b[K\r\u001b[5C\u001b[1B\u001b[K\r\u001b[1B\u001b[38;2;215;119;87m·\u001b[3G\u001b[38;2;220;129;97mDetermining…\u001b[38;2;215;119;87m \u001b[38;2;153;153;153m(running PostToolUse hook · 1s · ↓\u001b[51G162 tokens)\r\u001b[5C\u001b[1B\u001b[39m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[1B\u001b[38;2;153;153;153m❯ \u001b[39m\u001b[7m \u001b[27m\u001b[K\r\u001b[1B\u001b[38;2;136;136;136m──────────────────────────────────────────────────────────────\r\u001b[2B\u001b[39m  \u001b[38;2;153;153;153m⏸ manual mode\u001b[17Gon\u001b[39m\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[10B\u001b[38;2;153;153;153m●\u001b[3G\u001b[39mAnswered\u001b[12GClaude's\u001b[21Gquestions:\r\u001b[1B\u001b[38;2;153;153;153m  ⎿  · Should the greeting be \"hi\" or \"hello\"? → hi\r\u001b[16C\u001b[5B1s · ↓\u001b[39m \u001b[38;2;153;153;153m162 \u001b[29Gokens)\u001b[39m\u001b[K\r\u001b[18C\u001b[6B\u001b[38;2;153;153;153m · esc to interrupt · ← for agents\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 51
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;225;139;107mDetermining…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 69
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[37C\u001b[22B\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 44
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;228;144;112mDetermining…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;230;149;117mDetermining…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 113
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m✢\u001b[3G\u001b[38;2;233;154;122mDetermining…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 96
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[16B\u001b[38;2;215;119;87m*\u001b[3G\u001b[38;2;235;159;127mDetermining…\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 45
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[2C\u001b[16B\u001b[38;2;215;119;87mD\u001b[7Grmining…\u001b[17G\u001b[38;2;153;153;153m2\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 44
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[13B\u001b[38;2;255;255;255m●\u001b[3G\u001b[39mhi\r\u001b[2C\u001b[3B\u001b[38;2;235;159;127mD\u001b[7Grmining…\u001b[17G\u001b[38;2;153;153;153mrunning Stop hook · 2s · ↓\u001b[44G162 tokens)\u001b[39m\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/tmp/pc-demo/home/.claude/projects/-tmp-pc-demo-weather-app--worktrees-task-use-your-askuserquestion-tool-to-ask-me-810700/00000000-0000-4000-8000-000000000001.jsonl",
+        "cwd": "/tmp/pc-demo/weather-app/.worktrees/task/use-your-askuserquestion-tool-to-ask-me-810700",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "permission_mode": "default",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "last_assistant_message": "hi",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "output": "\u001b]0;✳ Claude Code\u0007"
+    },
+    {
+      "output": "\u001b[?2026h\u001b[H\r\u001b[15B\u001b[38;2;153;153;153m✻\u001b[3GSautéed for 2s · done 2:34 PM\r\u001b[1B\u001b[39m\u001b[K\r\u001b[3B❯ \r\u001b[18C\u001b[3B\u001b[K\u001b[23;1H\u001b[20;3H\u001b[?2026l"
+    },
+    {
+      "wait": 14371
+    },
+    {
+      "expect": "idle"
+    }
+  ]
+}

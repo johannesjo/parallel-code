@@ -1,0 +1,147 @@
+{
+  "command": "claude",
+  "hooks": "claude",
+  "version": "2.1.312",
+  "summary": "A workflow runs two agents in the background after the lead ends its turn; its completion notice starts a turn that ends with nothing left running.",
+  "recorded": "Excerpt of hook payloads from an interactive Claude Code 2.1.312 session: event order and the fields listed are as recorded; other fields were dropped. Copied from subagents.test.ts, which keeps its own copy.",
+  "steps": [
+    {
+      "hook": {
+        "hook_event_name": "UserPromptSubmit"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Workflow"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStart",
+        "agent_id": "a1",
+        "agent_type": "workflow-subagent"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStop",
+        "agent_id": "a1",
+        "agent_type": "workflow-subagent",
+        "background_tasks": [
+          {
+            "id": "w1",
+            "type": "workflow",
+            "status": "running",
+            "name": "tiny"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "Stop",
+        "last_assistant_message": "started",
+        "background_tasks": [
+          {
+            "id": "w1",
+            "type": "workflow",
+            "status": "running",
+            "name": "tiny"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStart",
+        "agent_id": "a2",
+        "agent_type": "workflow-subagent"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStop",
+        "agent_id": "helper",
+        "agent_type": "",
+        "background_tasks": [
+          {
+            "id": "w1",
+            "type": "workflow",
+            "status": "running",
+            "name": "tiny"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStop",
+        "agent_id": "a2",
+        "agent_type": "workflow-subagent",
+        "background_tasks": [
+          {
+            "id": "w1",
+            "type": "workflow",
+            "status": "running",
+            "name": "tiny"
+          }
+        ]
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "<task-notification>"
+      }
+    },
+    {
+      "expect": "active"
+    },
+    {
+      "hook": {
+        "hook_event_name": "Stop",
+        "last_assistant_message": "started",
+        "background_tasks": []
+      }
+    },
+    {
+      "expect": "idle"
+    },
+    {
+      "hook": {
+        "hook_event_name": "SubagentStop",
+        "agent_id": "helper2",
+        "agent_type": "",
+        "background_tasks": []
+      }
+    },
+    {
+      "expect": "idle"
+    }
+  ]
+}

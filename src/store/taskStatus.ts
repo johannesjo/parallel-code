@@ -116,6 +116,9 @@ interface AgentTrackingState {
   idleTimer?: ReturnType<typeof setTimeout>;
   idleConfirmPending?: boolean;
   outputTailBuffer: string;
+  /** Output since the last question check, to tell a redrawn question from one
+   *  that only lingers in the tail because the TUI repaints changed rows only. */
+  outputSinceQuestionCheck?: string;
   decoder: TextDecoder;
   lastAnalysisAt?: number;
   pendingAnalysis?: ReturnType<typeof setTimeout>;
@@ -484,6 +487,11 @@ export function looksLikeQuestion(tail: string): boolean {
   // a menu the whole tail still decides.
   const questionLine = lines.findLast(isQuestionLine);
   if (questionLine === undefined) return false;
+  // Cursor-drawn screens collapse into one line once stripped, so a pattern
+  // could join two rows: Codex's "Update available!" and its footer's
+  // "? for shortcuts" read as one question. A real question fits on a row, or
+  // wraps onto the next one.
+  if (!rows.split('\n').some(isQuestionLine) && !wrapsOntoNextRow(analysisTail)) return false;
   const afterQuestion = visible.slice(visible.lastIndexOf(questionLine));
   const scope = SELECTION_CURSOR_LINE.test(afterQuestion) ? afterQuestion : visible;
   if (scope === afterQuestion && PROMPT_AFTER_MENU.test(afterQuestion)) return false;
@@ -515,6 +523,30 @@ export function looksLikeQuestion(tail: string): boolean {
   }
 
   return true;
+}
+
+/** True when a question starts on one screen row and ends on the row below it.
+ *  Rows come from cursor positioning, so only rows drawn as neighbours on screen
+ *  join; a partial repaint skips unchanged rows between the ones it draws. */
+function wrapsOntoNextRow(tail: string): boolean {
+  // eslint-disable-next-line no-control-regex -- CUP/HVP: ESC [ row ; col H|f
+  const parts = tail.split(/\x1b\[(\d*)(?:;\d*)?[Hf]/);
+  // split() puts each captured row number before the text drawn there; Codex
+  // draws a row word by word, so pieces drawn in a row on the same row merge.
+  const drawn: { row: number; text: string }[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const row = Number(parts[i] || 1);
+    const text = stripAnsi(parts[i + 1] ?? '');
+    const last = drawn.at(-1);
+    if (last?.row === row) last.text += ` ${text}`;
+    else drawn.push({ row, text });
+  }
+  return drawn.some((run, i) => {
+    const next = drawn[i + 1];
+    if (next?.row !== run.row + 1) return false;
+    const end = run.text.split(/\r?\n/).at(-1) ?? '';
+    return isQuestionLine(`${end} ${next.text.split(/\r?\n/)[0] ?? ''}`);
+  });
 }
 
 function isQuestionLine(line: string): boolean {
@@ -597,7 +629,14 @@ const questionSinceByAgent = new Map<string, number>();
 
 function updateQuestionState(agentId: string, hasQuestion: boolean): void {
   const asking = untrack(questionAgents);
-  const observedAt = agentStates.get(agentId)?.lastContentAt ?? 0;
+  const state = agentStates.get(agentId);
+  const unseen = state?.outputSinceQuestionCheck ?? '';
+  if (state) state.outputSinceQuestionCheck = '';
+  // Codex repaints only changed rows, so an answered dialog stays in the tail
+  // under later output. Only output that draws the question again re-confirms
+  // it; otherwise a newer hook or program status ("done") would never win.
+  const lingers = asking.has(agentId) && !terminalAsks(agentId, unseen, state?.taskId);
+  const observedAt = (lingers ? asking.get(agentId) : state?.lastContentAt) ?? 0;
   if (hasQuestion ? asking.get(agentId) === observedAt : !asking.has(agentId)) return;
 
   const next = new Map(asking);
@@ -943,6 +982,9 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     combined.length > TAIL_BUFFER_MAX
       ? combined.slice(combined.length - TAIL_BUFFER_MAX)
       : combined;
+  state.outputSinceQuestionCheck = ((state.outputSinceQuestionCheck ?? '') + text).slice(
+    -TAIL_BUFFER_MAX,
+  );
   if (state.taskId) {
     notePrintedPrLink(agentId, state.taskId, { tail: state.outputTailBuffer, chunk: text });
   }

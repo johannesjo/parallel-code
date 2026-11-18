@@ -20,11 +20,10 @@ import {
   buildHookScript,
   buildStatusLineScript,
 } from './hook-script.js';
-import { mapCodexHookPayload } from './codex-status.js';
+import { createHookPayloadMapper } from './hook-pipeline.js';
 import { isCurrentAgentLaunch } from './observations.js';
-import { mapClaudeHookPayload, type AgentHookEventPayload } from './status.js';
-import { createSubagentGate } from './subagents.js';
-import { createToolCallMatcher } from './tool-calls.js';
+import { recordSessionHook } from './session-recorder.js';
+import type { AgentHookEventPayload } from './status.js';
 import { readUserStatusLine } from './user-status-line.js';
 import { warn as logWarn, errMessage } from '../log.js';
 
@@ -162,8 +161,7 @@ function statusLineSettings(
 export function startAgentHookServer(options: AgentHookServerOptions): Promise<AgentHookServer> {
   const token = randomUUID();
   const now = options.now ?? Date.now;
-  const gateSubagents = createSubagentGate();
-  const matchToolCalls = createToolCallMatcher();
+  const mapPayload = createHookPayloadMapper();
   const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST' || !ROUTES.has(req.url ?? '')) {
       res.writeHead(404).end();
@@ -187,14 +185,9 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
     if (!agentId || !isCurrentAgentLaunch(agentId, taskId, launchId)) return;
     const payload = parseJson(body);
     const fromCodex = req.url === '/hook/codex';
-    // The gate follows Claude Code's background work, which Codex does not report.
-    const update = fromCodex
-      ? mapCodexHookPayload(payload)
-      : gateSubagents(
-          launchId,
-          payload,
-          matchToolCalls(launchId, payload, mapClaudeHookPayload(payload)),
-        );
+    const source = fromCodex ? 'codex' : 'claude';
+    recordSessionHook(launchId, source, payload);
+    const update = mapPayload(source, launchId, payload);
     if (!update) return;
     const event = { ...update, agentId, taskId, launchId, at: now() };
     options.onEvent(event);
