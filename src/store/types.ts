@@ -99,6 +99,15 @@ export interface TerminalBookmark {
   command: string;
 }
 
+/** A named dev server a task can start, stop and open in its browser preview. */
+export interface RunCommand {
+  id: string;
+  name: string;
+  command: string;
+  /** Address to open in the preview; `$PARALLEL_CODE_PORT` is filled in per task. */
+  url?: string;
+}
+
 /** How a saved include-list entry reaches a new worktree. */
 export type WorktreeIncludeMode = 'symlink' | 'copy';
 
@@ -147,6 +156,9 @@ export interface Project {
    *  user first picks; empty means the reviewer alone. */
   reviewChecks?: string[];
   terminalBookmarks?: TerminalBookmark[];
+  /** Dev servers offered in each task's shell toolbar. App state, for the
+   *  same reason as `verifyCommand`. */
+  runCommands?: RunCommand[];
   /** Commands run in a visible terminal of each new worktree task, right
    *  after the worktree exists. App state, for the same reason as
    *  `verifyCommand`. Unset means no setup step at all. */
@@ -374,6 +386,8 @@ export interface Task {
   /** Key (see canvasTabKey) of the tab in front. */
   canvasActiveTab?: string;
   browserUrl?: string;
+  /** First port of the task's block (see src/lib/task-ports.ts); kept so servers keep their address. */
+  portBase?: number;
   /** Task references are independent of authored graph content and execution state. */
   canvasTaskLinks?: CanvasTaskLink[];
   mindMap?: MindMapDocument;
@@ -527,6 +541,7 @@ export interface PersistedTask {
   canvasTabs?: CanvasTab[];
   canvasActiveTab?: string;
   browserUrl?: string;
+  portBase?: number;
   canvasTaskLinks?: CanvasTaskLink[];
   /** Validated on load; an unreadable value is kept and written back unchanged. */
   mindMap?: unknown;

@@ -36,6 +36,8 @@ export { publishAgentTour, referenceTourCard } from './agent-tour';
 export {
   openCanvasDocument,
   openCanvasBrowser,
+  openCanvasBrowserAt,
+  browserNavigateRequest,
   setTaskBrowserUrl,
   appendBrowserReference,
   markBrowserFocused,
@@ -70,6 +72,8 @@ export {
   reorderTaskInTileOrder,
   spawnShellForTask,
   runBookmarkInTask,
+  startRunInTask,
+  stopRunInTask,
   closeShell,
   hasDirectTask,
   collapseTask,

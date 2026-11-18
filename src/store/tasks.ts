@@ -38,6 +38,13 @@ import {
   teardownScriptFor,
 } from './worktree-setup';
 import {
+  forgetRunShells,
+  markRunStopRequested,
+  runShellId,
+  runState,
+  setPendingRunScript,
+} from './runs';
+import {
   markAgentSpawned,
   markAgentBusy,
   clearAgentActivity,
@@ -61,7 +68,7 @@ import type {
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import { linkTaskToIssueReference } from './github-issue-link';
-import type { Agent, Task, GitIsolationMode, AppStore, Project } from './types';
+import type { Agent, Task, GitIsolationMode, AppStore, Project, RunCommand } from './types';
 import type { DockerSource } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
@@ -684,6 +691,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
     clearAgentActivity(agentId);
   }
   forgetSetupShells(agentIds);
+  forgetRunShells(agentIds);
 
   const activityTimer = activityReleaseTimers.get(taskId);
   if (activityTimer !== undefined) {
@@ -1110,6 +1118,45 @@ function startWorktreeSetup(taskId: string, project: Project | undefined): void 
   );
 }
 
+/** Runs whose start or restart is under way, as `taskId:runId`. */
+const restartingRuns = new Set<string>();
+
+/**
+ * Starts a run in a terminal of its own, or restarts it: the run's previous
+ * terminal, running or finished, closes first so each run keeps one log.
+ * shortcut: a restart kills the old server and starts the new one at once,
+ * because a killed terminal reports no exit to wait on. A server slow to release
+ * its port fails the restart, or moves to the next port (Vite without
+ * --strictPort) so the link misses it; waiting in the main process for the old
+ * PTY to exit would fix both.
+ */
+export async function startRunInTask(taskId: string, run: RunCommand): Promise<void> {
+  // A second click while the old terminal closes would start a second server on the same port.
+  const key = `${taskId}:${run.id}`;
+  if (restartingRuns.has(key)) return;
+  restartingRuns.add(key);
+  try {
+    const previous = runShellId(taskId, run.id);
+    if (previous) await closeShell(taskId, previous);
+    if (!store.tasks[taskId]) return;
+    const shellId = crypto.randomUUID();
+    setPendingRunScript(shellId, { taskId, runId: run.id, name: run.name, command: run.command });
+    addShellToTask(taskId, shellId);
+  } finally {
+    restartingRuns.delete(key);
+  }
+}
+
+/** Stops a run like Ctrl+C would, so the server shuts down cleanly and its log stays. */
+export function stopRunInTask(taskId: string, runId: string): void {
+  const shellId = runShellId(taskId, runId);
+  if (!shellId || runState(taskId, runId) !== 'running') return;
+  markRunStopRequested(shellId);
+  invoke(IPC.WriteToAgent, { agentId: shellId, data: '\x03' }).catch((err) => {
+    logWarn('tasks.shell', 'WriteToAgent failed while stopping a run', { err });
+  });
+}
+
 /** Send a bookmark command to an existing idle shell, or spawn a new one. */
 export function runBookmarkInTask(taskId: string, command: string): void {
   const task = store.tasks[taskId];
@@ -1136,12 +1183,15 @@ export function runBookmarkInTask(taskId: string, command: string): void {
 
 export async function closeShell(taskId: string, shellId: string): Promise<void> {
   const closedIndex = store.tasks[taskId]?.shellAgentIds.indexOf(shellId) ?? -1;
+  // Closing a run is a stop: a killed Windows process exits non-zero with no signal.
+  markRunStopRequested(shellId);
 
   await invoke(IPC.KillAgent, { agentId: shellId }).catch((err) => {
     logWarn('tasks.shell', 'KillAgent failed during closeShell', { err });
   });
   clearAgentActivity(shellId);
   forgetSetupShells([shellId]);
+  forgetRunShells([shellId]);
   setStore(
     produce((s) => {
       const task = s.tasks[taskId];
@@ -1198,6 +1248,8 @@ export async function collapseTask(taskId: string): Promise<void> {
     .filter((index) => index !== -1);
   const selectedAgentIndex = agentIds.indexOf(task.selectedAgentId ?? store.activeAgentId ?? '');
   const allIds = [...agentIds, ...shellAgentIds];
+  // Collapsing stops the task's servers, and a reopened task must not show them running.
+  forgetRunShells(shellAgentIds);
   await Promise.allSettled(
     allIds.map((id) => invoke(IPC.KillAgent, { agentId: id }).catch(console.error)),
   );
@@ -1522,6 +1574,7 @@ export function initMCPListeners(): () => void {
         clearAgentActivity(agentId);
       }
       forgetSetupShells(task.shellAgentIds);
+      forgetRunShells(task.shellAgentIds);
 
       setStore(
         produce((s) => {

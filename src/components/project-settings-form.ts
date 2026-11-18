@@ -1,7 +1,13 @@
 import { createSignal } from 'solid-js';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
 import type { ProjectIconId } from '../lib/project-icon';
-import type { GitIsolationMode, Project, TerminalBookmark, WorktreeInclude } from '../store/types';
+import type {
+  GitIsolationMode,
+  Project,
+  RunCommand,
+  TerminalBookmark,
+  WorktreeInclude,
+} from '../store/types';
 import { finalizeChecks, type CheckDraft } from './ProjectChecksFields';
 import {
   envDraftsFrom,
@@ -26,6 +32,7 @@ export function createProjectSettingsForm() {
   const [evidenceChecks, setEvidenceChecks] = createSignal<CheckDraft[]>([]);
   const [verifyAutoRun, setVerifyAutoRun] = createSignal(true);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
+  const [runCommands, setRunCommands] = createSignal<RunCommand[]>([]);
   const [agentEnv, setAgentEnv] = createSignal<EnvDraft[]>([]);
   const [setupScript, setSetupScript] = createSignal('');
   const [teardownScript, setTeardownScript] = createSignal('');
@@ -50,6 +57,7 @@ export function createProjectSettingsForm() {
     setEvidenceChecks(p.evidenceChecks ? [...p.evidenceChecks] : []);
     setVerifyAutoRun(p.verifyAutoRun !== false);
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
+    setRunCommands(p.runCommands ? [...p.runCommands] : []);
     setAgentEnv(envDraftsFrom(p.agentEnv));
     setSetupScript(p.worktreeSetupScript ?? '');
     setTeardownScript(p.worktreeTeardownScript ?? '');
@@ -74,6 +82,7 @@ export function createProjectSettingsForm() {
       evidenceChecks: finalizeChecks(evidenceChecks()),
       verifyAutoRun: verifyAutoRun(),
       terminalBookmarks: bookmarks(),
+      runCommands: runCommands().length > 0 ? runCommands() : undefined,
       agentEnv: finalizeEnvDrafts(agentEnv()),
       worktreeSetupScript: setupScript().trim() ? setupScript() : undefined,
       worktreeTeardownScript: teardownScript().trim() ? teardownScript() : undefined,
@@ -110,6 +119,8 @@ export function createProjectSettingsForm() {
     setVerifyAutoRun,
     bookmarks,
     setBookmarks,
+    runCommands,
+    setRunCommands,
     agentEnv,
     setAgentEnv,
     setupScript,

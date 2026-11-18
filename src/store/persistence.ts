@@ -1,4 +1,6 @@
 import { sanitizeWorktreeIncludes, sanitizeWorktreeScript } from '../lib/worktree-includes';
+import { sanitizeRunCommands } from '../lib/run-commands';
+import { isPortBase } from '../lib/task-ports';
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { parseCloseSuggestion } from '../../electron/shared/close-suggestion';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
@@ -474,6 +476,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     canvasTabs: task.canvasTabs,
     canvasActiveTab: task.canvasActiveTab,
     browserUrl: task.browserUrl,
+    portBase: task.portBase,
     canvasTaskLinks: task.canvasTaskLinks,
     mindMap: task.mindMap ?? task.mindMapUnreadable,
     agentTour: task.agentTour?.payload,
@@ -920,6 +923,7 @@ export async function loadState(): Promise<void> {
     p.worktreeSetupScript = sanitizeWorktreeScript(p.worktreeSetupScript);
     p.worktreeTeardownScript = sanitizeWorktreeScript(p.worktreeTeardownScript);
     p.worktreeIncludes = sanitizeWorktreeIncludes(p.worktreeIncludes);
+    p.runCommands = sanitizeRunCommands(p.runCommands);
     // Background evidence builds and the evidence review model are gone; drop
     // their old settings. Check suggestions use the review model instead.
     delete (p as unknown as Record<string, unknown>).evidenceAutoBuild;
@@ -1351,6 +1355,7 @@ export async function loadState(): Promise<void> {
             firstPaneSessionId: restoredAgentSessionIds(pt, agentIds)?.[agentIds[0]],
           }),
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
+          portBase: isPortBase(pt.portBase) ? pt.portBase : undefined,
           lastPrompt: pt.lastPrompt,
           promptHistory: restoredPromptHistory(pt.promptHistory),
           promptedAgentIds: restoredPromptedAgentIds(pt, agentIds),
@@ -1511,6 +1516,7 @@ export async function loadState(): Promise<void> {
             firstPaneSessionId: undefined,
           }),
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
+          portBase: isPortBase(pt.portBase) ? pt.portBase : undefined,
           lastPrompt: pt.lastPrompt,
           promptHistory: restoredPromptHistory(pt.promptHistory),
           promptedAgentIds: restoredPromptedAgentIds(pt, []),

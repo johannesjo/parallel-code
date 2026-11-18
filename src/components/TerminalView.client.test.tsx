@@ -5,6 +5,8 @@ import type { Terminal } from '@xterm/xterm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
 import { TerminalView } from './TerminalView';
+import { setStore } from '../store/core';
+import type { Task } from '../store/types';
 
 const { terminals } = vi.hoisted(() => ({ terminals: [] as Terminal[] }));
 
@@ -177,6 +179,21 @@ describe('TerminalView', () => {
     expect(scrollToLine).toHaveBeenCalledTimes(2);
     disposers.pop()?.();
     expect(onTranscriptMarksReady).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("hands the task's port to the terminal, under any env the caller passes", async () => {
+    setStore('tasks', 'task-1', { id: 'task-1', portBase: 20050 } as Task);
+    try {
+      mountTerminal(undefined, undefined, { env: { FOO: '1' } });
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(
+          IPC.SpawnAgent,
+          expect.objectContaining({ env: { PARALLEL_CODE_PORT: '20050', FOO: '1' } }),
+        ),
+      );
+    } finally {
+      setStore('tasks', 'task-1', undefined as unknown as Task);
+    }
   });
 
   it('holds input until the agent has spawned', async () => {

@@ -1,3 +1,4 @@
+import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, expect, it, vi } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
@@ -5,8 +6,12 @@ import { invoke } from '../lib/ipc';
 import { appendBrowserReference, markBrowserFocused, setTaskFocusedPanel } from '../store/store';
 import { TaskBrowserPanel } from './TaskBrowserPanel';
 
+const [navigateRequest, setNavigateRequest] = createSignal<
+  { url: string; seq: number } | undefined
+>();
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock('../store/store', () => ({
+  browserNavigateRequest: () => navigateRequest(),
   appendBrowserReference: vi.fn(),
   markBrowserFocused: vi.fn(),
   setTaskBrowserUrl: vi.fn(),
@@ -21,6 +26,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  setNavigateRequest(undefined);
 });
 
 function mount(onClose = vi.fn()) {
@@ -154,4 +160,23 @@ it('hides the native view throughout task, terminal, and sidebar drags', async (
   document.body.classList.remove('dragging-task');
   tick(1);
   expect(invoke).toHaveBeenLastCalledWith(IPC.BrowserBounds, { id, bounds });
+});
+
+it('navigates an open preview when a run is opened, once per request', async () => {
+  setNavigateRequest({ url: 'http://localhost:1/', seq: 1 });
+  mount();
+  await Promise.resolve();
+  await Promise.resolve();
+  const create = vi.mocked(invoke).mock.calls.find(([, args]) => args?.action === 'create')?.[1];
+  const navigations = () =>
+    vi.mocked(invoke).mock.calls.filter(([, args]) => args?.action === 'navigate');
+  // A request older than the panel is already its initial address.
+  expect(navigations()).toHaveLength(0);
+  setNavigateRequest({ url: 'http://localhost:20040', seq: 2 });
+  expect(invoke).toHaveBeenCalledWith(IPC.BrowserCommand, {
+    id: create?.id,
+    action: 'navigate',
+    url: 'http://localhost:20040',
+  });
+  expect(navigations()).toHaveLength(1);
 });

@@ -43,6 +43,7 @@ import {
 import { setAgentCanvasTools } from '../store/agents';
 import { clearTerminalInputPendingFromQuestion } from '../store/tasks';
 import { isLandedTaskState } from '../store/landing';
+import { taskPortEnv } from '../store/task-ports';
 import { boardCoversWorkspace, boardSidePanelOpen } from '../store/project-pages';
 import { warn as logWarn } from '../lib/log';
 import {
@@ -1349,7 +1350,8 @@ export function TerminalView(props: TerminalViewProps) {
         args: props.args,
         managedMcpLaunchArgs: store.tasks[taskId]?.mcpLaunchArgs,
         cwd: props.cwd,
-        env: props.env ?? {},
+        // Every task terminal, agents included, learns its task's port block.
+        env: { ...taskPortEnv(taskId), ...props.env },
         envFile: props.envFile,
         // The main process looks up the project's env vars; values stay out of this call.
         projectId: store.tasks[taskId]?.projectId,

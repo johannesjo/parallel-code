@@ -89,6 +89,7 @@ function structuralSnapshot(): string {
           id,
           {
             browserUrl: t.browserUrl,
+            portBase: t.portBase,
             mindMap: t.mindMap,
             agentTour: t.agentTour?.payload,
             reasoningWorkspaces: t.reasoningWorkspaces,

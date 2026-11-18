@@ -6,7 +6,7 @@ import {
 } from '../graph/model';
 import { parseMindMapUpdate } from '../../electron/shared/mindmap';
 import { branchPrompt, type BranchRequest } from '../graph/agentActions';
-import { produce, unwrap } from 'solid-js/store';
+import { createStore, produce, unwrap } from 'solid-js/store';
 import { batch } from 'solid-js';
 import { canvasTabKey, isTaskCanvasVisible, withTab, withoutTab } from '../lib/canvas-tabs';
 import { resizeTaskColumnForCanvas } from './task-column';
@@ -251,6 +251,25 @@ export function openCanvasBrowser(taskId: string): void {
     canvasOpen: true,
   });
   void saveState();
+}
+
+// Ephemeral: an address the user asked a task's preview to open. The sequence
+// number lets an open panel tell a new request from one it already handled.
+const [browserRequests, setBrowserRequests] = createStore<
+  Record<string, { url: string; seq: number } | undefined>
+>({});
+
+/** Opens the task's browser preview at `url`, navigating it if already open. */
+export function openCanvasBrowserAt(taskId: string, url: string): void {
+  if (!store.tasks[taskId]) return;
+  setTaskBrowserUrl(taskId, url);
+  setBrowserRequests(taskId, { url, seq: (browserRequests[taskId]?.seq ?? 0) + 1 });
+  openCanvasBrowser(taskId);
+}
+
+/** Reactive: the latest address requested for the task's preview. */
+export function browserNavigateRequest(taskId: string): { url: string; seq: number } | undefined {
+  return browserRequests[taskId];
 }
 
 export function setTaskBrowserUrl(taskId: string, url: string): void {

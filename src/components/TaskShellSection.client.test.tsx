@@ -6,6 +6,7 @@ import { editAsDocument } from '../documents/store';
 import { store, updateProject, runBookmarkInTask, spawnShellForTask } from '../store/store';
 import { IPC } from '../../electron/ipc/channels';
 import type { FileLinkMenu } from './file-link-menu';
+import { forgetRunShells, setPendingRunScript } from '../store/runs';
 
 const { terminalProps, setShellLayoutOverride, invoke } = vi.hoisted(() => ({
   terminalProps: [] as Record<string, unknown>[],
@@ -234,6 +235,23 @@ describe('TaskShellSection', () => {
     );
 
     expect((container.firstElementChild as HTMLElement).style.minHeight).toBe('0');
+  });
+
+  it('runs a run command once in its terminal and labels it with the run', () => {
+    setPendingRunScript('shell-run', {
+      taskId: 'task-1',
+      runId: 'web',
+      name: 'web',
+      command: 'npm run dev',
+    });
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(
+      render(() => <TaskShellSection task={makeTask(['shell-run'])} isActive />, container),
+    );
+    expect(terminalProps.at(-1)).toMatchObject({ shellScript: 'npm run dev', autoFocus: false });
+    expect(container.textContent).toContain('web running');
+    forgetRunShells(['shell-run']);
   });
 
   it('offers the layout menu only once two shells are open', () => {

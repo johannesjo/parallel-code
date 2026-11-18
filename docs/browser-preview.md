@@ -1,12 +1,12 @@
 # Browser preview
 
-Open a task's canvas using its title-bar button, then choose **+ → Browser**. Start your dev server in the task shell (or with an existing terminal bookmark), enter its HTTP/HTTPS address, and press **Go**. `localhost:5173` and `127.0.0.1:3000` also work without a scheme. Each task has one browser tab and remembers its last address across restarts.
+Open a task's canvas using its title-bar button, then choose **+ → Browser**. Start your dev server in the task shell, with a terminal bookmark, or with a project run command, whose link button opens its address here directly. Otherwise enter its HTTP/HTTPS address, and press **Go**. `localhost:5173` and `127.0.0.1:3000` also work without a scheme. Each task has one browser tab and remembers its last address across restarts.
 
 Click **Pick element**, hover to highlight an element, and click to add its URL, selector, visible text, and a short HTML excerpt to the task's prompt. The selection click does not activate the element. **Escape** or **Cancel picker** leaves picking mode. References append to the existing draft; they do not send a prompt. Review the draft and send it when ready.
 
 ## First-version limits
 
-- Start servers and manage worktree ports through the existing task shells. There is no server launcher, automatic port detection, or browser automation tool for agents.
+- Run commands start servers, and each task gets its own port block (`PARALLEL_CODE_PORT`), but the app does not detect which port a server actually opened. There is no browser automation tool for agents.
 - References describe the current DOM, not framework components or source-file locations. Selectors are best effort and can become stale after a rerender. `>>>` in a reference denotes an open shadow-root boundary, not a CSS combinator.
 - The picker supports the main document and open shadow roots. It cannot pick inside iframes or closed shadow roots.
 - Popups, downloads, and device/clipboard permission requests are denied. Sessions are separate from the app and from other tasks, and are not persisted to disk. Closing the tab releases its page and history; the last URL is kept. Reopening starts with fresh site data (including cookies and login state).

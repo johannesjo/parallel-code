@@ -7,6 +7,7 @@ import { topDialog } from '../lib/dialog-stack';
 import { theme } from '../lib/theme';
 import {
   appendBrowserReference,
+  browserNavigateRequest,
   markBrowserFocused,
   setTaskBrowserUrl,
   setActiveTask,
@@ -125,6 +126,16 @@ export function TaskBrowserPanel(props: TaskBrowserPanelProps) {
       unsubscribe();
       void invoke(IPC.BrowserCommand, { id, action: 'close' }).catch(() => undefined);
     });
+  });
+
+  // A request made before this panel mounted is already its initial URL.
+  let handledRequest = untrack(() => browserNavigateRequest(props.taskId)?.seq);
+  createEffect(() => {
+    const request = browserNavigateRequest(props.taskId);
+    if (!ready() || !request || request.seq === handledRequest) return;
+    handledRequest = request.seq;
+    setAddress(request.url);
+    void command('navigate', request.url);
   });
 
   createEffect(() => {

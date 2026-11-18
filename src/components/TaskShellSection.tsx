@@ -1,13 +1,4 @@
-import {
-  Show,
-  For,
-  createSignal,
-  createEffect,
-  onCleanup,
-  onMount,
-  untrack,
-  type JSX,
-} from 'solid-js';
+import { Show, For, createSignal, createEffect, onCleanup, onMount, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import {
   store,
@@ -46,33 +37,21 @@ import {
 import {
   consumePendingSetupScript,
   noteSetupShellExit,
-  setupExitLabel,
   setupShellState,
   worktreeScriptEnv,
 } from '../store/worktree-setup';
+import { consumePendingRunScript, noteRunShellExit, runShellInfo } from '../store/runs';
+import { shellBadge, type ShellBadge } from './shell-badge';
+import { toolbarBtnStyle } from './shell-toolbar-style';
+import { TaskRunButtons } from './TaskRunButtons';
 import { autoShellLayout, shellColumns } from '../lib/shellLayout';
 import { ShellLayoutMenu } from './ShellLayoutMenu';
 import type { Task } from '../store/types';
 
-/** Outlined terminal launchers retain a clear boundary without a filled bar. */
-const toolbarBtnStyle = (highlighted: boolean, iconOnly = false): JSX.CSSProperties => ({
-  background: 'transparent',
-  border: `1px solid ${highlighted ? theme.borderFocus : theme.border}`,
-  color: highlighted ? theme.fg : theme.fgMuted,
-  cursor: 'pointer',
-  'border-radius': 'var(--radius-sm)',
-  'box-sizing': 'border-box',
-  height: '26px',
-  width: iconOnly ? '26px' : undefined,
-  padding: iconOnly ? '0' : '0 9px',
-  'font-size': sf(12),
-  'line-height': '16px',
-  display: 'flex',
-  'align-items': 'center',
-  'justify-content': 'center',
-  'flex-shrink': '0',
-  gap: '5px',
-});
+function badgeColor(badge: ShellBadge): string {
+  if (badge.tone === 'error') return theme.error;
+  return badge.tone === 'success' ? theme.success : theme.fgMuted;
+}
 
 interface TaskShellSectionProps {
   task: Task;
@@ -279,6 +258,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           </For>
           <AddCommandBookmark projectId={props.task.projectId} />
         </div>
+        <TaskRunButtons task={props.task} />
         <Show when={shellCount() >= 2}>
           <ShellLayoutMenu taskId={props.task.id} mode={layout()} />
         </Show>
@@ -304,7 +284,15 @@ export function TaskShellSection(props: TaskShellSectionProps) {
               const initialCommand = consumePendingShellCommand(shellId);
               const launch = consumePendingShellLaunch(shellId);
               const setupScript = consumePendingSetupScript(shellId);
-              const setupState = () => setupShellState(shellId);
+              const runScript = consumePendingRunScript(shellId);
+              const badge = () => {
+                const run = runShellInfo(shellId);
+                return shellBadge({
+                  setup: setupShellState(shellId),
+                  run: run && { name: run.name, state: run.state },
+                  exit: shellExits[shellId],
+                });
+              };
               let shellFocusFn: (() => void) | undefined;
               let registeredKey: string | undefined;
 
@@ -355,60 +343,27 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                   >
                     <CloseIcon size={12} />
                   </button>
-                  {/* Same corner as the exit badge, which replaces it: no shift. */}
-                  <Show when={setupState() === 'running' && !shellExits[shellId]}>
-                    <div
-                      class="exit-badge"
-                      style={{
-                        position: 'absolute',
-                        top: '8px',
-                        right: '12px',
-                        'z-index': '10',
-                        'font-size': sf(12),
-                        color: theme.fgMuted,
-                        background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
-                        padding: '4px 12px',
-                        'border-radius': 'var(--radius-md)',
-                        border: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      Setup script running…
-                    </div>
-                  </Show>
-                  <Show when={shellExits[shellId]}>
-                    <div
-                      class="exit-badge"
-                      style={{
-                        position: 'absolute',
-                        top: '8px',
-                        right: '12px',
-                        'z-index': '10',
-                        'font-size': sf(12),
-                        // A finished setup stays on screen, so it is quiet;
-                        // only a failure is tinted.
-                        color:
-                          setupState() === 'passed'
-                            ? theme.fgMuted
-                            : setupState() === 'failed'
-                              ? theme.error
-                              : shellExits[shellId]?.exitCode === 0
-                                ? theme.success
-                                : theme.error,
-                        background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
-                        padding: '4px 12px',
-                        'border-radius': 'var(--radius-md)',
-                        border: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {setupState() === 'passed'
-                        ? 'Setup script finished'
-                        : setupState() === 'failed'
-                          ? `Setup script failed (${setupExitLabel(
-                              shellExits[shellId]?.exitCode ?? null,
-                              shellExits[shellId]?.signal ?? null,
-                            )})`
-                          : `Process exited (${shellExits[shellId]?.exitCode ?? '?'})`}
-                    </div>
+                  {/* One corner for every status, so a change of status never shifts it. */}
+                  <Show when={badge()}>
+                    {(current) => (
+                      <div
+                        class="exit-badge"
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '12px',
+                          'z-index': '10',
+                          'font-size': sf(12),
+                          color: badgeColor(current()),
+                          background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
+                          padding: '4px 12px',
+                          'border-radius': 'var(--radius-md)',
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        {current().text}
+                      </div>
+                    )}
                   </Show>
                   <TerminalView
                     taskId={props.task.id}
@@ -433,11 +388,12 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     dockerMode={props.task.dockerMode}
                     dockerImage={props.task.dockerImage}
                     initialCommand={initialCommand}
-                    shellScript={setupScript}
-                    env={setupScript ? setupEnv() : undefined}
+                    shellScript={setupScript ?? runScript}
+                    env={setupScript || runScript ? setupEnv() : undefined}
                     onData={(data) => markAgentOutput(shellId, data, props.task.id)}
                     onExit={(info) => {
                       noteSetupShellExit(shellId, props.task.name, info.exit_code, info.signal);
+                      noteRunShellExit(shellId, props.task.name, info.exit_code, info.signal);
                       clearAgentActivity(shellId);
                       refreshTaskStatus(props.task.id);
                       setShellExits(shellId, {
@@ -450,9 +406,9 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                       if (registeredKey) registerFocusFn(registeredKey, focusFn);
                     }}
                     fontSize={12}
-                    // The setup terminal opens on its own; it must not take
-                    // focus from the prompt the user is about to type.
-                    autoFocus={!setupScript}
+                    // The setup terminal opens on its own and a run terminal is
+                    // a log; neither may take focus from the prompt.
+                    autoFocus={!setupScript && !runScript}
                   />
                 </div>
               );
