@@ -226,7 +226,7 @@ for (const size of SIZES) {
         const items = await column.locator('.chat-transcript > *').count();
         // Resolved before measuring: finding them by role walks the whole transcript.
         await expect(column.getByRole('option', { name: 'Sonnet 5' })).toBeAttached();
-        const composer = column.getByRole('textbox', { name: 'Message Claude' });
+        const composer = column.getByRole('combobox', { name: 'Message Claude' });
         await composer.fill('Go');
         const input = await composer.elementHandle();
         if (!input) throw new Error('The composer is gone');
