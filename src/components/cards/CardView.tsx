@@ -121,6 +121,10 @@ export function CardView(props: CardViewProps) {
   const state = () => cardTaskState(props.task, props.now);
   const reading = () => readCard(props.card, state(), store.briefModel);
   const confidence = () => props.card.builtIn === 'confidence';
+  // Plan's own labels (Goal, Steps) already head it; a "Plan" title above them only repeats.
+  // With one slot shown, its label hides (`showsSlotLabel`), so the name stays as the heading.
+  const plan = () => props.card.source.kind === 'app' && props.card.source.fact === 'plan';
+  const unnamed = () => confidence() || (plan() && shownSlots(props.card).length > 1);
   return (
     <section
       class="card"
@@ -132,8 +136,8 @@ export function CardView(props: CardViewProps) {
       data-outdated={reading().outdated ? '' : undefined}
     >
       <div class="card-head">
-        {/* Confidence goes unnamed: its scores already say what it is. */}
-        <Show when={!confidence()}>
+        {/* Confidence goes unnamed too: its scores already say what it is. */}
+        <Show when={!unnamed()}>
           <span class="card-name">{props.card.name}</span>
         </Show>
         <span class="card-meta">

@@ -44,6 +44,34 @@ describe('CardView top line', () => {
   });
 });
 
+describe('CardView for the Plan card', () => {
+  it('goes unnamed: its Goal and Steps labels already say what it is', () => {
+    dispose = render(
+      () => (
+        <CardView
+          card={appFactCard('plan', true)}
+          task={{ id: 't1', agentIds: [], goal: 'Ship the fix' } as unknown as Task}
+          now={60_000}
+        />
+      ),
+      document.body,
+    );
+    expect(document.body.querySelector('.card-name')).toBeNull();
+    const labels = [...document.body.querySelectorAll('.slot-label')].map((l) => l.textContent);
+    expect(labels).toEqual(['Goal', 'Steps']);
+  });
+
+  it('keeps its name when only one slot shows, as that slot then has no label', () => {
+    const plan = appFactCard('plan', true);
+    const card = { ...plan, slots: [{ ...plan.slots[0], hidden: true }, plan.slots[1]] };
+    dispose = render(
+      () => <CardView card={card} task={{ id: 't1', agentIds: [] } as unknown as Task} now={0} />,
+      document.body,
+    );
+    expect(document.body.querySelector('.card-name')?.textContent).toBe('Plan');
+  });
+});
+
 describe('CardView for the Confidence card', () => {
   it('says how to get a rating before there is one', () => {
     show({ id: 't1' });
