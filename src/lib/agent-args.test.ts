@@ -49,6 +49,16 @@ const copilotAgent = {
   skip_permissions_args: ['--yolo'],
 };
 
+const qoderAgent = {
+  id: 'qoder',
+  name: 'Qoder',
+  description: 'Qoder agent',
+  command: 'qoder',
+  args: [],
+  resume_args: ['--continue'],
+  skip_permissions_args: ['--dangerously-skip-permissions'],
+};
+
 describe('buildTaskAgentArgs with pane flags', () => {
   const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
   const claudeWithFlags = { ...claudeAgent, extra_args: ['--chrome'] };
@@ -141,6 +151,33 @@ describe('buildTaskAgentArgs with a session id', () => {
       '--mcp-config',
       '/tmp/c.json',
     ]);
+  });
+
+  it('names and resumes a Qoder session by id', () => {
+    const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
+    expect(buildTaskAgentArgs(qoderAgent, {}, false, undefined, SESSION)).toEqual([
+      '--session-id',
+      SESSION,
+    ]);
+    expect(buildTaskAgentArgs(qoderAgent, {}, true, undefined, SESSION)).toEqual([
+      '--resume',
+      SESSION,
+    ]);
+  });
+
+  it('opens the Qoder picker for a shared-checkout task', () => {
+    expect(buildTaskAgentArgs(qoderAgent, { id: 'doc-agent-docs' }, true)).toEqual(['--resume']);
+    expect(taskAgentOpensSessionPicker(qoderAgent, { id: 'doc-agent-docs' }, true)).toBe(true);
+  });
+
+  it('keeps the Qoder MCP and skip-permission fallbacks', () => {
+    expect(
+      buildTaskAgentArgs(
+        qoderAgent,
+        { skipPermissions: true, mcpConfigPath: '/tmp/mcp.json' },
+        false,
+      ),
+    ).toEqual(['--dangerously-skip-permissions', '--mcp-config', '/tmp/mcp.json']);
   });
 
   it('keeps the session picker when a reviewer has a model override', () => {

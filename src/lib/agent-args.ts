@@ -166,7 +166,10 @@ function positionalAgentArgs(
     const command = agentDef.command.split('/').pop();
     const resume = args.join(' ');
     if (isCodexCommand(agentDef.command) && resume === 'resume --last') args = ['resume'];
-    if ((command === 'claude' || command === 'copilot') && resume === '--continue') {
+    if (
+      (command === 'claude' || command === 'copilot' || command === 'qoder') &&
+      resume === '--continue'
+    ) {
       args = ['--resume'];
     }
     // These defaults have no verified CLI picker. A fresh session is safer
@@ -285,9 +288,10 @@ export function taskAgentOpensSessionPicker(
 ): boolean {
   const [agentDef, , resumed] = launch;
   if (!resumed) return false;
+  const command = agentDef.command.split('/').pop();
   const selector = isCodexCommand(agentDef.command)
     ? 'resume'
-    : agentDef.command.split('/').pop() === 'claude'
+    : command === 'claude' || command === 'qoder'
       ? '--resume'
       : undefined;
   const configuredArgs = agentDef.resume_args?.length ? agentDef.resume_args : agentDef.args;

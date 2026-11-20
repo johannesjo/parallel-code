@@ -65,6 +65,13 @@ describe('MCP agent launch args', () => {
     ]);
   });
 
+  it('uses --mcp-config for Qoder', () => {
+    expect(buildMcpLaunchArgs('qoder', '/tmp/config.json', config)).toEqual([
+      '--mcp-config',
+      '/tmp/config.json',
+    ]);
+  });
+
   it('detects antigravity commands by executable name', () => {
     expect(isAntigravityCommand('agy')).toBe(true);
     expect(isAntigravityCommand('/home/agent/.local/bin/agy')).toBe(true);
