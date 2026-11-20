@@ -8,6 +8,7 @@ describe('getSkipPermissionsArgs', () => {
     expect(getSkipPermissionsArgs('gemini')).toEqual(['--yolo']);
     expect(getSkipPermissionsArgs('copilot')).toEqual(['--yolo']);
     expect(getSkipPermissionsArgs('agy')).toEqual(['--dangerously-skip-permissions']);
+    expect(getSkipPermissionsArgs('qoder')).toEqual(['--dangerously-skip-permissions']);
   });
 
   // Agents are stored as whatever the user configured, which is often an
@@ -156,6 +157,24 @@ describe('stripPermissionBypassArgs', () => {
     expect(stripPermissionBypassArgs('/opt/bin/codex', ['--yolo'])).toEqual([]);
     expect(stripPermissionBypassArgs('/opt/bin/claude', ['-y'])).toEqual(['-y']);
     expect(stripPermissionBypassArgs('my-wrapper', ['--yolo', '-a', 'never', 'x'])).toEqual(['x']);
+  });
+
+  it('treats Qoder bypass modes as dangerous but keeps narrower modes', () => {
+    expect(stripPermissionBypassArgs('qoder', ['--yolo', '--model', 'lite'])).toEqual([
+      '--model',
+      'lite',
+    ]);
+    expect(stripPermissionBypassArgs('qoder', ['--permission-mode', 'bypass_permissions'])).toEqual(
+      [],
+    );
+    expect(stripPermissionBypassArgs('qoder', ['--permission-mode', 'dont_ask'])).toEqual([
+      '--permission-mode',
+      'dont_ask',
+    ]);
+    expect(stripPermissionBypassArgs('qoder', ['--permission-mode', 'accept_edits'])).toEqual([
+      '--permission-mode',
+      'accept_edits',
+    ]);
   });
 
   it('keeps a wrapper short flag such as npx -y but strips the wrapped agent one', () => {

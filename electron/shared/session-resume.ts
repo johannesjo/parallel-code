@@ -27,10 +27,14 @@ function isCodex(command: string): boolean {
   return commandName(command).includes('codex');
 }
 
+function isQoder(command: string): boolean {
+  return commandName(command) === 'qoder';
+}
+
 /**
  * Args that make a *new* session use an id we chose.
  *
- * Only Claude Code offers this (`--session-id <uuid>`), and it is the stronger
+ * Claude Code and Qoder CLI offer this (`--session-id <uuid>`), and it is the stronger
  * half of the feature: the id is known before the agent writes anything, so the
  * pane owns its session outright and no matching after the fact is needed.
  *
@@ -39,7 +43,7 @@ function isCodex(command: string): boolean {
  */
 export function newSessionArgs(command: string, sessionId: string): string[] | null {
   if (!isSessionId(sessionId)) return null;
-  if (isClaude(command)) return ['--session-id', sessionId];
+  if (isClaude(command) || isQoder(command)) return ['--session-id', sessionId];
   return null;
 }
 
@@ -52,7 +56,7 @@ export function newSessionArgs(command: string, sessionId: string): string[] | n
  */
 export function resumeSessionArgs(command: string, sessionId: string): string[] | null {
   if (!isSessionId(sessionId)) return null;
-  if (isClaude(command)) return ['--resume', sessionId];
+  if (isClaude(command) || isQoder(command)) return ['--resume', sessionId];
   if (isCodex(command)) return ['resume', sessionId];
   return null;
 }
@@ -67,11 +71,11 @@ export function resumeSessionArgs(command: string, sessionId: string): string[] 
  * mint where the CLI will actually honour the id.
  */
 export function canAssignSessionId(command: string): boolean {
-  return isClaude(command);
+  return isClaude(command) || isQoder(command);
 }
 
 /** Whether this CLI can resume one specific session id, however that id was
  *  obtained — PC-assigned, or read back from the transcript index. */
 export function canResumeSessionId(command: string): boolean {
-  return isClaude(command) || isCodex(command);
+  return isClaude(command) || isCodex(command) || isQoder(command);
 }

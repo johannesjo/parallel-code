@@ -21,6 +21,7 @@ const SKIP_PERMISSIONS_ARGS = new Map<string, readonly string[]>([
   ['gemini', ['--yolo']],
   ['copilot', ['--yolo']],
   ['agy', ['--dangerously-skip-permissions']],
+  ['qoder', ['--dangerously-skip-permissions']],
 ]);
 
 /**
@@ -148,6 +149,16 @@ const BYPASS_RULES = new Map<string, BypassRules>([
     },
   ],
   ['agy', { flags: ['--dangerously-skip-permissions'], valued: new Map() }],
+  [
+    'qoder',
+    {
+      flags: ['--dangerously-skip-permissions', '--yolo'],
+      valued: new Map([
+        // dont_ask denies anything that would ask, so it is narrower than bypass.
+        ['--permission-mode', oneOf('bypass_permissions', 'bypassPermissions', 'yolo', 'YOLO')],
+      ]),
+    },
+  ],
 ]);
 
 function bypassRulesFor(command: string): BypassRules {

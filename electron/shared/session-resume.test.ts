@@ -33,6 +33,13 @@ describe('resumeSessionArgs', () => {
     expect(resumeSessionArgs('claude', ID)).toEqual(['--resume', ID]);
   });
 
+  it('names and resumes a Qoder session', () => {
+    expect(newSessionArgs('qoder', ID)).toEqual(['--session-id', ID]);
+    expect(resumeSessionArgs('qoder', ID)).toEqual(['--resume', ID]);
+    expect(canAssignSessionId('qoder')).toBe(true);
+    expect(canResumeSessionId('qoder')).toBe(true);
+  });
+
   it('resumes a specific Codex session positionally', () => {
     expect(resumeSessionArgs('codex', ID)).toEqual(['resume', ID]);
   });

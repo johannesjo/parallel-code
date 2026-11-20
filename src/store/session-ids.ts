@@ -26,7 +26,10 @@ export function assignFreshSessionId(
   const task = draft.tasks?.[taskId];
   if (!task) return;
   if (!canAssignSessionId(command)) {
-    if (task.agentSessionIds) delete task.agentSessionIds[agentId];
+    if (task.agentSessionIds) {
+      delete task.agentSessionIds[agentId];
+      if (Object.keys(task.agentSessionIds).length === 0) delete task.agentSessionIds;
+    }
     return;
   }
   task.agentSessionIds ??= {};
