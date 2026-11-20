@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup } from 'solid-js';
+import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import {
   ESC,
@@ -44,8 +44,11 @@ export function createPromptPeek(
   const [peek, setPeek] = createSignal<AgentPromptPeek | null | undefined>(undefined, {
     equals: (a, b) => shown(a) === shown(b),
   });
+  // Callers derive the id from busy task and hook state; only a different id may
+  // reset the read, or every unrelated update blanks the card until the next poll.
+  const currentId = createMemo(agentId);
   createEffect(() => {
-    const id = agentId();
+    const id = currentId();
     setPeek(undefined);
     if (!id) return;
     let alive = true;
