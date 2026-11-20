@@ -521,7 +521,7 @@ async function seedClaudeSandboxFiles(
     }
   }
 
-  syncClaudeSettingsExcludes(worktreePath, claudeDir, root);
+  syncClaudeSettingsExcludes(worktreePath, root);
 }
 
 /**
@@ -531,27 +531,12 @@ async function seedClaudeSandboxFiles(
  * seeded from the source checkout — gets its exclude entry removed so it
  * surfaces like any other change instead of needing `git add -f` for no
  * visible reason. The exclude file is shared by every checkout of the repo,
- * so each spawn reconciles against this worktree's own files. `repoRoot ===
- * null` means the caller already determined the path is not in a repo.
+ * so a pattern stays desired only while NO checkout sharing it holds
+ * non-placeholder content — otherwise a spawn in a checkout still holding
+ * the placeholder would re-hide real files elsewhere. `repoRoot === null`
+ * means the caller already determined the path is not in a repo.
  */
-function syncClaudeSettingsExcludes(
-  worktreePath: string,
-  claudeDir: string,
-  repoRoot: string | null,
-): void {
-  const desired: string[] = [];
-  for (const [i, file] of CLAUDE_REQUIRED_FILES.entries()) {
-    let content: string | null = null;
-    try {
-      content = fs.readFileSync(path.join(claudeDir, file), 'utf8');
-    } catch {
-      // Absent or unreadable — nothing to hide.
-    }
-    if (content === CLAUDE_SETTINGS_PLACEHOLDER) {
-      desired.push(CLAUDE_SETTINGS_EXCLUDE_PATTERNS[i]);
-    }
-  }
-
+function syncClaudeSettingsExcludes(worktreePath: string, repoRoot: string | null): void {
   // Not in a repo at all (caller already probed): no exclude file exists.
   if (repoRoot === null) return;
 
@@ -569,6 +554,56 @@ function syncClaudeSettingsExcludes(
   }
   excludePath ??= resolveGitInfoExcludePath(worktreePath);
   if (!excludePath) return;
+
+  // Every checkout sharing this exclude file: the main checkout, this
+  // worktree, and each linked worktree registered at
+  // <commonDir>/worktrees/<id>/gitdir — that file holds the worktree's own
+  // .git path, so enumeration needs no `git` subprocess.
+  const commonDir = path.dirname(path.dirname(excludePath));
+  const checkoutRoots = new Set<string>();
+  const addRoot = (root: string): void => {
+    checkoutRoots.add(realpathOrNull(root) ?? path.resolve(root));
+  };
+  addRoot(worktreePath);
+  addRoot(path.dirname(commonDir));
+  try {
+    const worktreesDir = path.join(commonDir, 'worktrees');
+    for (const entry of fs.readdirSync(worktreesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const raw = fs.readFileSync(path.join(worktreesDir, entry.name, 'gitdir'), 'utf8').trim();
+        const gitfile = path.isAbsolute(raw)
+          ? raw
+          : path.resolve(path.join(worktreesDir, entry.name), raw);
+        addRoot(path.dirname(gitfile));
+      } catch {
+        /* unreadable entry — nothing verifiable to add */
+      }
+    }
+  } catch {
+    /* no linked worktrees registered */
+  }
+
+  const desired: string[] = [];
+  for (const [i, file] of CLAUDE_REQUIRED_FILES.entries()) {
+    let allPlaceholder = true;
+    for (const root of checkoutRoots) {
+      try {
+        if (
+          fs.readFileSync(path.join(root, '.claude', file), 'utf8') !== CLAUDE_SETTINGS_PLACEHOLDER
+        ) {
+          allPlaceholder = false;
+          break;
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        // Present but unreadable — can't prove it's a placeholder.
+        allPlaceholder = false;
+        break;
+      }
+    }
+    if (allPlaceholder) desired.push(CLAUDE_SETTINGS_EXCLUDE_PATTERNS[i]);
+  }
 
   syncGitInfoExcludeEntriesAtPath(
     excludePath,

@@ -852,6 +852,26 @@ describe('claude settings placeholder excludes', () => {
     expect(exclude).toContain('/.claude/settings.local.json');
   });
 
+  it('keeps a real settings.json in the main checkout visible when spawning in a worktree', async () => {
+    const root = initRepository();
+    const { path: worktreePath } = await createWorktree(root, 'task-two-checkout', []);
+
+    // The worktree holds only placeholders; the main checkout gains real settings.
+    fs.mkdirSync(path.join(root, '.claude'));
+    fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{"permissions":{}}\n');
+    fs.writeFileSync(path.join(root, '.claude', 'settings.local.json'), '{}\n');
+
+    await ensureClaudeSandboxFiles(worktreePath, root);
+
+    // The shared exclude pattern applies to every checkout — a real file in
+    // the main checkout must stay visible even though the worktree's own copy
+    // is still a placeholder.
+    expect(git(root, ['status', '--porcelain'])).toContain('.claude');
+    const exclude = fs.readFileSync(excludePath(root), 'utf8');
+    expect(exclude).not.toContain('/.claude/settings.json');
+    expect(exclude).toContain('/.claude/settings.local.json');
+  });
+
   it('removes only its own managed entries, never identical user-written ones', async () => {
     const root = initRepository();
     fs.appendFileSync(excludePath(root), '/.claude/settings.json\n/custom-entry\n');

@@ -2,6 +2,8 @@ import * as childProcess from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+import { atomicWriteFileSync } from '../mcp/atomic.js';
+
 export type AppendGitInfoExcludeResult = 'appended' | 'present' | 'missing' | 'failed';
 type ExecFileSync = typeof childProcess.execFileSync;
 
@@ -155,7 +157,9 @@ export function syncGitInfoExcludeEntriesAtPath(
       if (desired.has(normalizeExcludeLine(pattern))) kept.push(marker, pattern);
     }
     const body = kept.join('\n');
-    fs.writeFileSync(excludePath, body.length > 0 ? `${body}\n` : '', 'utf8');
+    // Whole-file rewrite (unlike the append-only helpers): atomic so a crash
+    // can't leave a torn exclude file with half the user's entries missing.
+    atomicWriteFileSync(excludePath, body.length > 0 ? `${body}\n` : '');
     return 'synced';
   } catch (err) {
     onError?.(err);
