@@ -68,6 +68,15 @@ const DEFAULT_AGENTS: AgentDef[] = [
     // Antigravity paints a TUI that needs a beat to settle before auto-send.
     prompt_ready_delay_ms: 1_000,
   },
+  {
+    id: 'qoder',
+    name: 'Qoder CLI',
+    command: 'qoder',
+    args: [],
+    resume_args: ['--continue'],
+    skip_permissions_args: getSkipPermissionsArgs('qoder'),
+    description: 'Qoder CLI agent',
+  },
 ];
 
 async function isCommandAvailable(command: string): Promise<boolean> {

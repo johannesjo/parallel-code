@@ -61,7 +61,7 @@ That is the core loop. Everything else is optional and stays out of the way unti
 
 ## Why Parallel Code?
 
-- **Mix the agents you already use** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai/), [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli), [Antigravity CLI](https://antigravity.google/), or any other terminal agent, side by side on one board. Each runs as its own CLI, with your own login and plan.
+- **Mix the agents you already use** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai/), [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli), [Antigravity CLI](https://antigravity.google/), [Qoder CLI](https://qoder.com/cli), or any other terminal agent, side by side on one board. Each runs as its own CLI, with your own login and plan.
 - **Review is built in** — a diff viewer with inline comments you send back to the agent, guided tours of the changes, and an optional second-opinion review by a separate model, so an agent never grades its own work.
 - **Every change isolated** — each task gets its own branch and worktree, and optionally its own Docker container.
 - **Free, open source, local** — MIT licensed, no account, no extra subscription. Parallel Code has no server of its own: your code goes only to the agent CLIs you run and to the models you choose in Settings.
@@ -95,7 +95,7 @@ That is the core loop. Everything else is optional and stays out of the way unti
 1. **Download** the latest release from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
    - **macOS** — `.dmg` (universal, signed and notarized)
    - **Linux** — `.AppImage` or `.deb`
-2. **Install at least one agent CLI** — Claude Code, Codex CLI, OpenCode, Copilot CLI or Antigravity CLI. The welcome screen shows which ones it found.
+2. **Install at least one agent CLI** — Claude Code, Codex CLI, OpenCode, Copilot CLI, Antigravity CLI or Qoder CLI. The welcome screen shows which ones it found.
 3. **Open Parallel Code**, choose a folder with your code (a git repository works best), and start a task.
 
 <details>
