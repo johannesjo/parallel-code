@@ -36,7 +36,12 @@ import {
   invalidateAgentActivity,
 } from '../agent-hooks/observations.js';
 import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
-import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
+import {
+  isClaudeCommand,
+  isQoderCommand,
+  withClaudeHookSettings,
+  withQoderHookSettings,
+} from '../agent-hooks/launch-args.js';
 import { hasCodexHookOverride, isCodexCommand } from '../agent-hooks/codex-hooks.js';
 import { debug as logDebug, warn as logWarn } from '../log.js';
 
@@ -763,6 +768,8 @@ export interface AgentHookRuntime {
   /** The `--settings` file for a launch in `cwd`: the hooks, plus the usage
    *  status line wrapped around whatever status line the user runs there. */
   claudeSettingsPath(cwd: string, env: Record<string, string>): string;
+  /** The hooks-only `--settings` file for a Qoder launch. */
+  qoderSettingsPath: string;
   /** The flags that register the hooks for a Codex launch; none when this
    *  Codex cannot take them. */
   codexHookArgs(command: string, env: Record<string, string>): Promise<string[]>;
@@ -781,10 +788,10 @@ type HookLaunchArgs = Pick<
 >;
 
 /**
- * Adds hook identity env and `--settings` so a Claude Code agent reports its
- * own status. Shells get nothing (the user runs whatever they like there),
- * Docker gets nothing because the loopback port is not reachable from inside,
- * and other agents get nothing because they could only ever forge with it.
+ * Adds hook identity env and `--settings` so a Claude Code or Qoder agent
+ * reports its own status. Shells get nothing (the user runs whatever they like
+ * there), Docker gets nothing because the loopback port is not reachable from
+ * inside, and other agents get nothing because they could only ever forge with it.
  */
 export function applyAgentHookLaunch(
   args: HookLaunchArgs,
@@ -793,10 +800,13 @@ export function applyAgentHookLaunch(
   spawnEnv: Record<string, string>,
   launchId: string,
 ): string[] {
-  if (!agentHookRuntime || args.isShell || args.dockerMode || !isClaudeCommand(command)) {
-    return args.args;
-  }
+  if (!agentHookRuntime || args.isShell || args.dockerMode) return args.args;
+  const claude = isClaudeCommand(command);
+  if (!claude && !isQoderCommand(command)) return args.args;
   Object.assign(spawnEnv, agentHookRuntime.buildPtyEnv(args.agentId, args.taskId, launchId));
+  if (!claude) {
+    return withQoderHookSettings(command, args.args, agentHookRuntime.qoderSettingsPath);
+  }
   return withClaudeHookSettings(
     command,
     args.args,

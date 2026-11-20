@@ -52,6 +52,9 @@ export interface AgentHookServer {
   statusLineScriptPath: string;
   /** The `--settings` file for a Claude launch in `cwd` with `env`. */
   claudeSettingsPath(cwd: string, env: Record<string, string | undefined>): string;
+  /** Hooks-only settings for a Qoder launch: no status line, because Qoder has
+   *  no verified equivalent. */
+  qoderSettingsPath: string;
   /** Env the PTY layer merges into a hooked launch so the script can find us. */
   buildPtyEnv(agentId: string, taskId: string, launchId: string): Record<string, string>;
   close(): Promise<void>;
@@ -229,6 +232,7 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
         hookScriptPath: files.hookScriptPath,
         codexHookScriptPath: files.codexHookScriptPath,
         statusLineScriptPath: files.statusLineScriptPath,
+        qoderSettingsPath: files.hooksOnlySettingsPath,
         claudeSettingsPath: (cwd, env) => {
           const user = readUserStatusLine(cwd, env);
           // Unreadable settings: register no status line rather than replace one we cannot see.

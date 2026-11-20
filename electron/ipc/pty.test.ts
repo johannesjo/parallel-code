@@ -94,6 +94,7 @@ import {
   isCurrentAgentLaunch,
 } from '../agent-hooks/observations.js';
 import {
+  applyAgentHookLaunch,
   buildPtySpawnEnv,
   handoffCodexTerminal,
   handoffClaudeTerminal,
@@ -936,6 +937,7 @@ describe('PTY hook launch ownership', () => {
     const taskId = 'hook-task';
     setAgentHookRuntime({
       claudeSettingsPath: () => '/hook-settings.json',
+      qoderSettingsPath: '/qoder-hook-settings.json',
       buildPtyEnv: (id, task, launchId) => ({
         PARALLEL_CODE_AGENT_ID: id,
         PARALLEL_CODE_TASK_ID: task,
@@ -969,6 +971,7 @@ describe('PTY hook launch ownership', () => {
   function hookCodex(codexHookArgs: () => Promise<string[]>): void {
     setAgentHookRuntime({
       claudeSettingsPath: () => '/hook-settings.json',
+      qoderSettingsPath: '/qoder-hook-settings.json',
       buildPtyEnv: (id) => ({ PARALLEL_CODE_AGENT_ID: id }),
       codexHookArgs,
     });
@@ -1016,6 +1019,50 @@ describe('PTY hook launch ownership', () => {
     release(['-c', 'hooks.Stop=[]']);
     await expect(startup).rejects.toThrow('Agent startup cancelled');
     expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+
+  it('launches Qoder with the hooks-only settings and hook identity', async () => {
+    setAgentHookRuntime({
+      claudeSettingsPath: () => '/hook-settings.json',
+      qoderSettingsPath: '/qoder-hook-settings.json',
+      buildPtyEnv: (id) => ({ PARALLEL_CODE_AGENT_ID: id }),
+      codexHookArgs: () => Promise.resolve([]),
+    });
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({
+        agentId: 'agent-qoder-hooks',
+        command: 'qoder',
+        args: [],
+        dockerMode: false,
+      }),
+    );
+    expect(lastSpawn().args).toEqual(['--settings', '/qoder-hook-settings.json']);
+    expect(lastSpawn().env.PARALLEL_CODE_AGENT_ID).toBe('agent-qoder-hooks');
+  });
+
+  it('gives shell and Docker Qoder launches no hook settings', () => {
+    setAgentHookRuntime({
+      claudeSettingsPath: () => '/hook-settings.json',
+      qoderSettingsPath: '/qoder-hook-settings.json',
+      buildPtyEnv: (id) => ({ PARALLEL_CODE_AGENT_ID: id }),
+      codexHookArgs: () => Promise.resolve([]),
+    });
+    for (const mode of [
+      { isShell: true, dockerMode: false },
+      { isShell: false, dockerMode: true },
+    ]) {
+      const env: Record<string, string> = {};
+      const args = applyAgentHookLaunch(
+        { agentId: 'agent-qoder-excluded', taskId: 't', args: ['--continue'], ...mode },
+        'qoder',
+        '/work',
+        env,
+        'launch-1',
+      );
+      expect(args).toEqual(['--continue']);
+      expect(env.PARALLEL_CODE_AGENT_ID).toBeUndefined();
+    }
   });
 
   it('preserves launch evidence on reattach and rejects delayed hooks/exits after replacement', async () => {

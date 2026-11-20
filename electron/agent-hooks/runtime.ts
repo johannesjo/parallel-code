@@ -73,6 +73,7 @@ export async function startAgentHookRuntime(getWindow: () => BrowserWindow | nul
   }
   setAgentHookRuntime({
     claudeSettingsPath: server.claudeSettingsPath,
+    qoderSettingsPath: server.qoderSettingsPath,
     buildPtyEnv: server.buildPtyEnv,
     codexHookArgs: createCodexHookArgs({ hookScriptPath: server.codexHookScriptPath }),
   });

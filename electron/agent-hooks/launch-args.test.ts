@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isClaudeCommand, withClaudeHookSettings } from './launch-args.js';
+import {
+  isClaudeCommand,
+  isQoderCommand,
+  withClaudeHookSettings,
+  withQoderHookSettings,
+} from './launch-args.js';
 
 describe('withClaudeHookSettings', () => {
   it('appends --settings for claude, including absolute paths', () => {
@@ -33,6 +38,29 @@ describe('withClaudeHookSettings', () => {
     const args = ['--continue'];
     withClaudeHookSettings('claude', args, '/s.json');
     expect(args).toEqual(['--continue']);
+  });
+});
+
+describe('withQoderHookSettings', () => {
+  it('appends --settings for qoder and respects the user-supplied flag', () => {
+    expect(withQoderHookSettings('qoder', ['--continue'], '/q.json')).toEqual([
+      '--continue',
+      '--settings',
+      '/q.json',
+    ]);
+    expect(withQoderHookSettings('/usr/local/bin/qoder', [], '/q.json')).toEqual([
+      '--settings',
+      '/q.json',
+    ]);
+    expect(withQoderHookSettings('qoder', ['--settings', '/mine.json'], '/q.json')).toEqual([
+      '--settings',
+      '/mine.json',
+    ]);
+  });
+
+  it('leaves a differently named Qoder wrapper alone', () => {
+    expect(withQoderHookSettings('my-qoder', [], '/q.json')).toEqual([]);
+    expect(isQoderCommand('my-qoder')).toBe(false);
   });
 });
 

@@ -71,6 +71,12 @@ describe('startAgentHookServer', () => {
     expect(settings.statusLine.command).toBe(`/bin/sh '${server.statusLineScriptPath}'`);
   });
 
+  it('exposes a hooks-only settings file for Qoder', () => {
+    const settings = JSON.parse(fs.readFileSync(server.qoderSettingsPath, 'utf8'));
+    expect(settings.hooks.Stop[0].hooks[0].command).toContain(server.hookScriptPath);
+    expect(settings).not.toHaveProperty('statusLine');
+  });
+
   it("wraps the user's own status line, and leaves an unreadable one alone", () => {
     const configDir = path.join(dir, 'config');
     const cwd = path.join(dir, 'work');
