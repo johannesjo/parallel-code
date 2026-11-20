@@ -3,7 +3,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { listResumableSessions, resumeAgentSession } from '../store/sessions';
 import { canResumeSessionId } from '../../electron/shared/session-resume';
-import type { SessionRecord } from '../../electron/shared/session-record';
+import { sessionAgentForCommand, type SessionRecord } from '../../electron/shared/session-record';
 import { HistoryIcon } from './icons';
 
 /** Relative age of a session, via the platform formatter rather than a table
@@ -32,8 +32,9 @@ export function sessionLabel(session: SessionRecord): string {
  * Picks which recorded session a pane resumes, instead of taking whichever one
  * in the worktree is newest.
  *
- * Renders nothing for a CLI that cannot resume a named session — the button
- * would promise something the launch cannot honour.
+ * Renders nothing for a CLI that cannot resume a named session, or whose
+ * transcripts PC cannot list — the button would promise something the launch
+ * cannot honour.
  */
 export function SessionPicker(props: {
   taskId: string;
@@ -66,7 +67,9 @@ export function SessionPicker(props: {
   };
 
   return (
-    <Show when={canResumeSessionId(props.command)}>
+    <Show
+      when={canResumeSessionId(props.command) && sessionAgentForCommand(props.command) !== null}
+    >
       <span style={{ position: 'relative', display: 'inline-flex' }} ref={(el) => (rootRef = el)}>
         <button
           class="btn-with-icon"

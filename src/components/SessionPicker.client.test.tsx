@@ -70,6 +70,13 @@ describe('SessionPicker', () => {
     expect(host.querySelector('button')).toBeNull();
   });
 
+  // Qoder resumes a named session, but PC does not index its transcripts yet,
+  // so the list would always be empty.
+  it('renders nothing for a CLI whose sessions PC cannot list', () => {
+    mount({ command: 'qoder' });
+    expect(host.querySelector('button')).toBeNull();
+  });
+
   it.each(['claude', 'codex'])('offers the picker for %s', (command) => {
     mount({ command });
     expect(host.querySelector('button')).not.toBeNull();
