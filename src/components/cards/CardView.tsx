@@ -128,7 +128,7 @@ export function CardView(props: CardViewProps) {
   return (
     <section
       class="card"
-      classList={{ 'card-confidence': confidence() }}
+      classList={{ 'card-confidence': confidence(), 'card-unnamed': unnamed() && !confidence() }}
       aria-label={props.card.name}
       data-card-id={props.card.id}
       // Focusable by script only: a pinned value opens its card here (`revealCard`).

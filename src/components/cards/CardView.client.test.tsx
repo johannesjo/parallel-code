@@ -61,6 +61,20 @@ describe('CardView for the Plan card', () => {
     expect(labels).toEqual(['Goal', 'Steps']);
   });
 
+  it('puts its age on the Goal label line instead of a row of its own', () => {
+    dispose = render(
+      () => (
+        <CardView
+          card={appFactCard('plan', true)}
+          task={{ id: 't1', agentIds: [], goal: 'Ship the fix' } as unknown as Task}
+          now={60_000}
+        />
+      ),
+      document.body,
+    );
+    expect(document.body.querySelector('.card')?.classList.contains('card-unnamed')).toBe(true);
+  });
+
   it('keeps its name when only one slot shows, as that slot then has no label', () => {
     const plan = appFactCard('plan', true);
     const card = { ...plan, slots: [{ ...plan.slots[0], hidden: true }, plan.slots[1]] };
@@ -69,6 +83,7 @@ describe('CardView for the Plan card', () => {
       document.body,
     );
     expect(document.body.querySelector('.card-name')?.textContent).toBe('Plan');
+    expect(document.body.querySelector('.card')?.classList.contains('card-unnamed')).toBe(false);
   });
 });
 
