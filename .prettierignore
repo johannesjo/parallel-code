@@ -12,6 +12,7 @@ node_modules/
 .omc/
 .planning/
 .letta/
+.superpowers/
 CLAUDE.local.md
 package-lock.json
 *.AppImage
