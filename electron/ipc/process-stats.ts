@@ -137,10 +137,19 @@ export interface CpuSample {
  * its CPU up to that sample counted already: when it disappears, its last-seen
  * total — its own CPU, what it had reaped, and the same for each seen
  * descendant that disappeared with it — is subtracted from that growth.
+ *
+ * The table is not read atomically: a child can be reaped after its parent's
+ * line was read and before its own, so it is gone from this sample while its
+ * CPU only reaches the parent's counter in the next one. What could not be
+ * subtracted is therefore owed by that parent and subtracted from its growth
+ * at the next sample (a new process on a reused pid owes nothing), then
+ * dropped, so a child reaped by another process (an orphan adopted by init)
+ * cannot hold the parent's count down for good.
  */
 export function createCpuSampler() {
   let previous: Map<number, CpuReading> | null = null;
   let previousAt = 0;
+  let owed = new Map<number, number>();
   return (rows: ProcRow[], at: number): CpuSample => {
     const before = previous;
     const elapsed = (at - previousAt) / 1000;
@@ -190,18 +199,26 @@ export function createCpuSampler() {
       return total;
     };
 
+    const nextOwed = new Map<number, number>();
     for (const [pid, reading] of next) {
       const last = before?.get(pid);
       const same = last !== undefined && last.startTicks === reading.startTicks;
       cpu.set(pid, percent(same ? reading.cpuSeconds - last.cpuSeconds : reading.cpuSeconds));
       if (!measuresChildren) continue;
-      const reaped = same
-        ? reading.childCpuSeconds - last.childCpuSeconds - countedForGoneChildren(pid)
-        : reading.childCpuSeconds;
+      if (!same) {
+        exitedCpu.set(pid, percent(reading.childCpuSeconds));
+        continue;
+      }
+      const gone = countedForGoneChildren(pid);
+      const reaped = reading.childCpuSeconds - last.childCpuSeconds - (owed.get(pid) ?? 0) - gone;
+      // Only this sample's shortfall is carried over; an older one is dropped.
+      const shortfall = Math.min(gone, -reaped);
+      if (shortfall > 0) nextOwed.set(pid, shortfall);
       exitedCpu.set(pid, percent(reaped));
     }
     previous = next;
     previousAt = at;
+    owed = nextOwed;
     return measuresChildren ? { cpu, exitedCpu } : { cpu };
   };
 }

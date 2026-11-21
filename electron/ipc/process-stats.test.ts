@@ -169,6 +169,35 @@ describe('createCpuSampler: commands that exit between samples', () => {
     expect(sample([init, proc(20, 1, 0)], 2000).exitedCpu?.get(20)).toBe(0);
   });
 
+  it('counts nothing twice when a child is reaped between the reads of its parent and itself', () => {
+    const sample = createCpuSampler();
+    sample([init, proc(20, 1, 0), proc(30, 20, 0)], 0);
+    // npm test ran on 4 cores: its 240 s were counted while it was seen alive.
+    sample([init, proc(20, 1, 0), proc(30, 20, 240)], 60_000);
+    // The shell's line was read before it reaped 30, and 30's line after.
+    const torn = sample([init, proc(20, 1, 0)], 62_000);
+    expect(torn.exitedCpu?.get(20)).toBe(0);
+    // 30 used 0.5 s more before exiting; the shell's counter now holds all of it.
+    const next = sample([init, proc(20, 1, 0, 240.5)], 64_000);
+    expect(next.exitedCpu?.get(20)).toBeCloseTo(25);
+  });
+
+  it('keeps a shortfall for one sample only, so an orphan reaped elsewhere cannot hide CPU', () => {
+    const sample = createCpuSampler();
+    sample([init, proc(20, 1, 0), proc(30, 20, 10)], 0);
+    // 30 is gone and init reaps it: the shell's counter never grows by its 10 s.
+    expect(sample([init, proc(20, 1, 0)], 2000).exitedCpu?.get(20)).toBe(0);
+    expect(sample([init, proc(20, 1, 0, 1)], 4000).exitedCpu?.get(20)).toBe(0);
+    expect(sample([init, proc(20, 1, 0, 2)], 6000).exitedCpu?.get(20)).toBe(50);
+  });
+
+  it('owes nothing to a new process that reused the parent pid', () => {
+    const sample = createCpuSampler();
+    sample([init, proc(20, 1, 0), proc(30, 20, 10)], 0);
+    sample([init, proc(20, 1, 0)], 2000);
+    expect(sample([init, proc(20, 1, 0, 1, 500)], 4000).exitedCpu?.get(20)).toBe(50);
+  });
+
   it('counts the reaped CPU of a process that started since the previous sample', () => {
     const sample = createCpuSampler();
     sample([init], 0);
