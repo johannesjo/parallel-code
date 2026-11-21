@@ -1,9 +1,14 @@
 import { createStore } from 'solid-js/store';
-import { getProject } from './projects';
+import { IPC } from '../../electron/ipc/channels';
+import { invoke } from '../lib/ipc';
+import { getProject, getProjectPath } from './projects';
 import { NOTIFICATION_ERROR_MS, showNotification } from './notification';
+import type { Task } from './types';
 
 /**
- * Per-project worktree setup and teardown, as seen from the renderer.
+ * Per-project worktree scripts, as seen from the renderer. Teardown, suspend
+ * and resume run headless in the main process; this module sends them and
+ * reports their failures.
  *
  * Setup runs in a task shell terminal of its own, started in the same tick
  * the task appears: the main process turns `shellScript` into a shell
@@ -105,4 +110,55 @@ export function teardownScriptFor(projectId: string): {
 export function reportTeardownWarning(taskName: string, warning: string | undefined): void {
   if (!warning) return;
   showNotification(`Closed “${taskName}”. ${warning}`, { durationMs: NOTIFICATION_ERROR_MS });
+}
+
+type LifecycleTask = Pick<
+  Task,
+  'name' | 'projectId' | 'gitIsolation' | 'worktreePath' | 'branchName'
+>;
+
+/** The project's suspend script, or undefined when minimizing this task runs
+ *  none: the project has no script, or the task has no worktree of its own. */
+export function suspendScriptFor(task: LifecycleTask): string | undefined {
+  if (task.gitIsolation !== 'worktree' || !task.worktreePath) return undefined;
+  return getProject(task.projectId)?.worktreeSuspendScript;
+}
+
+/** The project's resume script, for a task whose suspend script ran. */
+export function resumeScriptFor(task: LifecycleTask): string | undefined {
+  if (task.gitIsolation !== 'worktree' || !task.worktreePath) return undefined;
+  return getProject(task.projectId)?.worktreeResumeScript;
+}
+
+/**
+ * Runs a suspend or resume script in the task's worktree without waiting for
+ * it: minimizing and restoring change the layout at once. The main process
+ * runs the scripts of one worktree in order, so a quick restore resumes only
+ * after the suspend finished. A failure is announced, never thrown.
+ */
+export function runWorktreeLifecycleScript(
+  kind: 'suspend' | 'resume',
+  task: LifecycleTask,
+  script: string,
+): void {
+  const projectRoot = getProjectPath(task.projectId);
+  if (!projectRoot || !task.worktreePath) return;
+  const label = kind === 'suspend' ? 'Suspend' : 'Resume';
+  const done = kind === 'suspend' ? 'Minimized' : 'Restored';
+  const report = (warning: string) =>
+    showNotification(`${done} “${task.name}”. ${warning}`, { durationMs: NOTIFICATION_ERROR_MS });
+  invoke<{ warning?: string } | undefined>(IPC.RunWorktreeLifecycleScript, {
+    kind,
+    projectId: task.projectId,
+    projectRoot,
+    worktreePath: task.worktreePath,
+    branchName: task.branchName || undefined,
+    script,
+  })
+    .then((result) => {
+      if (result?.warning) report(result.warning);
+    })
+    .catch((err: unknown) =>
+      report(`${label} script could not run: ${err instanceof Error ? err.message : String(err)}`),
+    );
 }

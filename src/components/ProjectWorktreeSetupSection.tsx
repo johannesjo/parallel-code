@@ -35,8 +35,8 @@ const SCRIPT_VARIABLES = '$PARALLEL_CODE_ROOT_PATH, $PARALLEL_CODE_WORKTREE, $PA
 
 /**
  * Opt-in worktree preparation for a Git project: what runs after a worktree
- * is created and before it is removed, and a saved choice of ignored files to
- * bring in. Everything empty keeps today's behaviour exactly.
+ * is created, before it is removed, and when its task is minimized and
+ * restored, and a saved choice of ignored files to bring in. Everything empty keeps today's behaviour exactly.
  */
 export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionProps) {
   const form = () => props.form;
@@ -127,6 +127,46 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
             value={form().teardownScript()}
             onInput={(e) => form().setTeardownScript(e.currentTarget.value)}
             placeholder="docker compose down"
+            style={scriptInputStyle}
+          />
+        )}
+      </ProjectField>
+
+      <ProjectField
+        label="Suspend script"
+        aside="optional"
+        hint="Runs in the worktree when a task is minimized or snoozed with its agents stopped, for up to 2 minutes, e.g. to stop services the task started. Not when its agents keep running. If it fails, you are told."
+      >
+        {(id) => (
+          <textarea
+            id={id}
+            class="input-field"
+            rows={2}
+            spellcheck={false}
+            maxLength={WORKTREE_SCRIPT_MAX_LENGTH}
+            value={form().suspendScript()}
+            onInput={(e) => form().setSuspendScript(e.currentTarget.value)}
+            placeholder="docker compose stop"
+            style={scriptInputStyle}
+          />
+        )}
+      </ProjectField>
+
+      <ProjectField
+        label="Resume script"
+        aside="optional"
+        hint="Runs in the worktree when a task the suspend script ran for is restored, also after a restart, for up to 2 minutes. If it fails, you are told."
+      >
+        {(id) => (
+          <textarea
+            id={id}
+            class="input-field"
+            rows={2}
+            spellcheck={false}
+            maxLength={WORKTREE_SCRIPT_MAX_LENGTH}
+            value={form().resumeScript()}
+            onInput={(e) => form().setResumeScript(e.currentTarget.value)}
+            placeholder="docker compose start"
             style={scriptInputStyle}
           />
         )}

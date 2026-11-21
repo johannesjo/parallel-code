@@ -327,6 +327,28 @@ describe('updateProject', () => {
   });
 });
 
+describe('updateProject suspend and resume scripts', () => {
+  it('stores them, a blank one as none, and leaves the main process settings alone', () => {
+    setStore('projects', [{ id: 'p1', name: 'Project', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
+    vi.mocked(invoke).mockClear().mockResolvedValue(undefined);
+
+    updateProject('p1', {
+      worktreeSuspendScript: 'docker compose stop',
+      worktreeResumeScript: 'docker compose start',
+    });
+    expect(store.projects[0]).toMatchObject({
+      worktreeSuspendScript: 'docker compose stop',
+      worktreeResumeScript: 'docker compose start',
+    });
+    // The renderer sends them with each minimize and restore.
+    expect(invoke).not.toHaveBeenCalledWith(IPC.SetProjectWorktreeSettings, expect.anything());
+
+    updateProject('p1', { worktreeSuspendScript: '   ' });
+    expect(store.projects[0].worktreeSuspendScript).toBeUndefined();
+    expect(store.projects[0].worktreeResumeScript).toBe('docker compose start');
+  });
+});
+
 describe('updateProject verify command', () => {
   const project = (id: string, verifyCommand?: string) => ({
     id,

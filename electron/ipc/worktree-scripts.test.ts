@@ -7,10 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   WORKTREE_SCRIPT_MAX_LENGTH,
   buildScriptInvocation,
-  describeTeardownFailure,
+  describeWorktreeScriptFailure,
   listLinkedWorktrees,
   optionalWorktreeScript,
-  runTeardownScript,
+  runWorktreeScript,
   validateWorktreeScript,
 } from './worktree-scripts.js';
 
@@ -92,7 +92,7 @@ describe('buildScriptInvocation', () => {
   });
 });
 
-describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
+describe.skipIf(process.platform === 'win32')('runWorktreeScript', () => {
   // Each test's worktree is listed as a linked worktree of its root.
   let listed: string[] = [];
   const listWorktrees = async () => listed;
@@ -106,7 +106,7 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
   it('runs in the worktree with the script variables and passes on exit 0', async () => {
     const root = tempDir();
     const worktree = worktreeDir();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       {
         worktreePath: worktree,
         projectRoot: root,
@@ -118,13 +118,13 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
     expect(result.status).toBe('passed');
     expect(result.outputTail).toContain(fs.realpathSync(worktree));
     expect(result.outputTail).toContain(`root=${root}`);
-    expect(describeTeardownFailure(result)).toBeUndefined();
+    expect(describeWorktreeScriptFailure('Teardown', result)).toBeUndefined();
   });
 
   it('stops at the first failing line and reports the exit code with the output', async () => {
     const root = tempDir();
     const worktree = worktreeDir();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       {
         worktreePath: worktree,
         projectRoot: root,
@@ -134,7 +134,7 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
     );
     expect(result).toMatchObject({ status: 'failed', exitCode: 3 });
     expect(fs.existsSync(path.join(worktree, 'after'))).toBe(false);
-    const notice = describeTeardownFailure(result);
+    const notice = describeWorktreeScriptFailure('Teardown', result);
     expect(notice).toContain('exited with code 3');
     expect(notice).toContain('stopping db');
   });
@@ -142,30 +142,30 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
   it('kills a script that runs past its timeout', async () => {
     const root = tempDir();
     const worktree = worktreeDir();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       { worktreePath: worktree, projectRoot: root, script: 'sleep 30', timeoutMs: 200 },
       shellDeps,
     );
     expect(result.status).toBe('timed_out');
-    expect(describeTeardownFailure(result)).toContain('timed out');
+    expect(describeWorktreeScriptFailure('Teardown', result)).toContain('timed out');
   });
 
   it('reports a script killed by a signal as failed', async () => {
     const root = tempDir();
     const worktree = worktreeDir();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       { worktreePath: worktree, projectRoot: root, script: 'kill -TERM $$' },
       shellDeps,
     );
     expect(result.status).toBe('failed');
-    expect(describeTeardownFailure(result)).toContain('SIGTERM');
+    expect(describeWorktreeScriptFailure('Teardown', result)).toContain('SIGTERM');
   });
 
   it('settles when the script exits even if a background child keeps its output open', async () => {
     const root = tempDir();
     const worktree = worktreeDir();
     const started = Date.now();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       {
         worktreePath: worktree,
         projectRoot: root,
@@ -179,22 +179,47 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
+  it('runs the scripts of one worktree one at a time, in the order asked', async () => {
+    const root = tempDir();
+    const worktree = worktreeDir();
+    const slow = runWorktreeScript(
+      { worktreePath: worktree, projectRoot: root, script: 'sleep 0.3\necho first >> order' },
+      shellDeps,
+    );
+    const quick = runWorktreeScript(
+      { worktreePath: worktree, projectRoot: root, script: 'echo second | tee -a order\nexit 1' },
+      shellDeps,
+    );
+    const after = runWorktreeScript(
+      { worktreePath: worktree, projectRoot: root, script: 'echo third >> order' },
+      shellDeps,
+    );
+    const results = await Promise.all([slow, quick, after]);
+    expect(results.map((r) => r.status)).toEqual(['passed', 'failed', 'passed']);
+    expect(fs.readFileSync(path.join(worktree, 'order'), 'utf8')).toBe('first\nsecond\nthird\n');
+    expect(describeWorktreeScriptFailure('Resume', results[1])).toMatch(
+      /^Resume script exited with code 1\.\nsecond$/,
+    );
+  });
+
   it('refuses a folder git does not list as a worktree of the repository', async () => {
     const root = tempDir();
     const elsewhere = tempDir();
     listed = [];
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       { worktreePath: elsewhere, projectRoot: root, script: 'touch ran' },
       shellDeps,
     );
     expect(result.status).toBe('error');
-    expect(describeTeardownFailure(result)).toContain('is not a worktree of this repository');
+    expect(describeWorktreeScriptFailure('Teardown', result)).toContain(
+      'is not a worktree of this repository',
+    );
     expect(fs.existsSync(path.join(elsewhere, 'ran'))).toBe(false);
   });
 
   it('never runs in the main checkout', async () => {
     const root = tempDir();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       { worktreePath: root, projectRoot: root, script: 'touch ran' },
       shellDeps,
     );
@@ -204,12 +229,12 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
 
   it('skips a worktree that is already gone', async () => {
     const root = tempDir();
-    const result = await runTeardownScript(
+    const result = await runWorktreeScript(
       { worktreePath: path.join(root, 'missing'), projectRoot: root, script: 'true' },
       shellDeps,
     );
     expect(result.status).toBe('skipped');
-    expect(describeTeardownFailure(result)).toBeUndefined();
+    expect(describeWorktreeScriptFailure('Teardown', result)).toBeUndefined();
   });
 });
 

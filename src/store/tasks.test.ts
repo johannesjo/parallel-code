@@ -941,6 +941,178 @@ describe('collapseTask and reopen', () => {
   });
 });
 
+describe('suspend and resume scripts', () => {
+  const project = {
+    id: 'proj-1',
+    path: '/repo',
+    worktreeSuspendScript: 'docker compose stop',
+    worktreeResumeScript: 'docker compose start',
+  };
+  const lifecycleCalls = () =>
+    mockInvoke.mock.calls.filter(([c]) => c === IPC.RunWorktreeLifecycleScript);
+
+  beforeEach(() => {
+    vi.mocked(getProject).mockReturnValue(project as never);
+    vi.mocked(getProjectPath).mockReturnValue('/repo');
+    mockTasks.task = {
+      id: 'task',
+      name: 'Fix login',
+      agentIds: ['agent-1'],
+      shellAgentIds: ['shell-1'],
+      gitIsolation: 'worktree',
+      branchName: 'task/x',
+      worktreePath: '/repo/.worktrees/task/x',
+      projectId: 'proj-1',
+    };
+    mockTaskOrder.push('task');
+  });
+
+  afterEach(() => {
+    vi.mocked(getProject).mockReturnValue(undefined);
+    vi.mocked(getProjectPath).mockReturnValue(undefined);
+  });
+
+  it('suspends the worktree after the agents stop, and resumes it on restore', async () => {
+    await collapseTask('task');
+
+    const kinds = mockInvoke.mock.calls
+      .map(([c, args]) =>
+        c === IPC.KillAgent
+          ? `kill:${(args as { agentId: string }).agentId}`
+          : c === IPC.RunWorktreeLifecycleScript
+            ? (args as { kind: string }).kind
+            : undefined,
+      )
+      .filter(Boolean);
+    expect(kinds).toEqual(['kill:agent-1', 'kill:shell-1', 'suspend']);
+    expect(lifecycleCalls()[0]?.[1]).toEqual({
+      kind: 'suspend',
+      projectId: 'proj-1',
+      projectRoot: '/repo',
+      worktreePath: '/repo/.worktrees/task/x',
+      branchName: 'task/x',
+      script: 'docker compose stop',
+    });
+    expect(mockTasks.task.worktreeSuspended).toBe(true);
+
+    uncollapseTask('task');
+
+    expect(lifecycleCalls()[1]?.[1]).toMatchObject({
+      kind: 'resume',
+      worktreePath: '/repo/.worktrees/task/x',
+      script: 'docker compose start',
+    });
+    expect(mockTasks.task.worktreeSuspended).toBeUndefined();
+  });
+
+  it('never waits for the scripts: the task is minimized and restored at once', async () => {
+    let finishSuspend: (value: unknown) => void = () => undefined;
+    mockInvoke.mockImplementation((channel: string) =>
+      channel === IPC.RunWorktreeLifecycleScript
+        ? new Promise((resolve) => (finishSuspend = resolve))
+        : Promise.resolve(undefined),
+    );
+
+    await collapseTask('task');
+    expect(mockTasks.task.collapsed).toBe(true);
+    uncollapseTask('task');
+    expect(mockTasks.task.collapsed).toBe(false);
+    finishSuspend({});
+  });
+
+  it('reports a failed script in a notification naming the task', async () => {
+    mockInvoke.mockImplementation((channel: string, args: { kind?: string }) =>
+      Promise.resolve(
+        channel === IPC.RunWorktreeLifecycleScript
+          ? {
+              warning: `${args.kind === 'suspend' ? 'Suspend' : 'Resume'} script exited with code 1.`,
+            }
+          : undefined,
+      ),
+    );
+
+    await collapseTask('task');
+    await vi.waitFor(() =>
+      expect(showNotification).toHaveBeenCalledWith(
+        'Minimized “Fix login”. Suspend script exited with code 1.',
+        expect.anything(),
+      ),
+    );
+    uncollapseTask('task');
+    await vi.waitFor(() =>
+      expect(showNotification).toHaveBeenCalledWith(
+        'Restored “Fix login”. Resume script exited with code 1.',
+        expect.anything(),
+      ),
+    );
+    expect(mockTasks.task.collapsed).toBe(false);
+  });
+
+  it('reports a script the main process refused to run', async () => {
+    mockInvoke.mockImplementation((channel: string) =>
+      channel === IPC.RunWorktreeLifecycleScript
+        ? Promise.reject(new Error('worktreePath must be absolute'))
+        : Promise.resolve(undefined),
+    );
+
+    await collapseTask('task');
+
+    await vi.waitFor(() =>
+      expect(showNotification).toHaveBeenCalledWith(
+        'Minimized “Fix login”. Suspend script could not run: worktreePath must be absolute',
+        expect.anything(),
+      ),
+    );
+    expect(mockTasks.task.collapsed).toBe(true);
+  });
+
+  it('resumes only a task the suspend script ran for', async () => {
+    // Minimized before the project had a suspend script, e.g. in an earlier session.
+    mockTasks.task.collapsed = true;
+    mockTaskOrder = [];
+    mockCollapsedTaskOrder = ['task'];
+
+    uncollapseTask('task');
+
+    expect(lifecycleCalls()).toEqual([]);
+  });
+
+  it('marks nothing and resumes nothing without a suspend script', async () => {
+    vi.mocked(getProject).mockReturnValue({
+      ...project,
+      worktreeSuspendScript: undefined,
+    } as never);
+
+    await collapseTask('task');
+    expect(mockTasks.task.worktreeSuspended).toBeUndefined();
+    uncollapseTask('task');
+
+    expect(lifecycleCalls()).toEqual([]);
+  });
+
+  it('clears the mark without a resume script', async () => {
+    vi.mocked(getProject).mockReturnValue({ ...project, worktreeResumeScript: undefined } as never);
+
+    await collapseTask('task');
+    uncollapseTask('task');
+
+    expect(lifecycleCalls().map(([, args]) => (args as { kind: string }).kind)).toEqual([
+      'suspend',
+    ]);
+    expect(mockTasks.task.worktreeSuspended).toBeUndefined();
+  });
+
+  it('runs nothing for a task on the current branch', async () => {
+    mockTasks.task.gitIsolation = 'direct';
+    mockTasks.task.worktreePath = '/repo';
+
+    await collapseTask('task');
+    uncollapseTask('task');
+
+    expect(lifecycleCalls()).toEqual([]);
+  });
+});
+
 describe('hasActiveCoordinator condition — coordinator task removal', () => {
   it('condition is false when the store has no tasks', () => {
     const result = Object.values(mockTasks).some((t) => t.coordinatorMode && !t.closingStatus);

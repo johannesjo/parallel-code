@@ -36,6 +36,8 @@ export function createProjectSettingsForm() {
   const [agentEnv, setAgentEnv] = createSignal<EnvDraft[]>([]);
   const [setupScript, setSetupScript] = createSignal('');
   const [teardownScript, setTeardownScript] = createSignal('');
+  const [suspendScript, setSuspendScript] = createSignal('');
+  const [resumeScript, setResumeScript] = createSignal('');
   // Off keeps today's per-task defaults; the list is only saved while on.
   const [includesEnabled, setIncludesEnabled] = createSignal(false);
   const [includes, setIncludes] = createSignal<WorktreeInclude[]>([]);
@@ -61,6 +63,8 @@ export function createProjectSettingsForm() {
     setAgentEnv(envDraftsFrom(p.agentEnv));
     setSetupScript(p.worktreeSetupScript ?? '');
     setTeardownScript(p.worktreeTeardownScript ?? '');
+    setSuspendScript(p.worktreeSuspendScript ?? '');
+    setResumeScript(p.worktreeResumeScript ?? '');
     setIncludesEnabled(p.worktreeIncludes !== undefined);
     setIncludes(p.worktreeIncludes ? [...p.worktreeIncludes] : []);
     setIncludesSeeding(false);
@@ -86,6 +90,8 @@ export function createProjectSettingsForm() {
       agentEnv: finalizeEnvDrafts(agentEnv()),
       worktreeSetupScript: setupScript().trim() ? setupScript() : undefined,
       worktreeTeardownScript: teardownScript().trim() ? teardownScript() : undefined,
+      worktreeSuspendScript: suspendScript().trim() ? suspendScript() : undefined,
+      worktreeResumeScript: resumeScript().trim() ? resumeScript() : undefined,
       worktreeIncludes: includesEnabled() && !includesSeeding() ? includes() : undefined,
     };
   }
@@ -127,6 +133,10 @@ export function createProjectSettingsForm() {
     setSetupScript,
     teardownScript,
     setTeardownScript,
+    suspendScript,
+    setSuspendScript,
+    resumeScript,
+    setResumeScript,
     includesEnabled,
     setIncludesEnabled,
     includes,

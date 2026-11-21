@@ -289,6 +289,23 @@ describe('worktree setup settings', () => {
     expect(store.projects[0].worktreeSetupScript).toBeUndefined();
   });
 
+  it('saves suspend and resume scripts', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const dialog = open();
+    for (const [label, value] of [
+      ['Suspend script', 'docker compose stop'],
+      ['Resume script', 'docker compose start'],
+    ]) {
+      const input = field(label);
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    dialog.save();
+    await vi.waitFor(() => expect(dialog.onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeSuspendScript).toBe('docker compose stop');
+    expect(store.projects[0].worktreeResumeScript).toBe('docker compose start');
+  });
+
   it('seeds a saved include list from the defaults and stores per-entry modes', async () => {
     vi.mocked(invoke).mockImplementation(async (channel) =>
       channel === IPC.GetGitignoredDirs
