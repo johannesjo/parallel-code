@@ -789,7 +789,12 @@ describe('FinishDialog base sync', () => {
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';
       if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 4 };
-      return { current_branch: 'task/parent', has_committed_changes: false };
+      // Uncommitted work: a branch with none at all offers Close task instead.
+      return {
+        current_branch: 'task/parent',
+        has_committed_changes: false,
+        has_uncommitted_changes: true,
+      };
     });
     mount({ task: task({ baseBranch: 'main' }) });
     await flush();
@@ -1100,9 +1105,10 @@ describe('FinishDialog with no work on the branch', () => {
     expect(document.body.textContent).not.toContain('Nothing to merge:');
     // An empty branch has nothing to push or to open a PR with.
     expect(document.querySelector('section[aria-label="Pull request"]')).toBeNull();
-    expect(
-      [...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Push'),
-    ).toBe(false);
+    expect(button('Push')?.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Push')?.getAttribute('title')).toBe('Nothing to push.');
+    button('Push')?.click();
+    expect(pushTask).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="footer-note"]')?.textContent).toBe('');
     expect(confirmButton()?.textContent).toBe('Close task');
     expect(confirmButton()?.disabled).toBe(false);
