@@ -28,7 +28,6 @@ vi.stubGlobal('fetch', mockFetch);
 import {
   askAboutCodeMinimax,
   cancelAskAboutCodeMinimax,
-  MINIMAX_MODEL,
   setMinimaxApiKey,
 } from './ask-code-minimax.js';
 
@@ -118,10 +117,28 @@ describe('askAboutCodeMinimax', () => {
       expect(body.messages[1].content).toBe(prompt);
       expect(body.messages[0].content).toBe(systemPrompt);
       // Derived from the card caps, so raising a cap cannot silently truncate a
-      // tour the validator would have accepted.
-      expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3));
+      // tour the validator would have accepted. Flash also needs a separate
+      // allowance because its thinking tokens share this budget.
+      expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3) + 16_384);
     },
   );
+
+  it('keeps the structured budget limited to the visible response for M3', async () => {
+    const { win, messages } = makeMockWin();
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+    askAboutCodeMinimax(win, {
+      requestId: 'm3-tour',
+      channelId: 'test',
+      prompt: 'Tour',
+      purpose: 'tour',
+      model: 'MiniMax-M3',
+    });
+    await waitForDone(messages);
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
+      max_tokens: number;
+    };
+    expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3));
+  });
 
   it.each(STRUCTURED_PURPOSES)(
     'rejects a $purpose larger than its dedicated allowance before fetching',
@@ -139,7 +156,7 @@ describe('askAboutCodeMinimax', () => {
     },
   );
 
-  it('keeps the short token allowance for inline questions', async () => {
+  it('allows room for Flash thinking and the inline answer', async () => {
     const { win, messages } = makeMockWin();
     mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
     askAboutCodeMinimax(win, { requestId: 'inline', channelId: 'test', prompt: 'Explain' });
@@ -147,7 +164,7 @@ describe('askAboutCodeMinimax', () => {
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
       max_tokens: number;
     };
-    expect(body.max_tokens).toBe(2048);
+    expect(body.max_tokens).toBe(16_384);
   });
 
   it('sends chunk messages for each SSE delta', async () => {
@@ -172,6 +189,53 @@ describe('askAboutCodeMinimax', () => {
     const doneMsgs = messages.filter((m) => (m as Record<string, unknown>).type === 'done');
     expect(doneMsgs).toHaveLength(1);
     expect((doneMsgs[0] as Record<string, unknown>).exitCode).toBe(0);
+  });
+
+  it.each(['MiniMax-M3', 'MiniMax-M2.7', 'custom/model-v1'])(
+    'preserves the explicit %s model at the HTTP boundary',
+    async (model) => {
+      const { win, messages } = makeMockWin();
+      mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+      askAboutCodeMinimax(win, {
+        requestId: 'saved',
+        channelId: 'saved',
+        prompt: 'Explain',
+        model,
+      });
+      await waitForDone(messages);
+      const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.model).toBe(model);
+      expect(body.max_tokens).toBe(2048);
+      expect(body).not.toHaveProperty('reasoning_effort');
+      expect(body).not.toHaveProperty('service_tier');
+      if (model === 'MiniMax-M3') {
+        expect(body.thinking).toEqual({ type: 'disabled' });
+      } else {
+        expect(body).not.toHaveProperty('thinking');
+      }
+      expect(body.reasoning_split).toBe(true);
+    },
+  );
+
+  it('does not forward inline thinking into a structured answer', async () => {
+    const { win, messages } = makeMockWin();
+    mockFetch.mockResolvedValueOnce(
+      makeStreamResponse(
+        sseChunk('<thi') +
+          sseChunk('nk>private reasoning</think>{"cards":[]}') +
+          'data: [DONE]\n\n',
+      ),
+    );
+    askAboutCodeMinimax(win, {
+      requestId: 'reasoning',
+      channelId: 'reasoning',
+      prompt: 'Tour',
+      purpose: 'tour',
+    });
+    await waitForDone(messages);
+    expect(messages.filter((message) => (message as { type: string }).type === 'chunk')).toEqual([
+      { type: 'chunk', text: '{"cards":[]}' },
+    ]);
   });
 
   it('sends error message on non-ok HTTP response', async () => {
@@ -259,7 +323,7 @@ describe('askAboutCodeMinimax', () => {
     );
   });
 
-  it('uses MiniMax-M2.7 model', async () => {
+  it('defaults to Flash at the HTTP boundary', async () => {
     const { win, messages } = makeMockWin();
 
     mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
@@ -275,7 +339,14 @@ describe('askAboutCodeMinimax', () => {
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
       model: string;
     };
-    expect(body.model).toBe(MINIMAX_MODEL);
+    expect(mockFetch.mock.calls[0][0]).toBe('https://api.minimax.io/v1/chat/completions');
+    expect(body).toMatchObject({
+      model: 'MiniMax-M3.1-Flash',
+      thinking: { type: 'adaptive' },
+      reasoning_effort: 'low',
+      reasoning_split: true,
+    });
+    expect(body).not.toHaveProperty('service_tier');
   });
 
   it('uses temperature in MiniMax allowed range (0, 1]', async () => {
