@@ -112,6 +112,8 @@ export function createPrState(props: CreatePrStateProps) {
     invoke<BranchPrDetectionResult>(IPC.DetectPrForBranch, {
       worktreePath: task.worktreePath,
       branchName: task.branchName,
+      // The task may track its base branch, whose PRs are not the task's.
+      ...(task.baseBranch ? { baseBranch: task.baseBranch } : {}),
     })
       .then((result) => {
         if (result.unavailable) setGhUnavailable(UNAVAILABLE[result.unavailable]);
