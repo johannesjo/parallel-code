@@ -2281,6 +2281,7 @@ describe('cross-project tasks', () => {
       targetProjectName: 'phpstan',
       name: 'Fix generics bug',
       prompt: 'Reproduce with this snippet, then fix it',
+      docker: null,
     });
     expect(createIndependent).not.toHaveBeenCalled();
     taskAnswers.shift()?.(true);
@@ -2308,6 +2309,49 @@ describe('cross-project tasks', () => {
     taskAnswers.shift()?.(false);
     await expect(created).rejects.toThrow('declined creating this task in project "phpstan"');
     expect(createIndependent).not.toHaveBeenCalled();
+  });
+
+  it('refuses a prompt the dialog cannot show whole, before asking', async () => {
+    const caller = await parent();
+    await setting(true);
+    const send = (requestId: string, prompt: string, project = 'phpstan') =>
+      service.callTool(caller, 'create_task', {
+        requestId,
+        relation: 'independent',
+        name: 'Fix generics bug',
+        prompt,
+        project,
+      });
+    await expect(send('long', 'x'.repeat(1501))).rejects.toThrow(
+      'at most 1500 characters and 30 lines, so the user reads all of it before allowing it; this one has 1501 characters and 1 line.',
+    );
+    // Blank lines must not push instructions out of sight either.
+    await expect(send('tall', `Fix it${'\n'.repeat(30)}then more`)).rejects.toThrow(
+      'this one has 45 characters and 31 lines',
+    );
+    await expect(send('hidden', 'Fix it\u202e')).rejects.toThrow(
+      'without terminal or invisible control characters',
+    );
+    expect(confirmCrossProjectTask).not.toHaveBeenCalled();
+    expect(createIndependent).not.toHaveBeenCalled();
+    // The creator's own project has no dialog, so no such limit.
+    await expect(send('own', 'x'.repeat(1501), 'project')).resolves.toMatchObject({
+      relation: 'independent',
+    });
+  });
+
+  it('tells the user about the sandbox the task inherits', async () => {
+    await register('parent', { dockerMode: true, dockerImage: 'parallel-code-project:abc' });
+    policy();
+    const caller = session('parent');
+    await setting(true);
+    const created = create(caller, 'phpstan');
+    await asked(1);
+    expect(confirmCrossProjectTask).toHaveBeenCalledWith(
+      expect.objectContaining({ docker: { image: 'parallel-code-project:abc' } }),
+    );
+    taskAnswers.shift()?.(false);
+    await expect(created).rejects.toThrow('declined');
   });
 
   it('treats its own project as an ordinary independent task', async () => {

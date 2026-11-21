@@ -258,7 +258,7 @@ it('creates an agent-requested independent task with the creator agent and sandb
   expect(missing).toMatchObject({ ok: false, error: 'Creating task not found' });
 });
 
-it('creates an approved task in another project with the creator agent and sandbox', async () => {
+it('creates an approved task in another project with the creator agent and sandbox, prompting for permissions', async () => {
   const agentDef = {
     id: 'codex',
     name: 'Codex',
@@ -288,11 +288,17 @@ it('creates an approved task in another project with the creator agent and sandb
     status: 'running',
     exitCode: null,
   });
-  setStore('tasks', 'task', { dockerMode: true, dockerImage: 'sandbox:1' });
-  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+  setStore('tasks', 'task', {
+    dockerMode: true,
+    dockerImage: 'sandbox:1',
+    propagateSkipPermissions: true,
+  });
+  vi.mocked(invoke).mockImplementation(async (channel: string, args?: unknown) => {
     if (channel === IPC.GetGitignoredDirs) return [];
-    if (channel === IPC.CreateTask)
+    if (channel === IPC.CreateTask && (args as { projectRoot?: string }).projectRoot === '/tmp/lib')
       return { id: 'lib-task', branch_name: 'task/lib', worktree_path: '/tmp/lib-task' };
+    if (channel === IPC.CreateTask)
+      return { id: 'own-task', branch_name: 'task/own', worktree_path: '/tmp/own-task' };
     return undefined;
   });
 
@@ -309,10 +315,22 @@ it('creates an approved task in another project with the creator agent and sandb
     projectId: 'lib',
     dockerMode: true,
     dockerImage: 'sandbox:1',
+    // The other project never opted into skipping prompts, whatever the creator allows.
+    skipPermissions: false,
   });
   expect(store.agents[store.tasks['lib-task']?.agentIds[0] ?? '']?.def).toMatchObject({
     id: 'codex',
   });
+  // A task in the creator's own project still inherits the bypass the user allowed.
+  vi.mocked(invoke).mockClear();
+  const own = await phoneRequest(IPC.MCP_CreateIndependentTaskRequest, {
+    creatorTaskId: 'task',
+    name: 'Own',
+    prompt: 'Fix it here',
+    launchId: 'launch-own',
+  });
+  expect(own).toMatchObject({ ok: true, data: { taskId: 'own-task' } });
+  expect(store.tasks['own-task']).toMatchObject({ projectId: 'project', skipPermissions: true });
 
   // Document projects take no tasks, whatever main resolved.
   vi.mocked(invoke).mockClear();

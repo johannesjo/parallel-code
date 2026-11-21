@@ -222,6 +222,7 @@ import { listSessionsForCwd } from '../sessions/scan.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
+import { crossProjectTaskDialog } from '../mcp/cross-project-tasks.js';
 import { redactServerUrl } from '../remote/server.js';
 import { readTailscaleState } from '../remote/tailscale-status.js';
 
@@ -730,14 +731,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       ).map(({ id, name }) => ({ id, name })),
     confirmCrossProjectTask: async (request) => {
       if (win.isDestroyed()) throw new Error('Desktop app is not available');
-      const prompt =
-        request.prompt.length > 600 ? `${request.prompt.slice(0, 600)}…` : request.prompt;
       const { response } = await dialog.showMessageBox(win, {
         type: 'question',
         title: 'Create a task in another project?',
-        message: `An agent in project "${request.projectName}" wants to create a task in project "${request.targetProjectName}".`,
-        // Names and prompts come from agents, so they stay out of the headline the user acts on.
-        detail: `Asking task: ${request.creatorTaskName.slice(0, 80)}\nNew task: ${request.name.slice(0, 80)}\n\nPrompt:\n${prompt}\n\nIf you allow it, the task starts in "${request.targetProjectName}" with the asking agent, its sandbox and its permission settings, and you review it like any other task.`,
+        ...crossProjectTaskDialog(request),
         buttons: ['Create task', 'Deny'],
         // Deny is the default: Enter or Escape on an unexpected dialog must not start work.
         defaultId: 1,

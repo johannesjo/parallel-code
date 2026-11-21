@@ -259,8 +259,9 @@ async function handleCreateIndependentTask(req: CreateIndependentTaskRequest): P
       ...(await newTaskGitDefaults(project)),
       initialPrompt: req.prompt,
       // Same rule as children: an agent may hand on permission bypass only when the
-      // user allowed it, and may not start work outside its own container.
-      skipPermissions: creator.propagateSkipPermissions === true,
+      // user allowed it, and may not start work outside its own container. Another project
+      // never opted into skipping prompts, so a task there always starts with them on.
+      skipPermissions: req.projectId === undefined && creator.propagateSkipPermissions === true,
       dockerMode: creator.dockerMode,
       dockerSource: creator.dockerSource,
       dockerImage: creator.dockerImage,

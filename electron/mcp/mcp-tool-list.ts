@@ -12,6 +12,10 @@ import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { completionReportSchema, toolOutputSchemas } from './tool-output-schemas.js';
 import { CLOSE_SUGGESTION_REASON_MAX } from '../shared/close-suggestion.js';
+import {
+  CROSS_PROJECT_PROMPT_MAX_CHARS,
+  CROSS_PROJECT_PROMPT_MAX_LINES,
+} from './cross-project-tasks.js';
 /** Pure tool-list logic — extracted so it can be unit-tested without starting the MCP server. */
 
 export interface ToolDef {
@@ -709,8 +713,7 @@ const ARCHIVE_TOOL: ToolDef = {
 /** Shared by every create_task that offers independent tasks. */
 const CROSS_PROJECT_PROJECT_PARAM = {
   type: 'string',
-  description:
-    "relation 'independent' only: create the task in another Parallel Code project, given by name (for example the library whose bug you found) or id. Needs the user's setting \"Allow agents to create tasks in other projects\", and the user confirms each task, so the call waits for their answer. The task starts from that project's main branch with no access to your worktree: put everything it needs, such as the reproduction, in prompt. An unknown name lists the projects. Omit it for your own project.",
+  description: `relation 'independent' only: create the task in another Parallel Code project, given by name (for example the library whose bug you found) or id. Needs the user's setting "Allow agents to create tasks in other projects", and the user confirms each task, so the call waits for their answer. The user reads the whole prompt there, so it must stay within ${CROSS_PROJECT_PROMPT_MAX_CHARS} characters and ${CROSS_PROJECT_PROMPT_MAX_LINES} lines. The task starts with permission prompts on, from that project's main branch with no access to your worktree: put everything it needs, such as the reproduction, in prompt. An unknown name lists the projects. Omit it for your own project.`,
 };
 
 const SUPERVISION_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
