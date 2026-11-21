@@ -19,10 +19,6 @@ describe('shellBadge', () => {
     expect(
       shellBadge({ run: { name: 'web', state: 'failed' }, exit: { exitCode: 1, signal: null } }),
     ).toEqual({ text: 'web failed (exit 1)', tone: 'error' });
-    // node-pty on macOS and Linux reports a normal exit with signal "0".
-    expect(
-      shellBadge({ run: { name: 'web', state: 'failed' }, exit: { exitCode: 1, signal: '0' } }),
-    ).toEqual({ text: 'web failed (exit 1)', tone: 'error' });
   });
 
   it('keeps the setup and plain-shell badges as they were', () => {

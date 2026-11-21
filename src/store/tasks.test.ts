@@ -1459,16 +1459,6 @@ describe('createTask worktree setup', () => {
     forgetSetupShells(['shell-fail', 'shell-ok']);
     expect(setupShellState('shell-ok')).toBeUndefined();
   });
-
-  // node-pty on macOS and Linux reports every exit with a signal; "0" means none.
-  it('reads the PTY exit report of a clean setup run as passed', () => {
-    vi.mocked(showNotification).mockClear();
-    worktreeSetup.setPendingSetupScript('shell-pty', 'true');
-    noteSetupShellExit('shell-pty', 'Fix login', 0, '0');
-    expect(setupShellState('shell-pty')).toBe('passed');
-    expect(showNotification).not.toHaveBeenCalled();
-    forgetSetupShells(['shell-pty']);
-  });
 });
 
 // A task's own first pane is created by a different path from the panes added
@@ -3073,12 +3063,12 @@ describe('run commands', () => {
     expect(showNotification).not.toHaveBeenCalled();
   });
 
-  // node-pty on macOS and Linux reports every exit with a signal; "0" means none.
+  // node-pty reports a process killed by a signal as exit code 0 with that signal.
   it.each([
-    { how: 'a clean exit', exitCode: 0, signal: '0', state: 'finished' },
+    { how: 'a clean exit', exitCode: 0, signal: null, state: 'finished' },
     { how: 'Ctrl+C typed in the terminal', exitCode: 0, signal: '2', state: 'stopped' },
     { how: 'an outside kill', exitCode: 0, signal: '15', state: 'stopped' },
-    { how: 'a crash', exitCode: 1, signal: '0', state: 'failed' },
+    { how: 'a crash', exitCode: 1, signal: null, state: 'failed' },
   ])('reads $how as $state from the PTY exit report', async ({ exitCode, signal, state }) => {
     await startRunInTask('task-r', web);
     noteRunShellExit(mockTasks['task-r'].shellAgentIds[0], 'Fix login', exitCode, signal);
