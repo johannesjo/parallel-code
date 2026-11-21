@@ -15,6 +15,7 @@ import {
   type CrossProjectReadRequest,
 } from './cross-project-reads.js';
 import {
+  crossProjectPromptProblem,
   resolveTaskProject,
   type CrossProjectTaskRequest,
   type TaskProject,
@@ -644,6 +645,13 @@ export class DelegationService {
     const target = resolveTaskProject(await this.options.listProjects(), ref);
     if (typeof target === 'string') throw new DelegationError(target);
     if (target.id === creator.projectId) return undefined;
+    // The dialog shows the whole prompt, so the user approves every word the new agent gets.
+    const promptProblem = crossProjectPromptProblem(request.prompt);
+    if (promptProblem) throw new DelegationError(promptProblem);
+    if (UNSAFE_TEXT.test(request.prompt))
+      throw new DelegationError(
+        'A task in another project takes a prompt without terminal or invisible control characters, so the user sees all of it before allowing it',
+      );
     // Anything that changed while the agent waited (setting, pause, orchestration, session)
     // is checked again both before the dialog opens and after the user answers.
     const recheck = () => {
@@ -659,6 +667,9 @@ export class DelegationService {
         targetProjectName: target.name,
         name: request.name,
         prompt: request.prompt,
+        docker: creator.dockerMode
+          ? { ...(creator.dockerImage !== undefined && { image: creator.dockerImage }) }
+          : null,
       });
     });
     this.crossProjectTaskQueue = answer.catch(() => undefined);
