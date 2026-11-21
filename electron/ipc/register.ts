@@ -222,6 +222,7 @@ import { listSessionsForCwd } from '../sessions/scan.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
+import { crossProjectTaskDialog } from '../mcp/cross-project-tasks.js';
 import { redactServerUrl } from '../remote/server.js';
 import { readTailscaleState } from '../remote/tailscale-status.js';
 
@@ -719,6 +720,23 @@ export function registerAllHandlers(win: BrowserWindow): void {
         detail: `Asking task: ${request.taskName.slice(0, 80)}\n\nIf you allow it, this agent session can read the output and diffs of that project’s top-level tasks until the session ends. It cannot send them prompts or change anything there.`,
         buttons: ['Allow', 'Deny'],
         // Deny is the default: Enter or Escape on an unexpected dialog must not grant access.
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0;
+    },
+    listProjects: async () =>
+      (
+        await callRenderer<Array<{ id: string; name: string }>>(IPC.Remote_GetProjectsRequest, {})
+      ).map(({ id, name }) => ({ id, name })),
+    confirmCrossProjectTask: async (request) => {
+      if (win.isDestroyed()) throw new Error('Desktop app is not available');
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        title: 'Create a task in another project?',
+        ...crossProjectTaskDialog(request),
+        buttons: ['Create task', 'Deny'],
+        // Deny is the default: Enter or Escape on an unexpected dialog must not start work.
         defaultId: 1,
         cancelId: 1,
       });

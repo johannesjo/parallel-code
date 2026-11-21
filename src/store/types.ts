@@ -693,6 +693,7 @@ export interface PersistedState {
   darkThemeCustomId?: string | null;
   mcpOrchestrationEnabled?: boolean;
   allowCrossProjectReads?: boolean;
+  allowCrossProjectTasks?: boolean;
   documentWorkspacesEnabled?: boolean;
   documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
@@ -921,6 +922,8 @@ export interface AppStore {
   mcpOrchestrationEnabled: boolean;
   /** Opt-in: top-level agents may read (never prompt) tasks in other projects, confirmed per session. */
   allowCrossProjectReads: boolean;
+  /** Opt-in: top-level agents may create tasks in other projects, each one confirmed by the user. */
+  allowCrossProjectTasks: boolean;
   documentWorkspacesEnabled: boolean;
   /** Let the rendered document take the whole column instead of a reading width. */
   documentFullWidth: boolean;
