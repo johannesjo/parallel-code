@@ -9,12 +9,15 @@ import { PromptInput } from './PromptInput';
 import {
   clearInitialPrompt,
   getAgentOutputTail,
+  isPanelFocused,
   onAgentReady,
   registerAction,
   registerFocusFn,
   sendPrompt,
   setInitialPrompt,
+  setTaskFocusedPanel,
   showNotification,
+  concealTaskPromptInput,
 } from '../store/store';
 import { NOTIFICATION_ERROR_MS } from '../store/notification';
 
@@ -23,6 +26,7 @@ const { storeMock, setTaskPromptDraft, taskUsesAgentChat } = vi.hoisted(() => ({
     tasks: {} as Record<string, unknown>,
     agents: {} as Record<string, unknown>,
     mcpOrchestrationEnabled: true,
+    showPromptInput: true,
   },
   setTaskPromptDraft: vi.fn(),
   taskUsesAgentChat: vi.fn(() => false),
@@ -58,7 +62,9 @@ vi.mock('../store/store', () => ({
   isAgentAskingQuestion: () => false,
   isAgentIdle: () => true,
   setTaskLastInputAt: vi.fn(),
-  isPanelFocused: () => false,
+  isPanelFocused: vi.fn(() => false),
+  setTaskFocusedPanel: vi.fn(),
+  concealTaskPromptInput: vi.fn(),
   setTaskControl: vi.fn(),
   markTaskUserActivity: vi.fn(),
   setTaskPromptDraftActive: vi.fn(),
@@ -79,9 +85,13 @@ afterEach(() => {
   document.body.replaceChildren();
   storeMock.tasks = {};
   storeMock.agents = {};
+  storeMock.showPromptInput = true;
+  vi.mocked(isPanelFocused).mockReturnValue(false);
   vi.mocked(getAgentOutputTail).mockReturnValue('');
   storeMock.mcpOrchestrationEnabled = true;
   setTaskPromptDraft.mockClear();
+  vi.mocked(concealTaskPromptInput).mockClear();
+  vi.mocked(setTaskFocusedPanel).mockClear();
   taskUsesAgentChat.mockReturnValue(false);
   vi.mocked(registerFocusFn).mockClear();
   vi.mocked(registerAction).mockClear();
@@ -161,6 +171,47 @@ describe('PromptInput draft persistence', () => {
     await waitFor(() => setTaskPromptDraft.mock.calls.some(([, text]) => text === ''));
 
     expect(textarea.value).toBe('');
+  });
+
+  it('hides a prompt box shown only for a staged draft once it is sent', async () => {
+    storeMock.showPromptInput = false;
+    storeMock.tasks = {
+      'task-1': {
+        id: 'task-1',
+        agentIds: ['agent-1'],
+        promptDraft: 'staged by the canvas',
+        promptInputRevealed: true,
+      },
+    };
+    vi.mocked(isPanelFocused).mockReturnValue(true);
+    const textarea = mount('task-1');
+
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => vi.mocked(concealTaskPromptInput).mock.calls.length > 0);
+
+    expect(concealTaskPromptInput).toHaveBeenCalledWith('task-1');
+    expect(setTaskFocusedPanel).toHaveBeenCalledWith('task-1', 'ai-terminal');
+  });
+
+  // Otherwise turning the setting off later would leave this one task's box up.
+  it('ends a reveal on send even while the setting shows the prompt box', async () => {
+    storeMock.tasks = {
+      'task-1': {
+        id: 'task-1',
+        agentIds: ['agent-1'],
+        promptDraft: 'branch sent to the agent',
+        promptInputRevealed: true,
+      },
+    };
+    vi.mocked(isPanelFocused).mockReturnValue(true);
+    const textarea = mount('task-1');
+
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => vi.mocked(concealTaskPromptInput).mock.calls.length > 0);
+
+    expect(concealTaskPromptInput).toHaveBeenCalledWith('task-1');
+    // The box stays, so focus stays in it.
+    expect(setTaskFocusedPanel).not.toHaveBeenCalled();
   });
 
   it('clears the stored draft when the prompt box closes while the prompt is sent', async () => {
@@ -360,6 +411,36 @@ describe('PromptInput initial prompt after an app restart', () => {
       expect(sendPrompt).toHaveBeenCalledTimes(1);
       expect(setInitialPrompt).not.toHaveBeenCalled();
       expect(clearInitialPrompt).toHaveBeenCalledWith('task-1');
+    } finally {
+      vi.mocked(sendPrompt).mockImplementation(async () => undefined);
+      vi.mocked(getAgentOutputTail).mockImplementation(() => '');
+      vi.useRealTimers();
+    }
+  });
+
+  // The plan handoff shows the box only to deliver the plan.
+  it('hides a prompt box shown only for a queued plan once the plan is delivered', async () => {
+    vi.useFakeTimers();
+    try {
+      let echoed = false;
+      vi.mocked(sendPrompt).mockClear();
+      vi.mocked(sendPrompt).mockImplementation(async () => {
+        echoed = true;
+      });
+      vi.mocked(getAgentOutputTail).mockImplementation(() =>
+        echoed ? 'Claude Code\n❯ do it' : 'Claude Code\n❯ ',
+      );
+      storeMock.showPromptInput = false;
+      storeMock.agents = { 'agent-1': {} };
+      storeMock.tasks = {
+        'task-1': { id: 'task-1', agentIds: ['agent-1'], promptInputRevealed: true },
+      };
+      mountWithInitialPrompt();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(sendPrompt).toHaveBeenCalledWith('task-1', 'agent-1', 'do it');
+      expect(concealTaskPromptInput).toHaveBeenCalledWith('task-1');
     } finally {
       vi.mocked(sendPrompt).mockImplementation(async () => undefined);
       vi.mocked(getAgentOutputTail).mockImplementation(() => '');

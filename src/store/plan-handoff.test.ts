@@ -13,6 +13,7 @@ interface TestTask {
   planPath?: string;
   promptDraft?: string;
   initialPrompt?: string;
+  promptInputRevealed?: boolean;
   planHandoff?: { sessionId: string; command: string };
   promptedAgentIds?: string[];
   terminalInputPending?: boolean;
@@ -66,13 +67,16 @@ beforeEach(() => {
 
 describe('implementPlanInFreshSession', () => {
   it('queues the plan, remembers the planning session and restarts fresh', async () => {
-    state.showPromptInput = false; // the prompt box is what delivers the plan
+    state.showPromptInput = false;
     expect(await implementPlanInFreshSession('t1')).toBeNull();
     expect(state.tasks.t1.initialPrompt).toBe(EXPECTED_PROMPT);
     expect(state.tasks.t1.planHandoff).toEqual({ sessionId: PLANNING, command: 'claude' });
     expect(mockRestartAgent).toHaveBeenCalledWith('a1', false);
     expect(mockSaveState).toHaveBeenCalled();
-    expect(state.showPromptInput).toBe(true);
+    // The prompt box is what delivers the plan: it shows on this task only,
+    // and the user's setting is left as it was.
+    expect(state.tasks.t1.promptInputRevealed).toBe(true);
+    expect(state.showPromptInput).toBe(false);
   });
 
   // An app restart before delivery resumes the pane; it must still get the plan,
