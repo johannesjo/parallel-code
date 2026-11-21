@@ -142,6 +142,11 @@ function createWindow() {
     ...initial.bounds,
     icon: getIconPath(),
     frame: process.platform === 'darwin',
+    // Electron 43+ rounds a frameless window's corners on Linux, which would
+    // clip the square border the renderer draws (`data-window-border`). Linux
+    // only, the one platform where 43 changed the look: Windows 11 already
+    // rounded them, and the macOS window keeps its native frame.
+    roundedCorners: process.platform === 'linux' ? false : undefined,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
     // Centre the 16px-tall traffic-light buttons on the renderer's 32px
     // `.mac-titlebar-spacer` row (y + 8 = 16), so they line up with the
