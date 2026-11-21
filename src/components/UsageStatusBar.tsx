@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
+import type { JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { store, refreshUsage, USAGE_PROVIDERS } from '../store/store';
 import { theme } from '../lib/theme';
@@ -17,9 +18,34 @@ import {
 } from './usage-format';
 
 const PROVIDER_LABELS: Record<UsageProvider, string> = { claude: 'Claude', codex: 'Codex' };
-const POPOVER_WIDTH = 300;
+/** Keeps an error-only card readable; with meters, the card grows to fit them. */
+const POPOVER_MIN_WIDTH = 300;
+const POPOVER_BAR_WIDTH = 120;
+/** Closest the popover gets to the window's edges. */
+const VIEWPORT_MARGIN = 8;
 
-function UsageMeter(props: { label: string; window: UsageWindow; width?: number }) {
+/**
+ * A meter's cells are label, bar, amount and detail. In the status bar they
+ * run inline. In the popover each meter is a row of one shared grid, so bars
+ * and text line up from row to row whatever the width of each row's text.
+ */
+type MeterLayout = 'inline' | 'row';
+const METER_LAYOUT: Record<MeterLayout, JSX.CSSProperties> = {
+  inline: { display: 'inline-flex', 'align-items': 'center', gap: '6px' },
+  row: {
+    display: 'grid',
+    'grid-template-columns': 'subgrid',
+    'grid-column': '1 / -1',
+    'align-items': 'center',
+  },
+};
+
+function UsageMeter(props: {
+  label: string;
+  window: UsageWindow;
+  width?: number;
+  layout?: MeterLayout;
+}) {
   const warn = () => props.window.usedPercent >= USAGE_WARN_PERCENT;
   const color = () => (warn() ? theme.warning : theme.accent);
   const reset = () => formatReset(props.window.resetsAt);
@@ -27,7 +53,7 @@ function UsageMeter(props: { label: string; window: UsageWindow; width?: number 
   const left = () => remainingPercent(props.window);
 
   return (
-    <span style={{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }}>
+    <span style={METER_LAYOUT[props.layout ?? 'inline']}>
       <span style={{ color: theme.fgSubtle }}>{props.label}</span>
       <span
         role="progressbar"
@@ -63,7 +89,7 @@ function UsageMeter(props: { label: string; window: UsageWindow; width?: number 
   );
 }
 
-function CreditMeter(props: { credit: CreditUsage; width?: number }) {
+function CreditMeter(props: { credit: CreditUsage; width?: number; layout?: MeterLayout }) {
   const usedText = () => formatCurrency(props.credit.used, props.credit.currency);
   const limitText = () =>
     props.credit.limit !== null ? formatCurrency(props.credit.limit, props.credit.currency) : null;
@@ -75,7 +101,7 @@ function CreditMeter(props: { credit: CreditUsage; width?: number }) {
   const color = () => (warn() ? theme.warning : theme.accent);
 
   return (
-    <span style={{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }}>
+    <span style={METER_LAYOUT[props.layout ?? 'inline']}>
       <span style={{ color: theme.fgSubtle }}>Credits</span>
       <Show when={hasPercent()}>
         <span
@@ -103,7 +129,14 @@ function CreditMeter(props: { credit: CreditUsage; width?: number }) {
           />
         </span>
       </Show>
-      <span style={{ color: warn() ? theme.warning : theme.fg, 'font-weight': '500' }}>
+      {/* Pinned to the amount column: without a limit there is no bar before it. */}
+      <span
+        style={{
+          color: warn() ? theme.warning : theme.fg,
+          'font-weight': '500',
+          'grid-column': '3',
+        }}
+      >
         {limitText() ? `${usedText()} / ${limitText()}` : `${usedText()} used`}
       </span>
       <Show when={hasPercent()}>
@@ -128,63 +161,95 @@ function UsagePopover(props: {
 
   return (
     <Portal>
+      {/* A strip across the window. The spacer sets the card under the hovered
+          entry and gives way first, so a card that would run past the right
+          edge slides left instead, however wide its content makes it. */}
       <div
         data-testid="usage-popover"
         style={{
           position: 'fixed',
-          left: `${props.anchor.left}px`,
+          left: `${VIEWPORT_MARGIN}px`,
+          right: `${VIEWPORT_MARGIN}px`,
           bottom: `${props.anchor.bottom}px`,
-          width: `${POPOVER_WIDTH}px`,
+          display: 'flex',
           'pointer-events': 'none',
           'z-index': 'var(--z-modal)',
-          background: theme.bgElevated,
-          border: `1px solid ${theme.border}`,
-          'border-radius': 'var(--radius-sm)',
-          'box-shadow': '0 4px 16px rgba(0, 0, 0, 0.3)',
-          padding: '8px 10px',
-          'font-family': "'JetBrains Mono', monospace",
-          'font-size': sf(11),
-          color: theme.fgMuted,
-          display: 'flex',
-          'flex-direction': 'column',
-          gap: '6px',
         }}
       >
+        <span style={{ flex: `0 1 ${Math.max(0, props.anchor.left - VIEWPORT_MARGIN)}px` }} />
         <div
           style={{
-            color: theme.fgSubtle,
-            'font-weight': '600',
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            flex: 'none',
+            'min-width': `${POPOVER_MIN_WIDTH}px`,
+            'max-width': '100%',
+            background: theme.bgElevated,
+            border: `1px solid ${theme.border}`,
+            'border-radius': 'var(--radius-sm)',
+            'box-shadow': '0 4px 16px rgba(0, 0, 0, 0.3)',
+            padding: '8px 10px',
+            'font-family': "'JetBrains Mono', monospace",
             'font-size': sf(11),
+            color: theme.fgMuted,
+            display: 'flex',
+            'flex-direction': 'column',
+            gap: '6px',
           }}
         >
-          {PROVIDER_LABELS[props.provider]} usage
-        </div>
-        <Show when={props.usage.fiveHour}>
-          {(w) => <UsageMeter label="5h" window={w()} width={120} />}
-        </Show>
-        <Show when={props.usage.sevenDay}>
-          {(w) => <UsageMeter label="7d" window={w()} width={120} />}
-        </Show>
-        <Show when={props.usage.creditUsage}>{(c) => <CreditMeter credit={c()} />}</Show>
-        <div
-          style={{
-            color: props.usage.status === 'error' ? theme.warning : theme.fgSubtle,
-            'font-size': sf(11),
-          }}
-        >
-          {footer()}
+          <div
+            style={{
+              color: theme.fgSubtle,
+              'font-weight': '600',
+              'text-transform': 'uppercase',
+              'letter-spacing': '0.05em',
+              'font-size': sf(11),
+            }}
+          >
+            {PROVIDER_LABELS[props.provider]} usage
+          </div>
+          <Show when={hasUsageSnapshot(props.usage)}>
+            <div
+              style={{
+                display: 'grid',
+                'grid-template-columns': 'repeat(4, auto)',
+                'justify-content': 'start',
+                gap: '6px',
+                'white-space': 'nowrap',
+              }}
+            >
+              <Show when={props.usage.fiveHour}>
+                {(w) => (
+                  <UsageMeter label="5h" window={w()} width={POPOVER_BAR_WIDTH} layout="row" />
+                )}
+              </Show>
+              <Show when={props.usage.sevenDay}>
+                {(w) => (
+                  <UsageMeter label="7d" window={w()} width={POPOVER_BAR_WIDTH} layout="row" />
+                )}
+              </Show>
+              <Show when={props.usage.creditUsage}>
+                {(c) => <CreditMeter credit={c()} width={POPOVER_BAR_WIDTH} layout="row" />}
+              </Show>
+            </div>
+          </Show>
+          {/* Wraps at the card's width instead of setting it: a refresh error can be long. */}
+          <div
+            style={{
+              contain: 'inline-size',
+              color: props.usage.status === 'error' ? theme.warning : theme.fgSubtle,
+              'font-size': sf(11),
+            }}
+          >
+            {footer()}
+          </div>
         </div>
       </div>
     </Portal>
   );
 }
 
-/** Where the popover opens: above the hovered entry, kept inside the viewport. */
+/** Where the popover opens: above the hovered entry, from its left edge. */
 function popoverAnchor(rect: DOMRect): { left: number; bottom: number } {
-  const left = Math.max(8, Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - 8));
-  return { left, bottom: window.innerHeight - rect.top + 6 };
+  return { left: rect.left, bottom: window.innerHeight - rect.top + 6 };
 }
 
 /**
