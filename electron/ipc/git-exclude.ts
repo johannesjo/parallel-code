@@ -2,6 +2,8 @@ import * as childProcess from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+import { atomicWriteFileSync } from '../mcp/atomic.js';
+
 export type AppendGitInfoExcludeResult = 'appended' | 'present' | 'missing' | 'failed';
 type ExecFileSync = typeof childProcess.execFileSync;
 
@@ -95,6 +97,74 @@ export function appendGitInfoExcludeBlock(
   const excludePath = resolveGitInfoExcludePath(worktreePath);
   if (!excludePath) return 'missing';
   return appendGitInfoExcludeBlockAtPath(excludePath, marker, block, onError);
+}
+
+/**
+ * Reconcile marker-prefixed exclude entries to exactly `desiredPatterns`.
+ * A managed entry is a two-line unit: the `marker` comment immediately
+ * followed by a pattern line. Units whose pattern is in `managedPatterns`
+ * are removed and rewritten as needed; the same pattern written outside a
+ * marker pair (e.g. by the user) is left alone, so removal only ever
+ * un-hides what this mechanism hid. The file is rewritten only when the
+ * managed set differs from `desiredPatterns`; unrelated lines keep their
+ * order and position.
+ */
+export function syncGitInfoExcludeEntriesAtPath(
+  excludePath: string,
+  marker: string,
+  managedPatterns: readonly string[],
+  desiredPatterns: readonly string[],
+  onError?: (err: unknown) => void,
+): 'synced' | 'unchanged' | 'failed' {
+  try {
+    fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+    let existing = '';
+    try {
+      existing = fs.readFileSync(excludePath, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+    const managed = new Set(managedPatterns.map(normalizeExcludeLine));
+    // Desired entries outside the managed universe can never be satisfied.
+    const desired = new Set(
+      desiredPatterns.map(normalizeExcludeLine).filter((pattern) => managed.has(pattern)),
+    );
+
+    const lines = existing.split('\n');
+    // The split artifact of a trailing newline is not a real line.
+    if (lines[lines.length - 1] === '') lines.pop();
+    const kept: string[] = [];
+    const present = new Set<string>();
+    for (let i = 0; i < lines.length; i++) {
+      if (normalizeExcludeLine(lines[i]) !== marker) {
+        kept.push(lines[i]);
+        continue;
+      }
+      // Marker lines are dropped either way — needed ones are rewritten
+      // below. The pattern after a marker is ours only when it belongs to
+      // the managed set; anything else stays as a user-written line.
+      if (i + 1 < lines.length && managed.has(normalizeExcludeLine(lines[i + 1]))) {
+        present.add(normalizeExcludeLine(lines[i + 1]));
+        i++;
+      }
+    }
+
+    if (present.size === desired.size && [...present].every((p) => desired.has(p))) {
+      return 'unchanged';
+    }
+
+    for (const pattern of managedPatterns) {
+      if (desired.has(normalizeExcludeLine(pattern))) kept.push(marker, pattern);
+    }
+    const body = kept.join('\n');
+    // Whole-file rewrite (unlike the append-only helpers): atomic so a crash
+    // can't leave a torn exclude file with half the user's entries missing.
+    atomicWriteFileSync(excludePath, body.length > 0 ? `${body}\n` : '');
+    return 'synced';
+  } catch (err) {
+    onError?.(err);
+    return 'failed';
+  }
 }
 
 /** Whether Git tracks `file`; exclusion cannot hide a tracked file from `git status`. */
