@@ -1,5 +1,6 @@
 import path from 'path';
 import { getMainBranch } from './git.js';
+import { findBranchCreationCommit } from './git-diff-base.js';
 import { exec, MAX_BUFFER } from './git-exec.js';
 import { findNestedRepos } from './nested-repos.js';
 import {
@@ -19,7 +20,8 @@ const OWN_REPO = '.';
 /**
  * Open PRs of a task: the first PR of its branch is the primary one, the rest
  * and the PRs of its nested repositories' checked-out branches are extras.
- * PRs of the remote branch the task branch tracks count as the branch's own.
+ * Open PRs of the remote branch the task branch tracks count as the branch's
+ * own when their head commit is the task's own.
  * A missing or logged-out `gh` propagates so callers can disable detection;
  * any other failure only loses that repository's PRs and lists it in `failedRepos`.
  * When the branch has no open PR, `printedPrUrl`, a PR link the task's agent
@@ -37,12 +39,10 @@ export async function detectTaskPrs(
       Promise.all(repos.map((repo) => nestedRepoPrs(worktreePath, repo))),
     ),
   ]);
-  const openUrls = [
-    ...new Set([
-      ...(own ?? []),
-      ...(pushed ?? []).filter((pr) => pr.state === 'OPEN').map((pr) => pr.url),
-    ]),
-  ];
+  const pushedOpen = pushed
+    ? await ownOpenPrUrls(worktreePath, branchName, pushed, baseBranch)
+    : [];
+  const openUrls = [...new Set([...(own ?? []), ...pushedOpen])];
   // Null while a listing failed, so the task's PRs count as unknown and a printed link is retried.
   let ownUrls: string[] | null = null;
   if (own && pushed) {
@@ -115,6 +115,27 @@ async function pushedBranchPrs(
 }
 
 /**
+ * The tracked branch's open PRs whose head commit is the task's own. The task
+ * branch may track a shared branch it was created from, such as `develop` in
+ * a worktree imported without a base branch, whose open PRs are not the task's.
+ */
+async function ownOpenPrUrls(
+  worktreePath: string,
+  branchName: string,
+  pushed: PrHead[],
+  baseBranch: string | undefined,
+): Promise<string[]> {
+  const urls: string[] = [];
+  for (const pr of pushed) {
+    if (pr.state !== 'OPEN') continue;
+    const reason = await notOwnReason(worktreePath, branchName, pr, baseBranch);
+    if (!reason) urls.push(pr.url);
+    else notOwn('pushed', reason.why, { prUrl: pr.url, ...reason.details });
+  }
+  return urls;
+}
+
+/**
  * The PR that stands in for a branch without open PRs: the printed one if it
  * is open or merged and its head commit is the task's own, which catches a PR
  * pushed under another branch name or merged before the app saw it open; else
@@ -133,7 +154,8 @@ async function closedOutPrOfTask(
     if (printed !== false) return printed;
   }
   for (const pr of pushed) {
-    // Its open PRs were taken already; a closed one is abandoned work.
+    // Its open PRs were judged already; a closed one is abandoned work.
+    if (pr.state === 'OPEN') continue;
     if (pr.state !== 'MERGED') {
       notOwn('pushed', 'not merged', { prUrl: pr.url, state: pr.state });
       continue;
@@ -172,8 +194,9 @@ async function printedPrOfTask(
 
 /**
  * Why `pr` is not the task's own, or null when its head commit is: the task
- * branch holds it and no branch but copies of the task branch or the PR head
- * does, apart from those that got it by the PR's merge when the task branch did not.
+ * branch holds it, not from the commit it was created at, and no branch but
+ * copies of the task branch or the PR head does, apart from those that got it
+ * by the PR's merge when the task branch did not.
  */
 async function notOwnReason(
   worktreePath: string,
@@ -195,6 +218,12 @@ async function notOwnReason(
       : names.has(ref.split('/').slice(3).join('/'));
   const others = refs.filter((ref) => !isCopy(ref));
   if (refs.includes(`refs/heads/${branchName}`)) {
+    // Copies of the branch it was created from hold that commit alone, like `develop`'s PR head.
+    if (await predatesBranch(worktreePath, branchName, pr.headRefOid))
+      return {
+        why: 'the task branch was created on its head',
+        details: { branchName, headRefName: pr.headRefName },
+      };
     if (others.length === 0) return null;
     if (await heldByMergeOnly(worktreePath, branchName, pr, others)) return null;
   }
@@ -202,6 +231,31 @@ async function notOwnReason(
     why: 'other branches hold its head',
     details: { branchName, headRefName: pr.headRefName, refs },
   };
+}
+
+/**
+ * Whether `sha` is the commit the branch was created at or one below it, read
+ * from the branch's oldest reflog entry. False once that entry has expired.
+ */
+async function predatesBranch(
+  worktreePath: string,
+  branchName: string,
+  sha: string,
+): Promise<boolean> {
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['reflog', 'show', '--format=%H%x00%gs', `refs/heads/${branchName}`],
+      { cwd: worktreePath, maxBuffer: MAX_BUFFER },
+    );
+    const created = findBranchCreationCommit(stdout.split('\n').filter(Boolean));
+    if (!created) return false;
+    // Exits non-zero when `sha` is not an ancestor.
+    await exec('git', ['merge-base', '--is-ancestor', sha, created], { cwd: worktreePath });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -31,11 +31,13 @@ import { detectTaskPrs } from './task-prs.js';
 
 const prsByRepo = new Map<string, string[] | Error>();
 // What the task worktree's git answers: the task branch's upstream as
-// `<remote> <remote ref>`, the refs holding each commit, and the task branch's
-// first-parent line down to each commit it is cut off at.
+// `<remote> <remote ref>`, the refs holding each commit, the task branch's
+// first-parent line down to each commit it is cut off at, and the commit the
+// task branch was created at with the commits below it, when its reflog has it.
 let upstream: string;
 let refsByCommit: Map<string, string[]>;
 let ownLineAbove: Map<string, string[]>;
+let createdAt: { sha: string; below: string[] } | null;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -51,6 +53,7 @@ beforeEach(() => {
   upstream = '';
   refsByCommit = new Map();
   ownLineAbove = new Map();
+  createdAt = null;
   mockExec.mockImplementation((_cmd: string, args: string[]) => {
     if (args[0] === 'for-each-ref' && args[1]?.startsWith('--format=%(upstream')) {
       return Promise.resolve({ stdout: `${upstream}\n` });
@@ -66,6 +69,17 @@ beforeEach(() => {
       return line
         ? Promise.resolve({ stdout: line.map((sha) => `${sha}\n`).join('') })
         : Promise.reject(new Error(`fatal: bad revision '${args[3]}'`));
+    }
+    if (args[0] === 'reflog' && createdAt) {
+      return Promise.resolve({
+        stdout: `later\0commit: work\n${createdAt.sha}\0branch: Created from origin/develop\n`,
+      });
+    }
+    if (args[0] === 'merge-base' && args[1] === '--is-ancestor' && createdAt) {
+      const [sha, of] = [args[2] ?? '', args[3]];
+      return of === createdAt.sha && (sha === of || createdAt.below.includes(sha))
+        ? Promise.resolve({ stdout: '' })
+        : Promise.reject(Object.assign(new Error('not an ancestor'), { code: 1 }));
     }
     return Promise.reject(new Error(`unexpected git ${args.join(' ')}`));
   });
@@ -389,18 +403,35 @@ describe('detectTaskPrs', () => {
       refsByCommit.set(head, ['refs/heads/task/x', 'refs/remotes/origin/fix/x']);
     });
 
-    it('adopts its open PR', async () => {
+    it('adopts its open PR whose head is the task’s own', async () => {
       mockListPrsForHead.mockResolvedValue([prHead({ url: openPr })]);
 
       await expect(detectTaskPrs('/wt', 'task/x')).resolves.toEqual({ url: openPr, extras: [] });
       expect(mockListPrsForHead).toHaveBeenCalledWith('/wt', 'fix/x');
-      // An open PR is the branch's like one under the local name, without checking its head.
-      expect(mockExec).not.toHaveBeenCalledWith(
-        'git',
-        expect.arrayContaining(['--contains']),
-        expect.anything(),
-      );
     });
+
+    it('adopts its open PR whose head is above the commit its branch was created at', async () => {
+      createdAt = { sha: 'base1', below: ['base0'] };
+      mockListPrsForHead.mockResolvedValue([prHead({ url: openPr })]);
+
+      await expect(detectTaskPrs('/wt', 'task/x')).resolves.toEqual({ url: openPr, extras: [] });
+    });
+
+    // A worktree imported from `origin/develop` tracks it, with no base branch to skip it by.
+    it.each([
+      ['while it has not moved', head],
+      ['an older head', 'older'],
+    ])(
+      'ignores the open PR of the branch the task branch was created from, %s',
+      async (_, created) => {
+        upstream = 'origin refs/heads/develop';
+        refsByCommit.set(head, ['refs/heads/task/x', 'refs/remotes/origin/develop']);
+        createdAt = { sha: created, below: [head] };
+        mockListPrsForHead.mockResolvedValue([prHead({ url: openPr, headRefName: 'develop' })]);
+
+        await expect(detectTaskPrs('/wt', 'task/x')).resolves.toEqual({ url: null, extras: [] });
+      },
+    );
 
     it('lists its open PRs after those under the local name, once each', async () => {
       prsByRepo.set('/wt@task/x', ['https://github.com/a/b/pull/1', openPr]);
@@ -433,6 +464,8 @@ describe('detectTaskPrs', () => {
     it.each([
       ['its head is shared', { state: 'MERGED' }, ['refs/heads/task/x', 'refs/heads/task/parent']],
       ['the task branch lacks its head', { state: 'MERGED' }, ['refs/remotes/origin/fix/x']],
+      ['it is open and its head shared', {}, ['refs/heads/task/x', 'refs/heads/task/parent']],
+      ['it is open and the task branch lacks its head', {}, ['refs/remotes/origin/fix/x']],
       ['it was closed unmerged', { state: 'CLOSED' }, ['refs/heads/task/x']],
     ])('ignores a PR when %s', async (_, fields, refs) => {
       refsByCommit.set(head, refs);

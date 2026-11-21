@@ -101,6 +101,8 @@ async function preflight(task: Task): Promise<string | null> {
   const result = await invoke<BranchPrDetectionResult>(IPC.DetectPrForBranch, {
     worktreePath: task.worktreePath,
     branchName: task.branchName,
+    // The task may track its base branch, whose PRs are not the task's.
+    ...(task.baseBranch ? { baseBranch: task.baseBranch } : {}),
   });
   if (result.unavailable) throw new Error(UNAVAILABLE[result.unavailable]);
   if (result.url) linkPullRequestToTask(task.id, result.url);

@@ -358,7 +358,7 @@ async function readBranchReflog(repoRoot: string, head: string): Promise<string[
 }
 
 /** Commit a branch was created from, read from its oldest reflog entry. */
-function findBranchCreationCommit(headReflog: string[]): string | null {
+export function findBranchCreationCommit(headReflog: string[]): string | null {
   const [sha, subject] = (headReflog[headReflog.length - 1] ?? '').split('\0');
   return subject?.startsWith('branch: Created from') ? sha : null;
 }

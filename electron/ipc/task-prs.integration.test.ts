@@ -159,3 +159,45 @@ it('ignores an older merged PR of the branch name a later task pushes under', as
   });
   expect(mockListPrsForHead).toHaveBeenCalledWith(worktree, 'fix/typo');
 });
+
+// An imported worktree's base branch may be unknown, so nothing skips the shared branch it tracks.
+it('ignores the open PR of the shared branch an imported worktree was created from', async () => {
+  const root = repository();
+  run(root, ['switch', '-c', 'develop']);
+  commit(root, 'develop work');
+  run(root, ['push', '-u', 'origin', 'develop']);
+  run(root, ['switch', 'main']);
+  const worktree = path.join(root, '.worktrees', 'feature');
+  run(root, ['worktree', 'add', '-b', 'feature', worktree, 'origin/develop']);
+  const developPr: PrHead = {
+    url: PR_URL,
+    state: 'OPEN',
+    headRefOid: run(root, ['rev-parse', 'develop']),
+    headRefName: 'develop',
+    mergeCommitOid: '',
+  };
+  mockListPrsForHead.mockResolvedValue([developPr]);
+
+  await expect(detectTaskPrs(worktree, 'feature')).resolves.toEqual({ url: null, extras: [] });
+  expect(mockListPrsForHead).toHaveBeenCalledWith(worktree, 'develop');
+
+  commit(worktree, 'feature work');
+  await expect(detectTaskPrs(worktree, 'feature')).resolves.toEqual({ url: null, extras: [] });
+});
+
+it('adopts the open PR of the branch the task pushed under another name', async () => {
+  const root = repository();
+  const worktree = task(root, 'task/x');
+  pushAs(worktree, 'fix/x');
+  mockListPrsForHead.mockResolvedValue([
+    {
+      url: PR_URL,
+      state: 'OPEN',
+      headRefOid: run(worktree, ['rev-parse', 'HEAD']),
+      headRefName: 'fix/x',
+      mergeCommitOid: '',
+    },
+  ]);
+
+  await expect(detectTaskPrs(worktree, 'task/x')).resolves.toEqual({ url: PR_URL, extras: [] });
+});
