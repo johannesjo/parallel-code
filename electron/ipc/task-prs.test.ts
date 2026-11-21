@@ -453,6 +453,7 @@ describe('detectTaskPrs', () => {
     });
 
     it('prefers an open PR to a merged one', async () => {
+      refsByCommit.set('def456', ['refs/heads/task/x', 'refs/remotes/origin/fix/x']);
       mockListPrsForHead.mockResolvedValue([
         prHead({ url: mergedPr, state: 'MERGED' }),
         prHead({ url: openPr, headRefOid: 'def456' }),
