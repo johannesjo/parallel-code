@@ -168,6 +168,11 @@ export function isPanelFocusedPrefix(taskId: string, prefix: string): boolean {
   return store.focusedPanel[taskId]?.startsWith(prefix) ?? false;
 }
 
+/** Record a task's focused panel without moving DOM focus, for a task in the background. */
+export function recordTaskFocusedPanel(taskId: string, panel: string): void {
+  setStore('focusedPanel', taskId, normalizeTaskPanel(taskId, panel));
+}
+
 export function setTaskFocusedPanel(taskId: string, panel: string): void {
   const normalizedPanel = normalizeTaskPanel(taskId, panel);
   setStore('focusedPanel', taskId, normalizedPanel);

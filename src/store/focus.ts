@@ -33,6 +33,7 @@ export {
   defaultPanelFor,
   getTaskFocusedPanel,
   isAiTerminalPanel,
+  recordTaskFocusedPanel,
   registerFocusFn,
   scrollTaskElementIntoView,
   setTaskFocusedPanel,

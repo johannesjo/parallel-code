@@ -23,6 +23,7 @@ import {
   clearPrefillPrompt,
   getProject,
   setTaskFocusedPanel,
+  recordTaskFocusedPanel,
   clearPendingAction,
   showNotification,
   setTaskSplitMode,
@@ -495,6 +496,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const [useSplit, setUseSplit] = createSignal(false);
   // The user can hide the split layout's side column; the setting is global.
   const sideShown = () => useSplit() && !store.taskSideCollapsed;
+  const sideHidden = () => useSplit() && store.taskSideCollapsed;
   createEffect(() => {
     const w = panelWidth();
     const focused = document.activeElement;
@@ -531,22 +533,29 @@ export function TaskPanel(props: TaskPanelProps) {
     on(
       () => store.focusedPanel[props.task.id],
       (panel) => {
-        if (panel && useSplit() && store.taskSideCollapsed && isSideColumnPanel(panel)) {
+        if (panel && sideHidden() && isSideColumnPanel(panel)) {
           setTaskSideCollapsed(false);
         }
       },
       { defer: true },
     ),
   );
-  const toggleSideColumn = () => {
-    const collapsing = !store.taskSideCollapsed;
-    const panel = store.focusedPanel[props.task.id];
-    // Focus can't stay in a pane that leaves the layout.
-    if (collapsing && panel && isSideColumnPanel(panel)) {
-      setTaskFocusedPanel(props.task.id, 'ai-terminal');
-    }
-    setTaskSideCollapsed(collapsing);
-  };
+  // Focus can't stay in a pane that leaves the layout. The setting is global,
+  // so each task reconciles its own focus, whichever task's pill hid the
+  // column, and also when it widens into the split with the column hidden.
+  createEffect(
+    on(sideHidden, (hidden) => {
+      if (!hidden) return;
+      const panel = store.focusedPanel[props.task.id];
+      if (!panel || !isSideColumnPanel(panel)) return;
+      if (props.isActive) {
+        setTaskFocusedPanel(props.task.id, 'ai-terminal');
+      } else {
+        recordTaskFocusedPanel(props.task.id, 'ai-terminal');
+      }
+    }),
+  );
+  const toggleSideColumn = () => setTaskSideCollapsed(!store.taskSideCollapsed);
 
   const editingProject = () => {
     const id = editingProjectId();
@@ -1000,7 +1009,11 @@ export function TaskPanel(props: TaskPanelProps) {
       ref={mainRef}
       style={{ height: '100%', 'min-height': '0', display: 'flex', 'flex-direction': 'column' }}
     >
-      <div class="task-main-body" style={{ flex: '1', 'min-height': '0' }}>
+      <div
+        class="task-main-body"
+        classList={{ 'side-collapsed': sideHidden() }}
+        style={{ flex: '1', 'min-height': '0' }}
+      >
         {/* Layout flips swap containers; the terminal, composer, notes, and canvas stay mounted. */}
         <Show
           when={useSplit()}

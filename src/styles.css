@@ -2207,7 +2207,8 @@ html:not(
 
 /* The side column's toggle straddles the column boundary, anchored to its
    resize handle so it follows a drag. The wrapper scopes the anchor name to
-   its own task. Hidden, the column leaves the toggle at the body's right edge. */
+   its own task. Hidden, the column leaves the toggle in a gutter at the body's
+   right edge, clear of the terminal's scrollbar and last column. */
 .task-main-body {
   position: relative;
   anchor-scope: --task-side-edge;
@@ -2218,6 +2219,9 @@ html:not(
 .task-main-body > .task-side-toggle {
   left: anchor(--task-side-edge center);
   translate: -50% -50%;
+}
+.task-main-body.side-collapsed {
+  padding-right: 20px;
 }
 .task-main-body > .task-side-toggle.collapsed {
   left: auto;

@@ -80,6 +80,7 @@ import {
   navigateRow,
   navigateTask,
   isPanelFocused,
+  isSideColumnPanel,
   registerAction,
   registerFocusFn,
   scrollTaskElementIntoView,
@@ -424,6 +425,20 @@ describe('focus navigation neighbor map', () => {
     navigateRow('down');
 
     expect(mockStore.focusedPanel['task-1']).toBe('shell:0');
+  });
+});
+
+describe('isSideColumnPanel', () => {
+  it('counts the shells, notes and changed files, which a new shell or a jump there must reveal', () => {
+    for (const panel of ['shell:0', 'shell-toolbar:0', 'notes', 'changed-files']) {
+      expect(isSideColumnPanel(panel), panel).toBe(true);
+    }
+  });
+
+  it('leaves out the terminal column and the canvas', () => {
+    for (const panel of ['title', 'prompt', 'terminal', 'ai-terminal', 'ai-terminal:x', 'canvas']) {
+      expect(isSideColumnPanel(panel), panel).toBe(false);
+    }
   });
 });
 
