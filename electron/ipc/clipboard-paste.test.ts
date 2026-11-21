@@ -1,7 +1,16 @@
+import path from 'path';
+import { pathToFileURL } from 'url';
 import { describe, expect, it, vi } from 'vitest';
 import { osClipboardType, resolveClipboardPaste } from './clipboard-paste.js';
 
 type Payload = string | Uint8Array<ArrayBuffer>;
+
+/** An absolute path on this platform (with a drive letter on Windows, where a
+ *  file URL without one does not convert), and its file URL. */
+function file(posixPath: string): { path: string; url: string } {
+  const absolute = path.resolve(posixPath);
+  return { path: absolute, url: pathToFileURL(absolute).href };
+}
 
 /** One clipboard entry exposing each payload under its type, the way
  *  Electron's `clipboard.read()` reports a single OS clipboard. */
@@ -29,26 +38,31 @@ function resolve(payloads: Record<string, Payload>, text = '') {
 
 describe('resolveClipboardPaste', () => {
   it('uses the macOS file URL first', async () => {
+    const picked = file('/Users/me/a b.png');
+    expect(picked.url).toContain('a%20b.png');
     const { result } = resolve({
-      [osClipboardType('public.file-url')]: 'file:///Users/me/a%20b.png\0',
-      'text/uri-list': 'file:///other',
+      [osClipboardType('public.file-url')]: `${picked.url}\0`,
+      'text/uri-list': file('/other').url,
     });
-    await expect(result).resolves.toEqual({ kind: 'file', path: '/Users/me/a b.png' });
+    await expect(result).resolves.toEqual({ kind: 'file', path: picked.path });
   });
 
   it('prefers the GNOME copied-files list over text/uri-list', async () => {
+    const one = file('/home/me/one.txt');
     const { result } = resolve({
-      [osClipboardType('x-special/gnome-copied-files')]: 'copy\nfile:///home/me/one.txt',
-      'text/uri-list': 'file:///home/me/two.txt',
+      [osClipboardType('x-special/gnome-copied-files')]: `copy\n${one.url}`,
+      'text/uri-list': file('/home/me/two.txt').url,
     });
-    await expect(result).resolves.toEqual({ kind: 'file', path: '/home/me/one.txt' });
+    await expect(result).resolves.toEqual({ kind: 'file', path: one.path });
   });
 
   it('reads the first file of a CRLF text/uri-list, skipping comments', async () => {
+    const one = file('/home/me/one.txt');
+    const two = file('/home/me/two.txt');
     const { result } = resolve({
-      'text/uri-list': '# from KDE\r\nfile:///home/me/one.txt\r\nfile:///home/me/two.txt',
+      'text/uri-list': `# from KDE\r\n${one.url}\r\n${two.url}`,
     });
-    await expect(result).resolves.toEqual({ kind: 'file', path: '/home/me/one.txt' });
+    await expect(result).resolves.toEqual({ kind: 'file', path: one.path });
   });
 
   it('saves a PNG image and returns its path', async () => {
