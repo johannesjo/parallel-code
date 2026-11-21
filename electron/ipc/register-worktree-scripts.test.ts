@@ -177,6 +177,45 @@ it('keeps the merge-time cleanup path unchanged without a teardown script', asyn
 });
 
 it.skipIf(process.platform === 'win32')(
+  'lets a running suspend script end before a merge without teardown removes the worktree',
+  async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-merge-suspend-'));
+    tempDirs.push(projectRoot);
+    const worktreePath = path.join(projectRoot, '.worktrees', 'task', 'x');
+    const gitCmd = (args: string[]) =>
+      execFileSync('git', args, { cwd: projectRoot, stdio: 'ignore' });
+    gitCmd(['init', '--quiet', '--initial-branch=main']);
+    gitCmd(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
+    gitCmd(['worktree', 'add', '-b', 'task/x', worktreePath]);
+    vi.spyOn(DelegationService.prototype, 'assertDirectMergeAllowed').mockResolvedValue();
+    vi.spyOn(DelegationService.prototype, 'recordDirectMerge').mockResolvedValue();
+    let suspendedAtMerge = false;
+    vi.spyOn(git, 'mergeTask').mockImplementation(async () => {
+      suspendedAtMerge = fs.existsSync(path.join(worktreePath, 'suspended'));
+      return { main_branch: 'main', lines_added: 0, lines_removed: 0 };
+    });
+
+    const suspend = handlers.get(IPC.RunWorktreeLifecycleScript)?.(undefined, {
+      kind: 'suspend',
+      projectRoot,
+      worktreePath,
+      branchName: 'task/x',
+      script: 'sleep 0.3\ntouch suspended',
+    });
+    await handlers.get(IPC.MergeTask)?.(undefined, {
+      projectRoot,
+      branchName: 'task/x',
+      worktreePath,
+      squash: false,
+      cleanup: true,
+    });
+
+    expect(await suspend).toEqual({});
+    expect(suspendedAtMerge).toBe(true);
+  },
+);
+
+it.skipIf(process.platform === 'win32')(
   'runs suspend and then resume in the worktree with the script variables and project env',
   async () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-suspend-'));

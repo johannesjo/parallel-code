@@ -25,6 +25,7 @@ vi.mock('../github/pr-checkout.js', () => ({
 }));
 
 import { createPrTask, createTask, deleteTask } from './tasks.js';
+import { runWorktreeScript } from './worktree-scripts.js';
 import { reconcileWorktreeIntents } from './worktree-intents.js';
 
 const tempDirs: string[] = [];
@@ -163,6 +164,32 @@ describe.skipIf(process.platform === 'win32')('deleteTask teardown', () => {
 
     expect(result).toEqual({});
     expect(mocks.removeWorktree).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a suspend script still running in the worktree, without a teardown', async () => {
+    const { projectRoot, worktreePath } = setup();
+    let suspendedAtRemoval = false;
+    mocks.removeWorktree.mockImplementation(async () => {
+      suspendedAtRemoval = fs.existsSync(path.join(worktreePath, 'suspended'));
+    });
+
+    // Minimized, then closed while the suspend script still runs.
+    const suspend = runWorktreeScript({
+      worktreePath,
+      projectRoot,
+      script: 'sleep 0.3\ntouch suspended',
+    });
+    const result = await deleteTask({
+      agentIds: [],
+      branchName: 'task/x',
+      deleteBranch: true,
+      projectRoot,
+      worktreePath,
+    });
+
+    expect((await suspend).status).toBe('passed');
+    expect(suspendedAtRemoval).toBe(true);
+    expect(result).toEqual({});
   });
 });
 

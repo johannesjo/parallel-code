@@ -200,7 +200,8 @@ function appendTail(tail: string, chunk: string): string {
 
 // Scripts on one worktree run one at a time, in the order they were asked for:
 // a resume sent while the suspend is still stopping services waits for it, and
-// so does the teardown of a task closed right after it was minimized.
+// so do the teardown and the removal of a task closed right after it was
+// minimized.
 const worktreeQueues = new Map<string, Promise<unknown>>();
 
 function inWorktreeQueue<T>(key: string, run: () => Promise<T>): Promise<T> {
@@ -211,6 +212,16 @@ function inWorktreeQueue<T>(key: string, run: () => Promise<T>): Promise<T> {
     if (worktreeQueues.get(key) === tail) worktreeQueues.delete(key);
   });
   return next;
+}
+
+/**
+ * Resolves once every script already asked for in the worktree has ended.
+ * Removing a worktree waits for it, so a task closed or merged right after it
+ * was minimized is not removed under its running suspend script. Scripts time
+ * out, so the wait is bounded.
+ */
+export function waitForWorktreeScripts(worktreePath: string): Promise<void> {
+  return inWorktreeQueue(realpathOrResolve(worktreePath), async () => undefined);
 }
 
 /** Runs a worktree script (teardown, suspend or resume) in the worktree, after

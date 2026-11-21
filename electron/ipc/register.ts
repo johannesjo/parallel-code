@@ -88,6 +88,7 @@ import {
   optionalWorktreeScript,
   runWorktreeScript,
   validateWorktreeScript,
+  waitForWorktreeScripts,
 } from './worktree-scripts.js';
 import { scanChange } from './change-scan.js';
 import {
@@ -1225,6 +1226,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     // outside the repo lock, and the worktree is removed afterwards, so a
     // failed merge never tears anything down.
     const deferCleanup = cleanup && teardownScript !== undefined;
+    const target = worktreePath ?? worktreePathFor(projectRoot, branchName);
+    // Without a teardown, the merge removes the worktree itself: let a suspend
+    // or resume script still running there end first (teardown queues behind it).
+    if (cleanup && !deferCleanup) await waitForWorktreeScripts(target);
     let result = await mergeTask(
       projectRoot,
       branchName,
@@ -1247,7 +1252,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
           /* already gone */
         }
       }
-      const target = worktreePath ?? worktreePathFor(projectRoot, branchName);
       const teardown = await runWorktreeScript({
         worktreePath: target,
         projectRoot,
