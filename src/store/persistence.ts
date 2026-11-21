@@ -583,6 +583,7 @@ export async function saveState(): Promise<void> {
     kanbanHideDetails: store.kanbanHideDetails || undefined,
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,
+    taskSideCollapsed: store.taskSideCollapsed || undefined,
     briefModel: store.briefModel,
     showCards: store.showCards ? undefined : false,
     cards: persistCardDefinitions(store.cardDefinitions),
@@ -810,6 +811,7 @@ interface LegacyPersistedState {
   kanbanHideDetails?: unknown;
   modelTaskNames?: unknown;
   taskNameModel?: unknown;
+  taskSideCollapsed?: unknown;
   briefModel?: unknown;
   showCards?: unknown;
   cards?: unknown;
@@ -1114,6 +1116,7 @@ export async function loadState(): Promise<void> {
       s.taskNameModel = isTaskNameModelId(raw.taskNameModel)
         ? raw.taskNameModel
         : DEFAULT_TASK_NAME_MODEL;
+      s.taskSideCollapsed = raw.taskSideCollapsed === true;
       // The default AI model used to follow the naming model, with Claude upgraded to Sonnet.
       s.briefModel = isBriefModelId(raw.briefModel)
         ? raw.briefModel

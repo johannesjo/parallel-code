@@ -656,6 +656,7 @@ export interface PersistedState {
   kanbanHideDetails?: boolean;
   modelTaskNames?: boolean;
   taskNameModel?: TaskNameModelId;
+  taskSideCollapsed?: boolean;
   briefModel?: BriefModelId;
   showCards?: boolean;
   cards?: unknown;
@@ -820,6 +821,8 @@ export interface AppStore {
   /** Opt-in: ask a cheap model for a short title when a task is named from its prompt. */
   modelTaskNames: boolean;
   taskNameModel: TaskNameModelId;
+  /** The side column of a two-column task (changed files, notes, shells) is hidden. */
+  taskSideCollapsed: boolean;
   /** The default AI model: AI cards set to "default", and PR drafts. */
   briefModel: BriefModelId;
   /** Master switch for cards: off, none run or show. */
