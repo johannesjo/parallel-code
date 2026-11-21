@@ -957,14 +957,14 @@ export function PromptInput(props: PromptInputProps) {
       }
       props.onSend?.(val);
       setText('');
-      // A box shown only for a staged draft goes once that draft is sent,
-      // back to the terminal-only layout the user chose in Settings.
-      if (mode === 'manual' && !store.showPromptInput) {
-        const wasRevealed = store.tasks[props.taskId]?.promptInputRevealed === true;
-        concealTaskPromptInput(props.taskId);
-        if (wasRevealed && isPanelFocused(props.taskId, 'prompt')) {
-          setTaskFocusedPanel(props.taskId, 'ai-terminal');
-        }
+      // A box shown only for a staged draft or a queued plan goes once it is
+      // sent, back to the terminal-only layout the user chose in Settings. The
+      // reveal ends with the send whatever the setting, so turning the setting
+      // off later hides this box too.
+      const wasRevealed = store.tasks[props.taskId]?.promptInputRevealed === true;
+      concealTaskPromptInput(props.taskId);
+      if (wasRevealed && !store.showPromptInput && isPanelFocused(props.taskId, 'prompt')) {
+        setTaskFocusedPanel(props.taskId, 'ai-terminal');
       }
     } catch (e) {
       console.error('Failed to send prompt:', e);
