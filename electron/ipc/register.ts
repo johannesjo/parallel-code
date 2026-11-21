@@ -527,9 +527,6 @@ function createThrottledForwarder(
  * creates `info/` if missing. Best-effort: never throws, since failing to
  * git-exclude a generated file must not block coordinator startup.
  */
-/** Folder the last open dialog's pick sat in; where the next one starts. */
-let lastOpenDialogPath: string | undefined;
-
 export function registerAllHandlers(win: BrowserWindow): void {
   const notify = windowNotifier(win);
   ipcMain.handle(IPC.AgentHookSnapshot, () => getAgentActivitySnapshot());
@@ -1913,6 +1910,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return result.response;
   });
 
+  /** Folder the last open dialog's pick sat in; where the next one starts. */
+  let lastOpenDialogPath: string | undefined;
   ipcMain.handle(IPC.DialogOpen, async (_e, args) => {
     const properties: Array<'openDirectory' | 'openFile' | 'multiSelections'> = [];
     if (args?.directory) properties.push('openDirectory');

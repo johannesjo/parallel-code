@@ -93,6 +93,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build -- --universal --publish always
 
+      # Electron 44 and later do not start on macOS 12. electron-updater skips
+      # an update whose minimumSystemVersion is above os.release() (the Darwin
+      # version: 22 is macOS 13), so macOS 12 stays on the last Electron 42
+      # release. electron-builder does not write the field, so add it here.
+      - name: Require macOS 13 in the update feed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          feed=release/latest-mac.yml
+          if grep -q '^minimumSystemVersion:' "$feed"; then
+            echo "::error::$feed already sets minimumSystemVersion; check its value and drop this step"
+            exit 1
+          fi
+          printf 'minimumSystemVersion: 22.0.0\n' >> "$feed"
+          gh release upload "$GITHUB_REF_NAME" "$feed" --clobber
+
       - name: Cleanup signing artifacts
         if: always()
         run: |
