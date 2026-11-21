@@ -21,6 +21,7 @@ type MockStore = {
   showPromptInput: boolean;
   sidebarVisible: boolean;
   taskSplitMode: Record<string, boolean>;
+  taskSideCollapsed: boolean;
   shellLayoutOverride: 'row' | 'grid' | 'column' | null;
   taskShellAutoLayout: Record<string, 'row' | 'grid' | 'column'>;
   pendingAction: { type: 'close' | 'finish'; taskId: string } | null;
@@ -79,6 +80,7 @@ import {
   navigateRow,
   navigateTask,
   isPanelFocused,
+  isSideColumnPanel,
   registerAction,
   registerFocusFn,
   scrollTaskElementIntoView,
@@ -125,6 +127,7 @@ beforeEach(() => {
     showPromptInput: true,
     sidebarVisible: true,
     taskSplitMode: {},
+    taskSideCollapsed: false,
     shellLayoutOverride: null,
     taskShellAutoLayout: {},
     pendingAction: null,
@@ -319,6 +322,24 @@ describe('focus navigation neighbor map', () => {
     expect(mockStore.focusedPanel['task-1']).toBe('changed-files');
   });
 
+  it('keeps a split task without its hidden side column to the terminal column', () => {
+    setTask('task-1', {
+      shellAgentIds: ['shell-1'],
+    });
+    setTask('task-2');
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    mockStore.taskSplitMode['task-1'] = true;
+    mockStore.taskSideCollapsed = true;
+    mockStore.showPromptInput = false;
+    mockStore.focusedPanel['task-1'] = 'ai-terminal';
+
+    navigateRow('down');
+    expect(mockStore.focusedPanel['task-1']).toBe('ai-terminal');
+
+    navigateColumn('right');
+    expect(mockStore.activeTaskId).toBe('task-2');
+  });
+
   it('falls back from vanished focused panels before navigating', () => {
     setTask('task-1');
     mockStore.focusedPanel['task-1'] = 'removed-panel';
@@ -404,6 +425,20 @@ describe('focus navigation neighbor map', () => {
     navigateRow('down');
 
     expect(mockStore.focusedPanel['task-1']).toBe('shell:0');
+  });
+});
+
+describe('isSideColumnPanel', () => {
+  it('counts the shells, notes and changed files, which a new shell or a jump there must reveal', () => {
+    for (const panel of ['shell:0', 'shell-toolbar:0', 'notes', 'changed-files']) {
+      expect(isSideColumnPanel(panel), panel).toBe(true);
+    }
+  });
+
+  it('leaves out the terminal column and the canvas', () => {
+    for (const panel of ['title', 'prompt', 'terminal', 'ai-terminal', 'ai-terminal:x', 'canvas']) {
+      expect(isSideColumnPanel(panel), panel).toBe(false);
+    }
   });
 });
 

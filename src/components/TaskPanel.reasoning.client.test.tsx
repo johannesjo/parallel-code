@@ -17,8 +17,10 @@ import {
   showNotification,
   toggleFocusMode,
   setTaskFocusedPanel,
+  recordTaskFocusedPanel,
   setShowCards,
   setActiveTask,
+  setTaskSideCollapsed,
 } from '../store/store';
 import { GIST_LABEL } from '../lib/understanding-tour';
 import type { Task } from '../store/types';
@@ -55,6 +57,7 @@ vi.mock('../store/store', () => {
     tasks: { parent: { id: 'parent', name: 'Parent task', collapsed: false } },
     focusMode: false,
     taskSplitMode: {} as Record<string, unknown>,
+    taskSideCollapsed: false,
     themePreset: 'obsidian',
     showPlans: true,
     focusedPanel: { task: 'prompt' },
@@ -88,10 +91,15 @@ vi.mock('../store/store', () => {
     deletePanelUserSize: vi.fn(),
     setPanelUserSize: vi.fn(),
     setTaskSplitMode: vi.fn(),
+    setTaskSideCollapsed: (on: boolean) => setStore('taskSideCollapsed', on),
+    isSideColumnPanel: (panel: string) => ['notes', 'changed-files'].includes(panel),
     registerFocusFn: vi.fn(),
     unregisterFocusFn: vi.fn(),
     setActiveAgent: vi.fn(),
     setTaskFocusedPanel: vi.fn((_taskId: string, panel: string) =>
+      setStore('focusedPanel', 'task', panel),
+    ),
+    recordTaskFocusedPanel: vi.fn((_taskId: string, panel: string) =>
       setStore('focusedPanel', 'task', panel),
     ),
     triggerFocus: vi.fn(),
@@ -306,6 +314,7 @@ afterEach(() => {
   dispose?.();
   toggleFocusMode(false);
   setTaskFocusedPanel('task', 'prompt');
+  setTaskSideCollapsed(false);
   document.body.replaceChildren();
   channels.length = 0;
   vi.mocked(showNotification).mockClear();
@@ -864,6 +873,125 @@ it('gives the focus support column height to changed files until a shell opens, 
     expect(filesCell.style.flex).toBe('1 1 0px');
   } finally {
     width.mockRestore();
+  }
+});
+
+it('hides the side column with its toggle and brings it back for focus, keeping the terminal', () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  try {
+    toggleFocusMode(true);
+    const { container } = mountEmptyTask();
+    const terminal = expectDefined(container.querySelector('.test-terminal'));
+    const toggle = expectDefined(container.querySelector<HTMLButtonElement>('.task-side-toggle'));
+    expect(toggle.getAttribute('aria-label')).toBe('Hide side panel');
+    expect(container.querySelector('.test-notes')).not.toBeNull();
+
+    setTaskFocusedPanel('task', 'notes');
+    toggle.click();
+    expect(container.querySelector('.test-notes')).toBeNull();
+    expect(container.querySelector('.test-files')).toBeNull();
+    expect(container.querySelector('.test-terminal')).toBe(terminal);
+    // Focus leaves the hidden notes instead of bringing them straight back.
+    expect(store.focusedPanel.task).toBe('ai-terminal');
+    expect(toggle.getAttribute('aria-label')).toBe('Show side panel');
+    expect(toggle.classList.contains('collapsed')).toBe(true);
+
+    toggle.click();
+    expect(container.querySelector('.test-notes')).not.toBeNull();
+    toggle.click();
+    // A keyboard jump into the hidden column shows it again.
+    setTaskFocusedPanel('task', 'changed-files');
+    expect(container.querySelector('.test-files')).not.toBeNull();
+    expect(container.querySelector('.test-terminal')).toBe(terminal);
+  } finally {
+    width.mockRestore();
+  }
+});
+
+it('shows the card line in the header while the side column, and its cards pane, is hidden', () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  try {
+    toggleFocusMode(true);
+    const container = document.createElement('div');
+    document.body.append(container);
+    dispose = render(
+      () => <TaskPanel task={{ ...agentTask(), gitIsolation: 'worktree' }} isActive />,
+      container,
+    );
+    const header = expectDefined(container.querySelector<HTMLElement>('.task-header-stack'));
+    expect(container.querySelector('.test-cards-pane')).not.toBeNull();
+    expect(container.querySelector('.test-card-line')).toBeNull();
+
+    setTaskSideCollapsed(true);
+    expect(container.querySelector('.test-cards-pane')).toBeNull();
+    expect(container.querySelector('.test-card-line')).not.toBeNull();
+    expect(header.style.flex).toBe('0 0 94px');
+
+    setTaskSideCollapsed(false);
+    expect(container.querySelector('.test-cards-pane')).not.toBeNull();
+    expect(container.querySelector('.test-card-line')).toBeNull();
+  } finally {
+    width.mockRestore();
+  }
+});
+
+it("moves a background task's focus out of the side column another task's toggle hid", () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  try {
+    toggleFocusMode(true);
+    setTaskFocusedPanel('task', 'notes');
+    const container = document.createElement('div');
+    document.body.append(container);
+    dispose = render(() => <TaskPanel task={agentTask()} isActive={false} />, container);
+    vi.mocked(setTaskFocusedPanel).mockClear();
+    vi.mocked(recordTaskFocusedPanel).mockClear();
+
+    // The setting is global: another task's toggle hides this column too.
+    setTaskSideCollapsed(true);
+    expect(store.focusedPanel.task).toBe('ai-terminal');
+    // Recorded without moving DOM focus, which belongs to the active task.
+    expect(recordTaskFocusedPanel).toHaveBeenCalledWith('task', 'ai-terminal');
+    expect(setTaskFocusedPanel).not.toHaveBeenCalled();
+    expect(container.querySelector('.test-notes')).toBeNull();
+  } finally {
+    width.mockRestore();
+  }
+});
+
+it('moves focus out of the hidden side column when the task widens into the split', () => {
+  const observers: ResizeObserverCallback[] = [];
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        observers.push(callback);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  try {
+    toggleFocusMode(true);
+    setTaskSideCollapsed(true);
+    const { container } = mountEmptyTask();
+    // Stacked, the notes are on screen and can hold focus.
+    setTaskFocusedPanel('task', 'notes');
+    expect(store.taskSideCollapsed).toBe(true);
+    expect(container.querySelector('.task-side-toggle')).toBeNull();
+
+    width.mockReturnValue(1200);
+    for (const notify of observers) {
+      notify([{ contentRect: { width: 1200 } } as ResizeObserverEntry], {} as ResizeObserver);
+    }
+    expect(container.querySelector('.task-side-toggle')).not.toBeNull();
+    expect(store.focusedPanel.task).toBe('ai-terminal');
+    expect(store.taskSideCollapsed).toBe(true);
+    expect(container.querySelector('.test-notes')).toBeNull();
+  } finally {
+    width.mockRestore();
+    vi.unstubAllGlobals();
   }
 });
 

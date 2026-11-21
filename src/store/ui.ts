@@ -182,6 +182,10 @@ export function setTaskNameModel(model: TaskNameModelId): void {
   setStore('taskNameModel', model);
 }
 
+export function setTaskSideCollapsed(collapsed: boolean): void {
+  setStore('taskSideCollapsed', collapsed);
+}
+
 export function setBriefModel(model: BriefModelId): void {
   setStore('briefModel', model);
 }
