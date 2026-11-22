@@ -44,6 +44,15 @@ export async function runGhJson(args: string[], cwd?: string, input?: string): P
   return JSON.parse(await runGh(args, cwd, input)) as unknown;
 }
 
+/** gh found no remote on a GitHub host, so the repository can have no PR. */
+export function isGhNoGitHubRemoteError(err: unknown): boolean {
+  const stderr = (err as { stderr?: unknown })?.stderr;
+  return (
+    typeof stderr === 'string' &&
+    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
+  );
+}
+
 /** Maps a failed `gh` invocation to a message the user can act on. */
 export function describeGhError(err: unknown): string {
   const e = (err ?? {}) as { stderr?: unknown; killed?: unknown; message?: unknown };
@@ -53,11 +62,7 @@ export function describeGhError(err: unknown): string {
   }
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
   // Before the auth check: gh's unknown-host error also suggests `gh auth login`.
-  if (
-    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
-  ) {
-    return 'This project has no GitHub remote.';
-  }
+  if (isGhNoGitHubRemoteError(err)) return 'This project has no GitHub remote.';
   if (/not logged into|authentication required|gh auth login/i.test(stderr)) {
     return 'GitHub CLI is not logged in. Run "gh auth login" in a terminal.';
   }

@@ -19,7 +19,13 @@ vi.mock('./persistence', () => ({
 
 import { setStore, store } from './core';
 import { getMergedTasksTodayCount } from './completion';
-import { getPrChecks, startPrChecksSubscription, taskPrsKnown, taskPrsProbed } from './pr-checks';
+import {
+  getPrChecks,
+  searchTaskPrs,
+  startPrChecksSubscription,
+  taskPrsKnown,
+  taskPrsProbed,
+} from './pr-checks';
 import { taskLeadPr, taskLeadWatchId, taskLinkedPrUrl } from './task-prs';
 import {
   extraPrWatchId,
@@ -811,5 +817,93 @@ describe('taskLeadPr', () => {
     markPrimaryPrClosed('lead', primary);
     expect(taskLeadPr(fromPr)).toBeUndefined();
     expect(taskLinkedPrUrl(fromPr)).toBe(primary);
+  });
+});
+
+describe('searchTaskPrs', () => {
+  const PR = 'https://github.com/acme/app/pull/12';
+  const worktreeTask = (): Task => ({
+    id: 'task-1',
+    name: 'Task',
+    projectId: 'project-1',
+    branchName: 'task/task-1',
+    worktreePath: '/repo/.worktrees/task-1',
+    agentIds: [],
+    shellAgentIds: [],
+    notes: '',
+    lastPrompt: '',
+    gitIsolation: 'worktree',
+  });
+  const detectCalls = () =>
+    mockInvoke.mock.calls.filter(([channel]) => channel === IPC.DetectPrForBranch).length;
+
+  /** Runs `body` with PR watching started and its startup probe settled. */
+  async function withSubscription(body: () => Promise<void>): Promise<void> {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', { 'task-1': worktreeTask() });
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    await flushPromises();
+    try {
+      await body();
+    } finally {
+      disposeRoot?.();
+    }
+  }
+
+  it('probes again within the retry window and links the PR it finds', async () => {
+    await withSubscription(async () => {
+      expect(detectCalls()).toBe(1);
+      mockInvoke.mockResolvedValueOnce({ url: PR });
+      await expect(searchTaskPrs('task-1')).resolves.toBe('done');
+      expect(detectCalls()).toBe(2);
+      expect(store.tasks['task-1'].prUrl).toBe(PR);
+    });
+  });
+
+  it('fails when the task repository could not be listed or the probe throws', async () => {
+    await withSubscription(async () => {
+      mockInvoke.mockResolvedValueOnce({ url: null, extras: [], failedRepos: ['.'] });
+      await expect(searchTaskPrs('task-1')).resolves.toBe('failed');
+      mockInvoke.mockRejectedValueOnce(new Error('offline'));
+      await expect(searchTaskPrs('task-1')).resolves.toBe('failed');
+    });
+  });
+
+  it('is done without gh, but fails while gh is logged out and asks again later', async () => {
+    await withSubscription(async () => {
+      mockInvoke.mockResolvedValueOnce({ url: null, unavailable: 'missing' });
+      await expect(searchTaskPrs('task-1')).resolves.toBe('done');
+      mockInvoke.mockResolvedValueOnce({ url: null, unavailable: 'auth' });
+      await expect(searchTaskPrs('task-1')).resolves.toBe('failed');
+      // Logged in since: Finish still asks, though background probing stopped.
+      mockInvoke.mockResolvedValueOnce({ url: PR });
+      await expect(searchTaskPrs('task-1')).resolves.toBe('done');
+      expect(store.tasks['task-1'].prUrl).toBe(PR);
+    });
+  });
+
+  it('probes afresh after a probe that was already running', async () => {
+    await withSubscription(async () => {
+      let answer: (value: unknown) => void = () => {};
+      mockInvoke.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+      const first = searchTaskPrs('task-1');
+      // The running probe may have started before the PR was opened.
+      mockInvoke.mockResolvedValueOnce({ url: PR });
+      const second = searchTaskPrs('task-1');
+      answer({ url: null, extras: [] });
+      await expect(first).resolves.toBe('done');
+      await expect(second).resolves.toBe('done');
+      expect(detectCalls()).toBe(3);
+      expect(store.tasks['task-1'].prUrl).toBe(PR);
+    });
+  });
+
+  it('is done without PR watching', async () => {
+    await expect(searchTaskPrs('task-1')).resolves.toBe('done');
+    expect(detectCalls()).toBe(0);
   });
 });

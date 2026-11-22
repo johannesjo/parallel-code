@@ -1524,7 +1524,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
         return { url: null, unavailable: 'auth' };
       }
       console.warn('[pr-checks] branch PR detection failed:', (err as Error)?.message ?? err);
-      return { url: null };
+      // Unlisted, not PR-less: Finish then asks before merging locally.
+      return { url: null, failedRepos: ['.'] };
     });
   });
   ipcMain.handle(IPC.RefreshPrChecksWatcher, (_e, args) => {

@@ -1,4 +1,5 @@
 import { Show, batch, createSignal, type JSX } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { closeTaskNow } from './CloseTaskDialog';
@@ -13,8 +14,10 @@ import {
   mergeTask,
   pushTask,
   refreshBranchFacts,
+  searchTaskPrs,
   sendPrompt,
   store,
+  type TaskPrSearch,
 } from '../store/store';
 import {
   getPullRequestDetails,
@@ -44,6 +47,7 @@ vi.mock('../store/store', () => ({
   getProjectPath: () => '/repo',
   getPrChecks: vi.fn(() => undefined),
   getVerifyCommand: () => undefined,
+  searchTaskPrs: vi.fn(async () => 'done'),
   getTaskChecks: vi.fn(() => []),
   getCheckSuiteUiState: () => ({}),
   isCheckSuiteBusy: () => false,
@@ -1690,27 +1694,32 @@ describe('FinishDialog with an open PR', () => {
     });
   });
 
-  it('can merge locally instead, and switch back', async () => {
+  it('offers no local merge while the PR is open', async () => {
     vi.mocked(getPullRequestDetails).mockResolvedValue(prDetails());
     mount({ task: task({ prUrl: PR_URL }) });
     await flush();
-    button('Merge locally instead')?.click();
-    expect(confirmButton()?.textContent).toBe('Merge into local main');
-    button('Use PR #42 instead')?.click();
     expect(confirmButton()?.textContent).toBe('Squash and merge on GitHub');
-    button('Merge locally instead')?.click();
-    confirmButton()?.click();
-    expect(mergeTask).toHaveBeenCalled();
-    expect(mergePullRequestForTask).not.toHaveBeenCalled();
+    expect(button('Merge locally instead')).toBeUndefined();
   });
 
-  it('falls back to a local merge when the PR cannot be loaded', async () => {
-    vi.mocked(getPullRequestDetails).mockRejectedValue(new Error('gh: not logged in'));
+  it('keeps the PR merge when the PR cannot be loaded, and retries', async () => {
+    vi.mocked(getPullRequestDetails).mockRejectedValueOnce(new Error('gh: not logged in'));
     mount({ task: task({ prUrl: PR_URL }) });
     await flush();
     await flush();
-    expect(confirmButton()?.textContent).toBe('Merge into local main');
+    expect(confirmButton()?.textContent).toBe('Merge on GitHub');
+    expect(confirmButton()?.disabled).toBe(true);
     expect(document.body.textContent).toContain('gh: not logged in');
+    expect(document.querySelector('[data-testid="footer-note"]')?.textContent).toBe(
+      'Could not load the pull request.',
+    );
+    confirmButton()?.click();
+    expect(mergeTask).not.toHaveBeenCalled();
+
+    button('Merge locally anyway')?.click();
+    expect(confirmButton()?.textContent).toBe('Merge into local main');
+    confirmButton()?.click();
+    expect(mergeTask).toHaveBeenCalled();
   });
 
   it('stages a Fix CI prompt and closes so it can be reviewed', async () => {
@@ -1821,6 +1830,60 @@ describe('FinishDialog with an open PR', () => {
     expect(document.body.textContent).toContain('commits that are not in PR #42');
     button('Merge locally instead')?.click();
     expect(confirmButton()?.textContent).toBe('Merge into local main');
+  });
+});
+
+describe('FinishDialog without a known PR', () => {
+  const footerNote = () => document.querySelector('[data-testid="footer-note"]')?.textContent;
+
+  it('holds the local merge until GitHub was asked for a PR', async () => {
+    let answer: (result: TaskPrSearch) => void = () => {};
+    vi.mocked(searchTaskPrs).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    mount();
+    await flush();
+    expect(searchTaskPrs).toHaveBeenCalledWith('parent');
+    expect(confirmButton()?.disabled).toBe(true);
+    expect(footerNote()).toBe('Checking GitHub for a pull request…');
+    confirmButton()?.click();
+    expect(mergeTask).not.toHaveBeenCalled();
+
+    answer('done');
+    await flush();
+    expect(confirmButton()?.disabled).toBe(false);
+    expect(confirmButton()?.textContent).toBe('Merge into local main');
+  });
+
+  it('switches to the GitHub merge when the check finds a PR', async () => {
+    const [current, setCurrent] = createStore(task());
+    vi.mocked(searchTaskPrs).mockImplementationOnce(async () => {
+      setCurrent('prUrl', PR_URL);
+      return 'done';
+    });
+    vi.mocked(getPullRequestDetails).mockResolvedValue(prDetails());
+    mount({ task: current });
+    await flush();
+    await flush();
+    expect(confirmButton()?.textContent).toBe('Squash and merge on GitHub');
+    expect(mergeTask).not.toHaveBeenCalled();
+  });
+
+  it('merges locally after a failed check only by explicit choice', async () => {
+    vi.mocked(searchTaskPrs).mockResolvedValueOnce('failed');
+    mount();
+    await flush();
+    expect(confirmButton()?.disabled).toBe(true);
+    expect(footerNote()).toBe('Could not check GitHub for a pull request.');
+
+    vi.mocked(searchTaskPrs).mockResolvedValueOnce('failed');
+    button('Retry')?.click();
+    await flush();
+    expect(searchTaskPrs).toHaveBeenCalledTimes(2);
+    expect(confirmButton()?.disabled).toBe(true);
+
+    button('Merge locally anyway')?.click();
+    expect(confirmButton()?.disabled).toBe(false);
+    confirmButton()?.click();
+    expect(mergeTask).toHaveBeenCalled();
   });
 });
 

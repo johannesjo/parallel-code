@@ -189,8 +189,9 @@ const rowStyle: JSX.CSSProperties = {
 };
 
 /**
- * How a task with a PR merges: the GitHub merge method, or why and how it
- * merges locally instead. Renders nothing without a PR.
+ * How a task with a PR merges: the GitHub merge method, or why it merges
+ * locally instead. An open PR offers no local merge: it would stay open with
+ * its review bypassed. Renders nothing without a PR.
  */
 export function PrMergeRoute(props: { pr: FinishPr; disabled: boolean }) {
   const disabled = () => props.disabled || !!props.pr.busy();
@@ -204,13 +205,24 @@ export function PrMergeRoute(props: { pr: FinishPr; disabled: boolean }) {
       Use PR #{props.pr.number()} instead
     </button>
   );
+  const mergeLocallyAnyway = () => (
+    <button
+      type="button"
+      style={linkButtonStyle}
+      disabled={disabled()}
+      title="Merge the branch into its base on this machine; the pull request stays open"
+      onClick={() => props.pr.setMergeLocally(true)}
+    >
+      Merge locally anyway
+    </button>
+  );
   const mergeLocally = () => (
     <button
       type="button"
       style={linkButtonStyle}
       disabled={disabled()}
       onClick={() => props.pr.setMergeLocally(true)}
-      title="Merge the branch into its base on this machine, bypassing the pull request"
+      title="Merge the branch into its base on this machine"
     >
       Merge locally instead
     </button>
@@ -236,8 +248,6 @@ export function PrMergeRoute(props: { pr: FinishPr; disabled: boolean }) {
                     </For>
                   </select>
                 </label>
-                <span aria-hidden="true">·</span>
-                {mergeLocally()}
               </div>
               {/* UNSTABLE: non-required checks fail; GitHub allows the merge. */}
               <Show when={details().mergeStateStatus === 'UNSTABLE'}>
@@ -261,8 +271,22 @@ export function PrMergeRoute(props: { pr: FinishPr; disabled: boolean }) {
             </>
           )}
         </Show>
-        <Show when={!props.pr.pr()}>
-          <p style={mutedText}>{mergeLocally()}</p>
+        <Show when={props.pr.details.error}>
+          {(err) => (
+            <p role="status" style={mutedText}>
+              Could not load the pull request ({errMessage(err())}).{' '}
+              <button
+                type="button"
+                style={linkButtonStyle}
+                disabled={disabled() || props.pr.details.loading}
+                onClick={() => void props.pr.refetch()}
+              >
+                Retry
+              </button>
+              {' · '}
+              {mergeLocallyAnyway()}
+            </p>
+          )}
         </Show>
       </Show>
       <Show when={props.pr.mode() === 'merged' && props.pr.headDiffers()}>
@@ -275,21 +299,6 @@ export function PrMergeRoute(props: { pr: FinishPr; disabled: boolean }) {
         <Show when={!props.pr.localReason() && props.pr.mergeLocally()}>
           <p style={mutedText}>{backToPr()}</p>
         </Show>
-        <Show when={!props.pr.mergeLocally() && props.pr.details.error}>
-          {(err) => (
-            <p role="status" style={mutedText}>
-              Could not load the pull request ({errMessage(err())}), so this merges locally.{' '}
-              <button
-                type="button"
-                style={linkButtonStyle}
-                disabled={disabled() || props.pr.details.loading}
-                onClick={() => void props.pr.refetch()}
-              >
-                Retry
-              </button>
-            </p>
-          )}
-        </Show>
       </Show>
       <Show when={props.pr.error()}>
         <div role="alert" style={{ ...bannerStyle(theme.error), 'margin-top': '8px' }}>
@@ -297,5 +306,37 @@ export function PrMergeRoute(props: { pr: FinishPr; disabled: boolean }) {
         </div>
       </Show>
     </div>
+  );
+}
+
+/**
+ * Shown when Finish could not ask GitHub whether the branch has a PR: merging
+ * locally then might bypass one, so it takes an explicit choice.
+ */
+export function PrSearchFailed(props: { pr: FinishPr; disabled: boolean }) {
+  return (
+    <Show when={props.pr.localBlocker() && props.pr.prSearch() === 'failed'}>
+      <p role="status" style={{ ...mutedText, 'font-size': '13px', margin: '20px 0 0' }}>
+        Could not check GitHub for a pull request on this branch.{' '}
+        <button
+          type="button"
+          style={linkButtonStyle}
+          disabled={props.disabled}
+          onClick={() => props.pr.searchPrs()}
+        >
+          Retry
+        </button>
+        {' · '}
+        <button
+          type="button"
+          style={linkButtonStyle}
+          disabled={props.disabled}
+          title="Merge the branch into its base on this machine, even if it has a pull request"
+          onClick={() => props.pr.setMergeLocally(true)}
+        >
+          Merge locally anyway
+        </button>
+      </p>
+    </Show>
   );
 }

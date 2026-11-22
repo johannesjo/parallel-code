@@ -37,6 +37,19 @@ import type {
 import type { Task } from './types';
 
 export { getPrChecks, type PrChecksState } from './pr-checks-state';
+
+/** A PR search on demand: `done` once the task's PR link is current, `failed` when GitHub could not be asked. */
+export type TaskPrSearch = 'done' | 'failed';
+let searchTaskPrsNow: ((taskId: string) => Promise<TaskPrSearch>) | undefined;
+
+/**
+ * Looks up the task branch's PRs now, after any probe already running. Finish
+ * awaits it before offering a local merge, which would otherwise bypass a PR
+ * opened since the last probe. Without PR watching there is nothing to ask.
+ */
+export function searchTaskPrs(taskId: string): Promise<TaskPrSearch> {
+  return searchTaskPrsNow?.(taskId) ?? Promise.resolve('done');
+}
 const BRANCH_PR_DETECT_INTERVAL_MS = 60_000;
 const BRANCH_PR_DETECT_RETRY_MS = 2 * 60_000;
 // Each probe spawns `git remote` + `gh pr list`; cap them so a startup scan
@@ -133,7 +146,7 @@ export function startPrChecksSubscription(): () => void {
   // and the babysit flag so toggling it reaches the main process.
   const activeByWatchId = new Map<string, ActiveWatcher>();
   const branchProbeByTaskId = new Map<string, { key: string; attemptedAt: number }>();
-  const pendingBranchProbes = new Set<string>();
+  const pendingBranchProbes = new Map<string, Promise<TaskPrSearch>>();
   // PR links a task's agent printed while the task had no PR, for its next probe
   // to check: a PR pushed under another branch name has no other way in.
   const printedPrByTaskId = new Map<string, { url: string; failedLookups: number }>();
@@ -216,9 +229,15 @@ export function startPrChecksSubscription(): () => void {
       });
   };
 
-  const detectBranchPr = (taskId: string, candidate: BranchPrCandidate): void => {
-    if (disposed || branchPrDetectionDisabled || pendingBranchProbes.has(taskId)) return;
-    pendingBranchProbes.add(taskId);
+  /** `force` probes even after gh was found unusable: the user may have logged in since. */
+  const detectBranchPr = (
+    taskId: string,
+    candidate: BranchPrCandidate,
+    force = false,
+  ): Promise<TaskPrSearch> => {
+    const pending = pendingBranchProbes.get(taskId);
+    if (pending) return pending;
+    if (disposed || (branchPrDetectionDisabled && !force)) return Promise.resolve('done');
     const printed = printedPrByTaskId.get(taskId);
     const printedPrUrl = printed?.url;
     printedPrByTaskId.delete(taskId);
@@ -234,39 +253,45 @@ export function startPrChecksSubscription(): () => void {
         console.warn('[pr-checks] giving up on printed PR link:', printed.url);
       }
     };
-    invoke<BranchPrDetectionResult>(IPC.DetectPrForBranch, {
+    const probe = invoke<BranchPrDetectionResult>(IPC.DetectPrForBranch, {
       worktreePath: candidate.worktreePath,
       branchName: candidate.branchName,
       ...(printedPrUrl ? { printedPrUrl } : {}),
       ...(baseBranch ? { baseBranch } : {}),
     })
-      .then((result) => {
-        if (disposed || !result) return;
+      .then((result): TaskPrSearch => {
+        if (disposed || !result) return 'failed';
         if (result.unavailable) {
           branchPrDetectionDisabled = true;
           markPrDetectionUnavailable();
           branchProbeByTaskId.clear();
-          return;
+          // Without gh no PR flow exists; logged out, an open PR may still exist.
+          return result.unavailable === 'missing' ? 'done' : 'failed';
         }
         const task = store.tasks[taskId];
         if (
           task?.worktreePath !== candidate.worktreePath ||
           task.branchName !== candidate.branchName
         ) {
-          return;
+          return 'failed';
         }
-        if (result.failedRepos?.includes('.')) keepPrintedPr();
+        const ownFailed = result.failedRepos?.includes('.');
+        if (ownFailed) keepPrintedPr();
         applyDetectedPrs(taskId, result);
+        return ownFailed ? 'failed' : 'done';
       })
-      .catch((err: unknown) => {
+      .catch((err: unknown): TaskPrSearch => {
         keepPrintedPr();
         console.warn('[pr-checks] branch PR detection failed:', err);
+        return 'failed';
       })
       .finally(() => {
         pendingBranchProbes.delete(taskId);
         // Hand the freed slot to a task the capped scan skipped.
         scanForBranchPrs();
       });
+    pendingBranchProbes.set(taskId, probe);
+    return probe;
   };
 
   const scanForBranchPrs = (): void => {
@@ -291,7 +316,7 @@ export function startPrChecksSubscription(): () => void {
       }
       if (pendingBranchProbes.size >= MAX_CONCURRENT_BRANCH_PROBES) continue;
       branchProbeByTaskId.set(taskId, { key: candidate.key, attemptedAt: now });
-      detectBranchPr(taskId, candidate);
+      void detectBranchPr(taskId, candidate);
     }
     for (const taskId of [...branchProbeByTaskId.keys(), ...printedPrByTaskId.keys()]) {
       if (seen.has(taskId)) continue;
@@ -440,11 +465,26 @@ export function startPrChecksSubscription(): () => void {
     untrack(scanForBranchPrs);
   });
 
+  // Skips the retry window and the concurrency cap: the user is waiting on it.
+  const searchNow = (taskId: string): Promise<TaskPrSearch> => {
+    const task = store.tasks[taskId];
+    const candidate = task && branchPrCandidateFor(task);
+    if (!candidate) return Promise.resolve('done');
+    // A running probe may predate a PR opened just now, so a fresh one follows it.
+    const running = pendingBranchProbes.get(taskId);
+    if (running) return running.then(() => searchNow(taskId));
+    branchProbeByTaskId.set(taskId, { key: candidate.key, attemptedAt: Date.now() });
+    return detectBranchPr(taskId, candidate, true);
+  };
+  searchTaskPrsNow = searchNow;
+
   const branchPrDetectTimer = window.setInterval(scanForBranchPrs, BRANCH_PR_DETECT_INTERVAL_MS);
   scanForBranchPrs();
 
   const cleanup = (): void => {
     disposed = true;
+    // A later subscription (tests, hot reload) owns the hook by now.
+    if (searchTaskPrsNow === searchNow) searchTaskPrsNow = undefined;
     clearInterval(branchPrDetectTimer);
     offUpdate();
     for (const watchId of activeByWatchId.keys()) {

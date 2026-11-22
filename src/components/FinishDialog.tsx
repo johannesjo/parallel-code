@@ -13,7 +13,7 @@ import { DiffViewerDialog } from './DiffViewerDialog';
 import { FeatureHint } from './FeatureHint';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
 import { CreatePrEntry } from './CreatePrEntry';
-import { FinishPrSection, PrMergeRoute } from './FinishPrSection';
+import { FinishPrSection, PrMergeRoute, PrSearchFailed } from './FinishPrSection';
 import { CleanupOption, MergeBlockers, MergeChanges, MergeOptions } from './MergeSection';
 import { closeTaskNow } from './CloseTaskDialog';
 import { PushSection } from './PushSection';
@@ -236,12 +236,12 @@ export function FinishDialog(props: FinishDialogProps) {
     if (push.pushing() || creatingPr()) return true;
     if (landed()) return false;
     if (pr.mode() === 'pr') return !!pr.busy() || !!pr.blocker();
-    return !!pr.busy() || !merge.canMerge();
+    return !!pr.busy() || !merge.canMerge() || !!pr.localBlocker();
   };
   const footerNote = () => {
     if (merge.merging() || prMerging() || landed()) return undefined;
     if (pushFirst()) return pushBlocker() ?? 'The PR is missing your latest commits. Push first.';
-    if (pr.mode() !== 'pr') return merge.mergeBlocker();
+    if (pr.mode() !== 'pr') return merge.mergeBlocker() ?? pr.localBlocker();
     return (
       pr.blocker() ?? (pr.pr()?.isDraft ? 'Marks the draft ready for review first.' : undefined)
     );
@@ -254,7 +254,7 @@ export function FinishDialog(props: FinishDialogProps) {
     if (blocker) return blocker;
     if (pushFirst() || offerPush()) return undefined;
     if (landed()) return 'Already merged.';
-    if (pr.mode() === 'pr' && !pr.pr()) return 'Checking the pull request…';
+    if (pr.mode() === 'pr' && !pr.pr()) return pr.blocker();
     // .error first: reading an errored resource throws.
     if (!merge.mergeStatus.error && !merge.mergeStatus()) return 'Checking the branch…';
     return remote() ? 'Already pushed.' : 'No origin to push to.';
@@ -514,6 +514,9 @@ export function FinishDialog(props: FinishDialogProps) {
                 </Show>
                 <PrMergeRoute pr={pr} disabled={push.pushing() || merge.merging()} />
               </FinishPrSection>
+            </Show>
+            <Show when={!landed()}>
+              <PrSearchFailed pr={pr} disabled={push.pushing() || merge.merging()} />
             </Show>
             {/* Cleanup and squash mean nothing without commits; while that is unknown they stay, so nothing jumps. */}
             <Show

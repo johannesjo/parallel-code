@@ -239,7 +239,13 @@ export { setShellLayoutOverride, setTaskShellAutoLayout, getTaskShellLayout } fr
 export { isTaskUnread, noteAgentTerminalInput } from './agentHookStatus';
 export type { TaskAgentHookStatus } from './agentHookStatus';
 export { showNotification, clearNotification, notificationAction } from './notification';
-export { startPrChecksSubscription, getPrChecks, type PrChecksState } from './pr-checks';
+export {
+  startPrChecksSubscription,
+  getPrChecks,
+  searchTaskPrs,
+  type PrChecksState,
+  type TaskPrSearch,
+} from './pr-checks';
 export {
   backgroundVerifyEnabled,
   cancelTaskVerification,

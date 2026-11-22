@@ -309,6 +309,24 @@ describe('listOpenPrUrlsForBranch', () => {
     expect(commands).toEqual(['git', 'git', 'gh']);
   });
 
+  it('finds no PR, rather than failing, when no remote is on a GitHub host', async () => {
+    stubGh((_args, cb) => {
+      const stderr =
+        'none of the git remotes configured for this repository point to a known GitHub host. To tell gh about a new GitHub host, please use `gh auth login`';
+      cb(Object.assign(new Error('gh failed'), { stderr }), '', stderr);
+    });
+    await expect(listOpenPrUrlsForBranch('/repo/worktree', 'task/my-branch')).resolves.toEqual([]);
+  });
+
+  it('still fails when gh fails for another reason', async () => {
+    stubGh((_args, cb) => {
+      cb(Object.assign(new Error('gh failed'), { stderr: 'HTTP 502' }), '', 'HTTP 502');
+    });
+    await expect(listOpenPrUrlsForBranch('/repo/worktree', 'task/my-branch')).rejects.toThrow(
+      'gh failed',
+    );
+  });
+
   it.each(['github.com', 'code.acme.test'])('finds an open PR for a branch on %s', async (host) => {
     const calls = stubGh((_args, cb) => {
       cb(

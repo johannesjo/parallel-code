@@ -9,7 +9,7 @@ import {
   stageFailedChecksPrompt,
   stageReviewFeedbackPrompt,
 } from '../store/github';
-import { getPrChecks } from '../store/store';
+import { getPrChecks, searchTaskPrs, type TaskPrSearch } from '../store/store';
 import type { PrMergeMethod, PullRequestDetails } from '../ipc/types';
 import type { Task } from '../store/types';
 
@@ -199,8 +199,9 @@ interface FinishPrProps {
 
 /**
  * Decides whether Finish merges locally or through the task's open PR, and
- * why the PR merge is unavailable. A PR the task has is the default path, so
- * a local merge never silently bypasses it.
+ * why the PR merge is unavailable. An open PR is the only path: a local merge
+ * would leave it open with its review bypassed. So Finish also looks the
+ * branch's PR up before offering a local merge.
  */
 export function createFinishPr(props: FinishPrProps) {
   const actions = createPrActions({
@@ -214,7 +215,18 @@ export function createFinishPr(props: FinishPrProps) {
       return taskPrUrl(props.task);
     },
   });
+  // Opts out of a merged PR that misses local commits, or of a PR search that failed.
   const [mergeLocally, setMergeLocally] = createSignal(false);
+  // 'checking' until this opening's PR search answers.
+  const [prSearch, setPrSearch] = createSignal<TaskPrSearch | 'checking'>('checking');
+  let searchRun = 0;
+  const searchPrs = (): void => {
+    const run = ++searchRun;
+    setPrSearch('checking');
+    void searchTaskPrs(props.task.id).then((result) => {
+      if (run === searchRun) setPrSearch(result);
+    });
+  };
   // GitHub confirmed the merge; a refetch that fails or lags must not reopen
   // the local merge path for an already merged branch.
   const [mergedHere, setMergedHere] = createSignal(false);
@@ -225,6 +237,7 @@ export function createFinishPr(props: FinishPrProps) {
     setMergeLocally(false);
     setMergedHere(false);
     setBypassProtection(false);
+    untrack(searchPrs);
     // The dialog fetches its own details; this poll lets the board learn of a
     // merge made in the browser too, instead of at the next settled refresh.
     untrack(() => {
@@ -260,14 +273,23 @@ export function createFinishPr(props: FinishPrProps) {
     }
     return undefined;
   };
-  /** Which flow the Finish footer runs. */
+  /** Which flow the Finish footer runs. A PR that fails to load stays the flow, never a local merge. */
   const mode = (): 'local' | 'pr' | 'merged' => {
     if (!taskPrUrl(props.task)) return 'local';
     // Another branch's PR merging says nothing about this task's own commits.
-    if (localReason() || mergeLocally()) return 'local';
-    if (merged()) return 'merged';
-    if (actions.details.error) return 'local';
+    if (localReason()) return 'local';
+    if (merged()) return mergeLocally() ? 'local' : 'merged';
+    // An unloadable PR cannot merge on GitHub either; going local takes an explicit choice.
+    if (actions.details.error && mergeLocally()) return 'local';
     return 'pr';
+  };
+
+  /** Why a local merge waits: the branch may have a PR the app does not know of yet. */
+  const localBlocker = (): string | undefined => {
+    if (mode() !== 'local' || mergeLocally()) return undefined;
+    if (prSearch() === 'checking') return 'Checking GitHub for a pull request…';
+    if (prSearch() === 'failed') return 'Could not check GitHub for a pull request.';
+    return undefined;
   };
 
   /** The PR head is not the worktree HEAD, so CI and a merge would miss local commits. */
@@ -286,7 +308,11 @@ export function createFinishPr(props: FinishPrProps) {
   /** Why merging is unavailable; `asIs` merges the PR at its own head, local commits aside. */
   const blocker = (asIs = false): string | undefined => {
     const pr = actions.pr();
-    if (!pr) return 'Checking the pull request…';
+    if (!pr) {
+      return actions.details.error
+        ? 'Could not load the pull request.'
+        : 'Checking the pull request…';
+    }
     const github = prMergeBlocker(pr, { bypass: bypassing(), allowDraft: true });
     if (github) return github;
     if (asIs) return undefined;
@@ -310,6 +336,9 @@ export function createFinishPr(props: FinishPrProps) {
     number,
     mode,
     localReason,
+    localBlocker,
+    prSearch,
+    searchPrs,
     headDiffers,
     blocker,
     mergeLocally,
