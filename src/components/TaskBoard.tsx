@@ -20,7 +20,7 @@ import { ChevronDownIcon } from './icons';
 import { useBoardClock } from './board/task-state';
 import { TaskBoardCard } from './TaskBoardCard';
 import { IdeasLane } from './TaskBoardIdeasLane';
-import { TerminalsLane, boardTerminals } from './TaskBoardTerminals';
+import { TerminalsLane, boardDocs, boardTerminals } from './TaskBoardTerminals';
 import { forgetWorkingHolds } from './task-board-hold';
 import { boardQuery, setBoardQuery } from './BoardSearch';
 import { useCardMotion } from './task-board-motion';
@@ -237,12 +237,13 @@ export function TaskBoard() {
   const tasks = createMemo(() => boardTasks(boardQuery()));
   const lanes = createMemo(() => boardLanes(tasks()));
   const terminals = createMemo(() => boardTerminals(boardQuery()));
+  const docs = createMemo(() => boardDocs(boardQuery()));
   let lanesEl: HTMLDivElement | undefined;
-  // Ideas and terminals share the motion: adding or removing one, or showing
+  // Ideas, terminals and docs share the motion: adding or removing one, or showing
   // their lane, fades cards in and out and glides the lanes beside them.
   useCardMotion(
     () => lanesEl,
-    () => [lanes(), terminals(), ideasLaneShown() && boardIdeas(boardQuery())],
+    () => [lanes(), terminals(), docs(), ideasLaneShown() && boardIdeas(boardQuery())],
   );
   onCleanup(useBoardClock());
   onCleanup(forgetWorkingHolds);
@@ -284,8 +285,8 @@ export function TaskBoard() {
                 </Show>
               }
             >
-              {/* Terminals sit past the task lanes, with the snoozed rail kept at the edge. */}
-              <TerminalsLane terminals={terminals()} />
+              {/* Terminals and docs sit past the task lanes, with the snoozed rail kept at the edge. */}
+              <TerminalsLane terminals={terminals()} docs={docs()} />
               <Show when={lane().tasks.length > 0}>
                 <SnoozedLane lane={lane()} />
               </Show>

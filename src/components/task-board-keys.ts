@@ -1,3 +1,4 @@
+import { documentAgentTaskId, isDocumentAgentTaskId } from '../documents/task-id';
 import { isTaskBackgrounded } from '../store/background-tasks';
 import { store, setStore } from '../store/core';
 import { boardShown, boardSidePanelOpen, towardBoard } from '../store/project-pages';
@@ -81,6 +82,12 @@ function boardColumns(): HTMLElement[][] {
   );
 }
 
+/** Only the open document workspace has a panel; another doc's card has to open it first. */
+function isClosedDoc(id: string): boolean {
+  const open = store.activeDocumentProjectId;
+  return isDocumentAgentTaskId(id) && (!open || id !== documentAgentTaskId(open));
+}
+
 /**
  * Task ids per lane, for the side panel to step through. Snoozed and minimized
  * cards are left out: showing one would end its snooze or restore it.
@@ -94,7 +101,10 @@ function boardTaskColumns(): string[][] {
       .map((lane) =>
         [...lane.querySelectorAll<HTMLElement>('[data-board-task-id]')]
           .map((card) => card.dataset.boardTaskId ?? '')
-          .filter((id) => id && !isTaskBackgrounded(id) && !store.tasks[id]?.collapsed),
+          .filter(
+            (id) =>
+              id && !isTaskBackgrounded(id) && !store.tasks[id]?.collapsed && !isClosedDoc(id),
+          ),
       )
       .filter((ids) => ids.length > 0),
   );
