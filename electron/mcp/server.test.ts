@@ -833,6 +833,52 @@ describe('mind map tools', () => {
     expect(client.publishFinishItems).toHaveBeenCalledTimes(1);
   });
 
+  it('queues and withdraws task suggestions only for a task session, validated before transport', async () => {
+    const client = {
+      changeTaskSuggestions: vi
+        .fn()
+        .mockResolvedValue({ action: 'suggest', suggestionId: 'suggestion_ab12cd34' }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    const suggestion = {
+      title: '  Fix stale\n README badge ',
+      tldr: 'The badge points at a removed workflow.',
+      prompt: 'Update README.md.',
+      taskId: 'other',
+    };
+    expect(await handleMCPToolCall(context, 'suggest_task', suggestion)).not.toHaveProperty(
+      'isError',
+    );
+    expect(client.changeTaskSuggestions).toHaveBeenCalledWith('own-task', {
+      action: 'suggest',
+      title: 'Fix stale README badge',
+      tldr: 'The badge points at a removed workflow.',
+      prompt: 'Update README.md.',
+    });
+    expect(
+      await handleMCPToolCall(context, 'withdraw_task_suggestion', {
+        suggestionId: 'suggestion_ab12cd34',
+        reason: 'Fixed here',
+      }),
+    ).not.toHaveProperty('isError');
+    expect(client.changeTaskSuggestions).toHaveBeenLastCalledWith('own-task', {
+      action: 'withdraw',
+      suggestionId: 'suggestion_ab12cd34',
+      reason: 'Fixed here',
+    });
+    expect(
+      await handleMCPToolCall(context, 'suggest_task', { ...suggestion, title: 'x'.repeat(81) }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('at most 80') }] });
+    expect(
+      await handleMCPToolCall(context, 'withdraw_task_suggestion', { suggestionId: 'task-1' }),
+    ).toMatchObject({ isError: true });
+    const coordinator = { ...context, taskId: '', coordinatorId: 'coord-1', canvasOnly: false };
+    expect(await handleMCPToolCall(coordinator, 'suggest_task', suggestion)).toMatchObject({
+      isError: true,
+    });
+    expect(client.changeTaskSuggestions).toHaveBeenCalledTimes(2);
+  });
+
   it('publishes a GitHub list for the session task and rejects a malformed one before transport', async () => {
     const client = {
       publishGitHubList: vi.fn().mockResolvedValue({ ok: true, name: 'This week' }),

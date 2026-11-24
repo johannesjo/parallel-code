@@ -80,6 +80,7 @@ const NOT_HANDLED_HERE: readonly string[] = [
   IPC.MCP_PublishGitHubListRequest,
   IPC.MCP_PublishPrDraftRequest,
   IPC.MCP_PublishFinishItemsRequest,
+  IPC.MCP_TaskSuggestionRequest,
   IPC.MCP_CreateIndependentTaskRequest,
   IPC.MCP_ImportWorktreeRequest,
   IPC.MCP_ReadMindMapRequest,

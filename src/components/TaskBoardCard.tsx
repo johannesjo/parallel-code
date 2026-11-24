@@ -21,6 +21,7 @@ import { openPromptPeek } from './PromptPeek';
 import { focusBoardCard } from './task-board-keys';
 import { boardCheckLabel, boardTaskState, type BoardLaneId } from './task-board-lanes';
 import { createTaskContextMenu } from './task-context-menu';
+import { pendingTaskSuggestions } from '../store/task-suggestions';
 
 /** Why the card is set aside: when its snooze ends, or that it is minimized. */
 function setAsideLabel(task: Task): string {
@@ -176,6 +177,8 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
   // After the merge the label names git state; the recorded items no longer count.
   const looseEndsTitle = () =>
     wrap()?.merged ? undefined : props.task.finishItems?.items.join('\n');
+  // The cards themselves wait in the task panel; the board only says they are there.
+  const suggestions = () => pendingTaskSuggestions(props.task);
   const menu = createTaskContextMenu({
     task: () => props.task,
     open: () => openBeside(props.task),
@@ -249,6 +252,22 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
         <p class="task-board-ask" title={looseEndsTitle()}>
           <span class="task-board-status muted">
             <span class="task-board-status-text">Mostly done: {looseEnds().join(' · ')}</span>
+          </span>
+        </p>
+      </Show>
+      <Show when={suggestions().length > 0}>
+        <p
+          class="task-board-ask"
+          title={suggestions()
+            .map((sg) => sg.title)
+            .join('\n')}
+        >
+          <span class="task-board-status muted">
+            <span class="task-board-status-text">
+              {suggestions().length === 1
+                ? '1 suggested task'
+                : `${suggestions().length} suggested tasks`}
+            </span>
           </span>
         </p>
       </Show>

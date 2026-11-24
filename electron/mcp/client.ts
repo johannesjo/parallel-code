@@ -9,6 +9,7 @@ import type { CardPublishRequest } from '../shared/card-publish.js';
 import type { CardConfigChange } from '../shared/card-config.js';
 import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
+import type { TaskSuggestionRequest, TaskSuggestionResult } from '../shared/task-suggestion.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { randomUUID } from 'crypto';
@@ -249,6 +250,17 @@ export class MCPClient {
     return this.taskOwnerRequest('POST', `/api/finish-items/${encodeURIComponent(taskId)}`, {
       items,
     });
+  }
+
+  async changeTaskSuggestions(
+    taskId: string,
+    request: TaskSuggestionRequest,
+  ): Promise<TaskSuggestionResult> {
+    return this.taskOwnerRequest(
+      'POST',
+      `/api/task-suggestions/${encodeURIComponent(taskId)}`,
+      request,
+    );
   }
 
   async publishGitHubList(

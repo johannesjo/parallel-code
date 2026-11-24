@@ -54,6 +54,7 @@ import { TaskBranchInfoBar } from './TaskBranchInfoBar';
 import { TaskAttentionBadges, TaskRoutineBadges } from './TaskHeaderBadges';
 import { TaskBranchAdoptionBanner } from './TaskBranchAdoptionBanner';
 import { TaskSuperProductivityBanner } from './TaskSuperProductivityBanner';
+import { TaskSuggestionCards } from './TaskSuggestionCards';
 import { TaskNotesBody, notesMinHeight } from './TaskNotesBody';
 import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
@@ -1218,6 +1219,7 @@ export function TaskPanel(props: TaskPanelProps) {
           )
         }
       />
+      <TaskSuggestionCards task={props.task} />
       <TaskBranchAdoptionBanner task={props.task} />
       <TaskSuperProductivityBanner taskId={props.task.id} />
       <div style={{ flex: '1', 'min-height': '0' }}>

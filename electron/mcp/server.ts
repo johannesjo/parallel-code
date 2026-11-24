@@ -16,6 +16,7 @@ import { parseCardPublishRequest } from '../shared/card-publish.js';
 import { parseCardConfigChange } from '../shared/card-config.js';
 import { parsePrDraft } from '../shared/pr-draft.js';
 import { parseFinishItems } from '../shared/finish-items.js';
+import { parseTaskSuggestionRequest } from '../shared/task-suggestion.js';
 import { isGitHubAgentTaskId, parseGitHubList } from '../shared/github-list.js';
 import {
   LEGACY_WAIT_DEFAULT_MS,
@@ -120,6 +121,8 @@ export async function handleMCPToolCall(
     'pr_draft_publish',
     'finish_items_publish',
     'github_list_publish',
+    'suggest_task',
+    'withdraw_task_suggestion',
   ].includes(name);
   if (
     sessionCapabilities &&
@@ -243,6 +246,16 @@ export async function handleMCPToolCall(
         const id = taskId || coordinatorId;
         if (!id) throw new Error('A task-scoped MCP session is required.');
         const result = await client.publishGitHubList(id, parseGitHubList(params).list);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'suggest_task':
+      case 'withdraw_task_suggestion': {
+        if (!taskId) throw new Error('A task-scoped MCP session is required.');
+        const request = parseTaskSuggestionRequest({
+          ...p,
+          action: name === 'suggest_task' ? 'suggest' : 'withdraw',
+        });
+        const result = await client.changeTaskSuggestions(taskId, request);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       case 'mindmap_read':

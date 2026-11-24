@@ -283,3 +283,16 @@ it('names the loose ends the agent recorded on a resting card', () => {
   expect(button('Close')).toBeUndefined();
   setStore('tasks', 'one', 'finishItems', undefined);
 });
+
+it('says the agent left suggested tasks waiting in the task panel', () => {
+  const suggestion = { tldr: 'Why.', prompt: 'Do it.', createdAt: 1 };
+  setStore('tasks', 'one', 'taskSuggestions', [
+    { ...suggestion, id: 'suggestion_00000001', title: 'Fix badge', status: 'pending' },
+    { ...suggestion, id: 'suggestion_00000002', title: 'Drop flag', status: 'pending' },
+    { ...suggestion, id: 'suggestion_00000003', title: 'Old one', status: 'dismissed' },
+  ]);
+  renderInLane('stopped');
+  expect(container.textContent).toContain('2 suggested tasks');
+  expect(container.querySelector('[title="Fix badge\nDrop flag"]')).not.toBeNull();
+  setStore('tasks', 'one', 'taskSuggestions', undefined);
+});

@@ -122,6 +122,7 @@ import type { CardPublishRequest } from '../shared/card-publish.js';
 import type { CardConfigChange } from '../shared/card-config.js';
 import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
+import type { TaskSuggestionRequest, TaskSuggestionResult } from '../shared/task-suggestion.js';
 import {
   buildMcpLaunchArgs,
   isAntigravityCommand,
@@ -2080,6 +2081,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishPrDraftRequest, { taskId, draft }),
     publishFinishItems: (taskId: string, items: string[]) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishFinishItemsRequest, { taskId, items }),
+    changeTaskSuggestions: (taskId: string, request: TaskSuggestionRequest) =>
+      callRenderer<TaskSuggestionResult>(IPC.MCP_TaskSuggestionRequest, { taskId, request }),
     publishGitHubList: (taskId: string, list: GitHubCustomList) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishGitHubListRequest, { taskId, list }),
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),

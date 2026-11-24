@@ -4,6 +4,7 @@ import type { AppStore, KanbanNewTaskSource, SpNewTaskSource } from '../store/ty
 import { linkNewTaskToSp } from '../store/superProductivityOpen';
 import { linkNewTaskToKanbanCard } from '../store/kanban';
 import { removeTaskIdea } from '../store/ideas';
+import { holdTaskSuggestion, markTaskSuggestionStarted } from '../store/task-suggestions';
 import { nameTaskWithModel } from '../store/model-task-name';
 import { activeFeatureHint, markFeatureHintSeen } from '../store/onboarding';
 import { createTaskInBackground, registerOpenDraft } from '../store/task-creation';
@@ -150,6 +151,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const [spSource, setSpSource] = createSignal<SpNewTaskSource | null>(null);
   const [kanbanSource, setKanbanSource] = createSignal<KanbanNewTaskSource | null>(null);
   const [ideaId, setIdeaId] = createSignal<string | null>(null);
+  const [suggestionSource, setSuggestionSource] =
+    createSignal<NonNullable<AppStore['newTaskPrefillPrompt']>['taskSuggestion']>();
   const [prompt, setPrompt] = createSignal('');
   const [githubPickerOpen, setGithubPickerOpen] = createSignal(false);
   /** Open PR the task will check out instead of branching from the base branch. */
@@ -461,6 +464,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             setSpSource(prefill?.superProductivity ?? null);
             setKanbanSource(prefill?.kanban ?? null);
             setIdeaId(prefill?.ideaId ?? null);
+            setSuggestionSource(prefill?.taskSuggestion);
             if (prefill) {
               setPrompt(prefill.prompt);
               setName(prefill.name ?? 'Compare arena results');
@@ -1109,7 +1113,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       const source = spSource();
       const card = kanbanSource();
       const idea = ideaId();
-      // The panel closes before creation finishes so the next draft can start.
+      const suggestion = suggestionSource();
+      // The panel closes before creation finishes so the next draft can start;
+      // the agent must not withdraw the suggestion while its task is built.
+      const releaseSuggestion = suggestion ? holdTaskSuggestion(suggestion.suggestionId) : null;
       void createTaskInBackground({
         name: n,
         create: (quick) =>
@@ -1126,6 +1133,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           if (source) linkNewTaskToSp(taskId, source, projectId);
           if (card) void linkNewTaskToKanbanCard(taskId, card, projectId);
           if (idea) removeTaskIdea(idea);
+          if (suggestion)
+            markTaskSuggestionStarted(suggestion.taskId, suggestion.suggestionId, taskId);
           if (!manualName && p) void nameTaskWithModel(taskId, p);
           // A prefill decided the link itself (null = deliberately none).
           const root = getProjectPath(projectId);
@@ -1151,7 +1160,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           },
           dropUrl: store.newTaskDropUrl,
         },
-      });
+      }).finally(() => releaseSuggestion?.());
       // Loading lasts until the deferred close lands, so a second Enter can't
       // create the task twice.
       closing = true;

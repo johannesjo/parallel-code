@@ -19,6 +19,8 @@ import {
   PR_DRAFT_TOOLS,
   FINISH_ITEMS_TOOLS,
   GITHUB_LIST_TOOLS,
+  TASK_SUGGESTION_TOOLS,
+  TASK_SUGGESTION_INSTRUCTIONS,
   hasCanvasTools,
   APP_TASK_INSTRUCTIONS,
   CONFIDENCE_INSTRUCTIONS,
@@ -40,6 +42,7 @@ describe('selectTools — role-based tool list', () => {
       ...CONFIDENCE_TOOLS,
       ...CARD_TOOLS,
       ...PR_DRAFT_TOOLS,
+      ...TASK_SUGGESTION_TOOLS,
     ]);
     expect(tools.map((t: ToolDef) => t.name)).toStrictEqual([
       'land_self',
@@ -57,6 +60,8 @@ describe('selectTools — role-based tool list', () => {
       'card_config_save',
       'card_config_remove',
       'pr_draft_publish',
+      'suggest_task',
+      'withdraw_task_suggestion',
     ]);
   });
 
@@ -171,7 +176,33 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...CARD_TOOLS,
     ...PR_DRAFT_TOOLS,
     ...FINISH_ITEMS_TOOLS,
+    ...TASK_SUGGESTION_TOOLS,
   ]);
+});
+
+it('offers task suggestions only to sessions with a task panel to show them on', () => {
+  const names = (taskId: string, coordinatorId = '') =>
+    selectTools(taskId, coordinatorId, true).map((tool) => tool.name);
+  expect(names('normal-task')).toContain('suggest_task');
+  expect(names('gh-agent-p1')).not.toContain('suggest_task');
+  expect(names('kanban-agent-p1')).not.toContain('suggest_task');
+  expect(names('doc-agent-p1')).not.toContain('suggest_task');
+  expect(selectTools('', 'coordinator-xyz').map((tool) => tool.name)).not.toContain('suggest_task');
+  expect(
+    serverInstructions({ taskId: 'normal-task', coordinatorId: '', canvasOnly: true }),
+  ).toContain(TASK_SUGGESTION_INSTRUCTIONS);
+  expect(
+    serverInstructions({ taskId: 'gh-agent-p1', coordinatorId: '', canvasOnly: true }),
+  ).not.toContain(TASK_SUGGESTION_INSTRUCTIONS);
+});
+
+it('steers noticed work to suggest_task instead of an independent task', () => {
+  const createTask = selectTools('task', '', false, {
+    profile: 'ordinary',
+    canCreate: true,
+    peers: false,
+  }).find((tool) => tool.name === 'create_task');
+  expect(createTask?.description).toContain('use suggest_task instead');
 });
 
 it('offers github_list_publish only to the GitHub page agent', () => {
@@ -301,6 +332,7 @@ describe('session capability tool sets', () => {
   ];
   // Only sessions that reach the Finish dialog record loose ends for it.
   const finish = ['finish_items_publish'];
+  const suggestions = ['suggest_task', 'withdraw_task_suggestion'];
   const supervision = [
     'list_tasks',
     'get_task_status',
@@ -319,10 +351,11 @@ describe('session capability tool sets', () => {
   ) => selectTools('task', '', false, { profile, canCreate, peers }).map((tool) => tool.name);
 
   it('exposes exact ordinary rights separately from agent creation consent', () => {
-    expect(names('ordinary')).toEqual([...canvas, ...finish, ...supervision]);
+    expect(names('ordinary')).toEqual([...canvas, ...finish, ...suggestions, ...supervision]);
     expect(names('ordinary', true)).toEqual([
       ...canvas,
       ...finish,
+      ...suggestions,
       'create_task',
       ...supervision,
       'import_worktree',
@@ -363,8 +396,18 @@ describe('session capability tool sets', () => {
   });
 
   it('never grants children creation even if a malformed capability requests it', () => {
-    expect(names('child-review', true)).toEqual([...canvas, ...finish, 'signal_done']);
-    expect(names('child-automatic', true)).toEqual([...canvas, 'land_self', 'signal_done']);
+    expect(names('child-review', true)).toEqual([
+      ...canvas,
+      ...finish,
+      ...suggestions,
+      'signal_done',
+    ]);
+    expect(names('child-automatic', true)).toEqual([
+      ...canvas,
+      ...suggestions,
+      'land_self',
+      'signal_done',
+    ]);
   });
 
   it('keeps finish items from sessions that never reach the Finish dialog', () => {
@@ -387,6 +430,7 @@ describe('session capability tool sets', () => {
     expect(names('child-review', false, true)).toEqual([
       ...canvas,
       ...finish,
+      ...suggestions,
       'signal_done',
       'list_agent_sessions',
       'get_agent_output',

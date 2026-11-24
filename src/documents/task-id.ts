@@ -1,8 +1,10 @@
 import type { Project } from '../store/types';
 import { githubAgentTaskId, isGitHubAgentTaskId } from '../../electron/shared/github-list';
-import { isKanbanAgentTaskId, kanbanAgentTaskId } from '../../electron/shared/project-page-agents';
-
-const TASK_ID_PREFIX = 'doc-agent-';
+import {
+  DOCUMENT_AGENT_TASK_PREFIX as TASK_ID_PREFIX,
+  isKanbanAgentTaskId,
+  kanbanAgentTaskId,
+} from '../../electron/shared/project-page-agents';
 
 /** Stable across workspace closes and app restarts. */
 export function documentAgentTaskId(projectId: string): string {

@@ -16,6 +16,7 @@ import { asStoreVerificationRun } from '../lib/verification-run';
 import { IPC } from '../../electron/ipc/channels';
 import { getSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import { CANVAS_INSTRUCTIONS } from '../../electron/shared/canvas-view';
+import { taskSuggestionIdeaText } from '../../electron/shared/task-suggestion';
 import type { ChatImage } from '../../electron/shared/agent-chat-types';
 import { store, setStore, cleanupPanelEntries } from './core';
 import { assignFreshSessionId } from './session-ids';
@@ -163,6 +164,21 @@ function removeTaskDraftEntries(
           taskId,
         )
       : null;
+
+  // Suggestions the user never answered outlive their task as board ideas.
+  const unanswered = s.tasks[taskId]?.taskSuggestions?.filter((t) => t.status === 'pending') ?? [];
+  if (unanswered.length > 0) {
+    const projectId = s.tasks[taskId].projectId;
+    s.taskIdeas = [
+      ...unanswered.map((suggestion) => ({
+        id: crypto.randomUUID(),
+        text: taskSuggestionIdeaText(suggestion),
+        projectId,
+        createdAt: Date.now(),
+      })),
+      ...s.taskIdeas,
+    ];
+  }
 
   delete s.tasks[taskId];
   delete s.taskGitStatus[taskId];

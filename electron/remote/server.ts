@@ -64,6 +64,12 @@ import {
 } from '../shared/card-config.js';
 import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
 import { FINISH_ITEMS_LIMITS, parseFinishItems } from '../shared/finish-items.js';
+import {
+  parseTaskSuggestionRequest,
+  TASK_SUGGESTION_LIMITS,
+  type TaskSuggestionRequest,
+  type TaskSuggestionResult,
+} from '../shared/task-suggestion.js';
 import type {
   SessionCaller,
   SessionCapabilities,
@@ -447,6 +453,7 @@ type CanvasOps = Pick<
   | 'publishPrDraft'
   | 'publishFinishItems'
   | 'publishGitHubList'
+  | 'changeTaskSuggestions'
 >;
 type CanvasRoute =
   | 'mindmaps'
@@ -458,7 +465,8 @@ type CanvasRoute =
   | 'card-config'
   | 'pr-drafts'
   | 'finish-items'
-  | 'github-lists';
+  | 'github-lists'
+  | 'task-suggestions';
 /** A published tour inlines its own context; the shared parser caps it again. */
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
 /** 100 items with full-length titles and reasons, plus JSON overhead. */
@@ -544,6 +552,14 @@ async function canvasRequest(
     const items = parseFinishItems(await readJsonBody(req, FINISH_ITEMS_LIMITS.payloadBytes));
     await ops.publishFinishItems(taskId, items);
     return { ok: true, items: items.length };
+  }
+  if (route === 'task-suggestions') {
+    if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
+    if (!ops.changeTaskSuggestions) throw httpError(503, 'Task suggestions unavailable');
+    const request = parseTaskSuggestionRequest(
+      await readJsonBody(req, TASK_SUGGESTION_LIMITS.payloadBytes),
+    );
+    return ops.changeTaskSuggestions(taskId, request);
   }
   if (route === 'github-lists') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
@@ -1098,6 +1114,11 @@ export function startRemoteServer(opts: {
   publishPrDraft?: (taskId: string, draft: PrDraft) => Promise<unknown>;
   /** Store the loose ends the agent recorded for its own task's Finish dialog (renderer-backed). */
   publishFinishItems?: (taskId: string, items: string[]) => Promise<unknown>;
+  /** Queue or withdraw a separate task the agent suggests from its own task (renderer-backed). */
+  changeTaskSuggestions?: (
+    taskId: string,
+    request: TaskSuggestionRequest,
+  ) => Promise<TaskSuggestionResult>;
   /** Show an issue list the agent ordered and grouped on its project's GitHub page. */
   publishGitHubList?: (taskId: string, list: GitHubCustomList) => Promise<unknown>;
   /** Read a task's notes (renderer-backed). */
@@ -1401,7 +1422,7 @@ export function startRemoteServer(opts: {
       };
 
       const mapMatch = url.pathname.match(
-        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|cards|card-config|pr-drafts|finish-items|github-lists)\/([^/]+)$/,
+        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|cards|card-config|pr-drafts|finish-items|github-lists|task-suggestions)\/([^/]+)$/,
       );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;

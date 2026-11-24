@@ -1,0 +1,126 @@
+/* Suggestions are routine: a plain border and neutral text, never an accent fill. */
+.task-suggestions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.task-suggestion {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  animation: taskSuggestionEnter var(--motion-enter) var(--ease-out);
+}
+
+@keyframes taskSuggestionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.task-suggestion-label {
+  color: var(--fg-subtle);
+  font-size: 11px;
+}
+
+.task-suggestion-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.task-suggestion-tldr {
+  margin: 2px 0 0;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.task-suggestion button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.task-suggestion-prompt {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.task-suggestion-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.task-suggestion-actions button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.task-suggestion-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The primary action is marked by full-strength text, not colour. */
+.task-suggestion-actions .task-suggestion-start {
+  /* Fits "Starting…", so the row does not move when the label swaps. */
+  min-width: 7.5em;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.task-suggestion-actions .task-suggestion-dismiss {
+  border-color: transparent;
+}
+
+/* Reading the prompt is secondary to deciding, so it sits at the row's end. */
+.task-suggestion-actions .task-suggestion-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* Fits "Hide prompt" as well as "Show prompt". */
+  min-width: 8.5em;
+  margin-left: auto;
+  border-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-suggestion {
+    animation: none;
+  }
+
+  .task-suggestion-actions button {
+    transition: none;
+  }
+}

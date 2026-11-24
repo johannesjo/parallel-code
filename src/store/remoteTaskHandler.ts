@@ -4,7 +4,6 @@
 // and reply with the resulting task id. See electron/ipc/register.ts for the
 // main-side bridge.
 
-import { resolveIncludeSelection, splitIncludeSelection } from '../lib/worktree-includes';
 import { publishAgentTour } from './agent-tour';
 import { publishTaskConfidence } from './confidence';
 import { changeCardConfig, readCardConfig } from './card-config';
@@ -19,11 +18,12 @@ import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
 import { store } from './core';
 import { delegationRequest } from './delegation';
 import { importWorktreeForAgent } from './agent-import-worktree';
-import { codeProjects, getProject, getProjectBaseBranch, getProjectPath } from './projects';
+import { newTaskGitDefaults } from './task-git-defaults';
+import { changeTaskSuggestions } from './task-suggestions';
+import { codeProjects, getProject, getProjectPath } from './projects';
 import {
   closeTask,
   createTask,
-  type CreateTaskOptions,
   getCoordinatorCloseWarning,
   mergeTask,
   sendPrompt,
@@ -46,8 +46,8 @@ import {
   type CodexModelChoice,
 } from '../../electron/shared/ask-code-models';
 import { reviewerWithModel } from '../lib/agent-handoff';
-import type { AgentDef, GitIgnoredEntry, MergeStatus, WorktreeStatus } from '../ipc/types';
-import type { Project, Task } from './types';
+import type { AgentDef, MergeStatus, WorktreeStatus } from '../ipc/types';
+import type { Task } from './types';
 import type { ImportWorktreeRequest as ImportWorktreeInput } from '../../electron/shared/delegation-types';
 import type {
   RemoteAgentChoice,
@@ -188,25 +188,6 @@ export function remoteSkipPermissions(
   agentDef: Pick<AgentDef, 'command'> & Partial<Pick<AgentDef, 'skip_permissions_args'>>,
 ): boolean {
   return defaultSkipPermissions && resolveSkipPermissionsArgs(agentDef).length > 0;
-}
-
-/** The Git settings the New Task dialog defaults to, for tasks created without it. */
-async function newTaskGitDefaults(
-  project: Project,
-): Promise<Pick<CreateTaskOptions, 'gitIsolation' | 'baseBranch' | 'symlinkDirs' | 'copyDirs'>> {
-  // Non-git projects can't use worktree isolation; fall back to working
-  // directly in the project folder.
-  if (project.isGitRepo === false) return { gitIsolation: 'none', baseBranch: '', symlinkDirs: [] };
-  const baseBranch = await getProjectBaseBranch(project);
-  // Match the desktop New Task default without opting remote users into
-  // newly discovered entries that have no confirmation UI. A saved project
-  // include list is that confirmation, so it applies here too.
-  const ignoredEntries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
-    projectRoot: project.path,
-  });
-  const initial = resolveIncludeSelection(ignoredEntries, project.worktreeIncludes);
-  const { symlinkDirs, copyDirs } = splitIncludeSelection(initial.selected, initial.copy);
-  return { gitIsolation: 'worktree', baseBranch, symlinkDirs, copyDirs };
 }
 
 async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
@@ -748,6 +729,18 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offTaskSuggestion = window.electron.ipcRenderer.on(
+    IPC.MCP_TaskSuggestionRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { request: unknown };
+      try {
+        reply(req.reqId, true, changeTaskSuggestions(req.taskId, req.request));
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   const offPublishGitHubList = window.electron.ipcRenderer.on(
     IPC.MCP_PublishGitHubListRequest,
     (data: unknown) => {
@@ -774,6 +767,7 @@ export function startRemoteTaskHandlers(): () => void {
     offChangeCardConfig();
     offPublishPrDraft();
     offPublishFinishItems();
+    offTaskSuggestion();
     offPublishGitHubList();
     offProjects();
     offCreate();
