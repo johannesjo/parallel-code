@@ -9,8 +9,10 @@ import {
   workspaceViewTransitionTypes,
   type WorkspaceView,
 } from '../store/store';
+import { boardShown } from '../store/project-pages';
 import { mod } from '../lib/platform';
 import { withViewTransition } from '../lib/viewTransition';
+import { closeSidePanel } from './BoardSidePanel';
 import { ChevronLeftAltIcon, GearIcon } from './icons';
 import { FeatureHint } from './FeatureHint';
 import { IconButton } from './IconButton';
@@ -82,6 +84,19 @@ function visibleTaskCount(): number {
   return store.taskOrder.filter((id) => !isHiddenAgentTaskId(id)).length;
 }
 
+/**
+ * Shows `view`. The board's own button, pressed while a task is open beside
+ * the board, closes that side panel instead, as its close button and Escape
+ * do; a draft stays, left to its own Cancel.
+ */
+function selectView(view: WorkspaceView): void {
+  if (view === 'board' && boardShown() && store.boardPeek && !store.showNewTaskPanel) {
+    closeSidePanel();
+    return;
+  }
+  withViewTransition(() => setWorkspaceView(view), workspaceViewTransitionTypes(view));
+}
+
 /** Focus, tiles or board: three views of the same tasks, one pressed at a time. */
 function WorkspaceViewToggle() {
   let boardButton: HTMLButtonElement | undefined;
@@ -96,12 +111,7 @@ function WorkspaceViewToggle() {
             title={item.title}
             label={item.title}
             pressed={workspaceView() === item.view}
-            onClick={() =>
-              withViewTransition(
-                () => setWorkspaceView(item.view),
-                workspaceViewTransitionTypes(item.view),
-              )
-            }
+            onClick={() => selectView(item.view)}
           >
             {item.icon()}
           </ToggleButton>
