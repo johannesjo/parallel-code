@@ -526,6 +526,8 @@ describe('serverInstructions', () => {
     // Not held to CLIENT_LIMIT: role and app guidance already fill it for a top-level
     // task with peers, and current Claude Code delivers instructions well past it.
     expect(CONFIDENCE_INSTRUCTIONS).toContain('confidence_publish');
+    // Agent cards such as Bottom line stay empty unless the agent learns to fill them.
+    expect(CONFIDENCE_INSTRUCTIONS).toContain('card_list');
     for (const profile of ['ordinary', 'child-review', 'child-automatic'] as const) {
       const sessionCapabilities = { profile, canCreate: true, peers: true };
       const text = serverInstructions({

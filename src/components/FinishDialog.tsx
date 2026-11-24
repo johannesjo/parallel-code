@@ -19,7 +19,7 @@ import { closeTaskNow } from './CloseTaskDialog';
 import { PushSection } from './PushSection';
 import { ReadinessSection } from './ReadinessSection';
 import { FinishItems } from './FinishItems';
-import { FinishCards } from './cards/FinishCards';
+import { FinishBottomLine, FinishCards } from './cards/FinishCards';
 import { FollowUps } from './FollowUps';
 import { ReviewSection } from './ReviewSection';
 import { RetroButton } from './RetroButton';
@@ -392,6 +392,7 @@ export function FinishDialog(props: FinishDialogProps) {
         autoFocusCancel
         message={
           <div>
+            <FinishBottomLine task={props.task} />
             <MergeBlockers
               task={props.task}
               state={merge}

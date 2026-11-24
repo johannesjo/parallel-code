@@ -22,7 +22,7 @@ import type { CardDefinition } from '../../lib/cards';
 import { checkCard } from '../../lib/check-card';
 import { setStore, store } from '../../store/core';
 import type { Task } from '../../store/types';
-import { FinishCards } from './FinishCards';
+import { FinishBottomLine, FinishCards } from './FinishCards';
 
 const model = (
   id: string,
@@ -50,6 +50,15 @@ beforeEach(() => {
     model('note', 'finish', true),
     model('risks', 'after-turn', false),
     checkCard({ id: 'verify', name: 'Check' }),
+    {
+      id: 'bottom-line',
+      name: 'Bottom line',
+      description: '',
+      source: { kind: 'agent' },
+      slots: [{ id: 'verdict', type: 'line', label: 'Verdict' }],
+      enabled: true,
+      showAtFinish: true,
+    },
   ]);
   setStore('tasks', {
     t1: {
@@ -91,4 +100,46 @@ it('runs the check cards set to run at Finish when it opens', async () => {
       expect.objectContaining({ command: 'npm test' }),
     ),
   );
+});
+
+it('leaves the Bottom line card to the top of the dialog once the agent filled it', () => {
+  setStore('tasks', 't1', 'cards', {
+    'bottom-line': { values: { verdict: { type: 'line', text: 'Ready to merge.' } }, at: 1 },
+  });
+  const top = document.createElement('div');
+  document.body.append(top);
+  const disposeTop = render(() => <FinishBottomLine task={store.tasks.t1} />, top);
+  try {
+    const names = [...top.querySelectorAll('section.card')].map((s) =>
+      s.getAttribute('aria-label'),
+    );
+    expect(names).toEqual(['Bottom line']);
+  } finally {
+    disposeTop();
+  }
+});
+
+it('shows no Bottom line while that card is not marked for Finish', () => {
+  setStore('cardDefinitions', (cards) =>
+    cards.map((card) => (card.id === 'bottom-line' ? { ...card, showAtFinish: false } : card)),
+  );
+  const top = document.createElement('div');
+  document.body.append(top);
+  const disposeTop = render(() => <FinishBottomLine task={store.tasks.t1} />, top);
+  try {
+    expect(top.querySelector('section.card')).toBeNull();
+  } finally {
+    disposeTop();
+  }
+});
+
+it('shows no Bottom line before the agent filled it, so the merge options stay put', () => {
+  const top = document.createElement('div');
+  document.body.append(top);
+  const disposeTop = render(() => <FinishBottomLine task={store.tasks.t1} />, top);
+  try {
+    expect(top.querySelector('section.card')).toBeNull();
+  } finally {
+    disposeTop();
+  }
 });

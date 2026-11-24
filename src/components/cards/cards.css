@@ -182,6 +182,10 @@
   color: var(--fg);
   overflow-wrap: anywhere;
 }
+/* Bold, not coloured: the verdict leads the card, and only blocking items carry colour. */
+.card[data-card-id='bottom-line'] .slot[data-slot-id='verdict'] .slot-line {
+  font-weight: 600;
+}
 .slot-text {
   margin: 0;
   padding: 8px 10px;

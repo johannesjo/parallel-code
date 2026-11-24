@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { appFactCard } from './app-facts';
 import {
   AI_PRESETS,
+  BOTTOM_LINE_CARD_ID,
   exampleCheckOutput,
   missingFactCards,
   presetCard,
@@ -20,6 +21,27 @@ describe('gallery', () => {
     expect(card.id).toBe('decisions-2');
     expect(card.enabled).toBe(true);
     expect(card.slots[0]).toMatchObject({ type: 'items', addUp: true });
+  });
+
+  it('offers a Bottom line card the agent fills, shown at Finish', () => {
+    const preset = AI_PRESETS.find((entry) => entry.name === 'Bottom line');
+    expect(preset).toBeDefined();
+    if (!preset) return;
+    const card = presetCard(preset, new Set());
+    expect(card).toMatchObject({ id: BOTTOM_LINE_CARD_ID, source: { kind: 'agent' } });
+    expect(card.showAtFinish).toBe(true);
+    // Six empty rows all task long would only be noise in the cards pane.
+    expect(card.hideEmpty).toBe(true);
+    const values = parseCardValues(card, {
+      verdict: 'Needs your decision: retry limit not set.',
+      needs: [{ text: 'Cap retries at 5?', severity: 'block' }],
+      decided: [{ text: 'Retries back off exponentially.', severity: 'info' }],
+    });
+    expect(values.verdict).toEqual({
+      type: 'line',
+      text: 'Needs your decision: retry limit not set.',
+    });
+    expect(values.needs).toMatchObject({ items: [{ severity: 'block' }] });
   });
 
   it('offers only the app facts no card shows yet', () => {

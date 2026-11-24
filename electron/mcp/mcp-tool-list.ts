@@ -41,10 +41,10 @@ export const APP_TASK_INSTRUCTIONS =
 
 /**
  * Clients such as Claude Code defer tool descriptions, so without this no agent
- * learns to publish and the Confidence card stays empty.
+ * learns to publish and the Confidence card and agent cards stay empty.
  */
 export const CONFIDENCE_INSTRUCTIONS =
-  'When you rate your confidence in your changes, or a rating or review skill returns scores, publish them with confidence_publish so the task’s Confidence card and Finish review show them.';
+  'When you rate your confidence in your changes, or a rating or review skill returns scores, publish them with confidence_publish so the task’s Confidence card and Finish review show them. When you finish a piece of work, call card_list and fill the agent cards the user turned on, such as Bottom line, with card_publish.';
 
 /**
  * Clients such as Claude Code defer tool descriptions, so without this an agent that

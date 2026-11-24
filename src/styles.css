@@ -2667,6 +2667,12 @@ button {
   border-radius: var(--radius-md);
 }
 
+/* The Bottom line opens the dialog at full width, above the merge options. */
+.finish-bottom-line {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
 .finish-followup {
   width: min(100%, 24rem);
   min-width: 0;

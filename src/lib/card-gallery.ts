@@ -10,6 +10,9 @@ import { APP_FACTS, freeCardId, type CardDefinition } from './cards';
 
 export type CardPreset = Omit<CardDefinition, 'id' | 'enabled'>;
 
+/** The Bottom line preset's id; the Finish dialog shows that card first, above the merge options. */
+export const BOTTOM_LINE_CARD_ID = 'bottom-line';
+
 const READS_ALL = ['task-name', 'prompts', 'agent-message', 'diff'] as const;
 
 export const AI_PRESETS: readonly CardPreset[] = [
@@ -67,6 +70,52 @@ export const AI_PRESETS: readonly CardPreset[] = [
     description: 'A checklist the agent fills via card_publish',
     source: { kind: 'agent' },
     slots: [{ id: 'criteria', type: 'checklist', label: 'Criteria' }],
+  },
+  {
+    name: 'Bottom line',
+    description:
+      'What I need to know to finish or continue this task, in plain words about the result, not the code. The agent fills it via card_publish when it finishes a piece of work.',
+    source: { kind: 'agent' },
+    showAtFinish: true,
+    hideEmpty: true,
+    slots: [
+      {
+        id: 'verdict',
+        type: 'line',
+        label: 'Verdict',
+        hint: 'One short sentence: "Ready to merge." or "Not ready:" and why. Then what the work achieves.',
+      },
+      {
+        id: 'needs',
+        type: 'items',
+        label: 'Needs you',
+        hint: 'Only questions or actions the user must handle before finishing; severity block. Leave empty if none.',
+      },
+      {
+        id: 'changed',
+        type: 'line',
+        label: 'What changed',
+        hint: 'What users will notice, not files or functions.',
+      },
+      {
+        id: 'decided',
+        type: 'items',
+        label: 'Decided for you',
+        hint: 'Choices you made that the user might want differently, and how easy each is to change.',
+      },
+      {
+        id: 'unchecked',
+        type: 'items',
+        label: 'Not checked',
+        hint: 'What was not verified, e.g. not tried in the running app, only unit tests ran.',
+      },
+      {
+        id: 'open',
+        type: 'items',
+        label: 'Open',
+        hint: 'Loose ends and follow-ups that are not part of this task.',
+      },
+    ],
   },
 ];
 

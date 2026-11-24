@@ -207,7 +207,13 @@ export function CardSlot(props: CardSlotProps) {
     () => (props.value ? JSON.stringify(props.value) : ''),
   );
   return (
-    <div ref={el} class="slot" data-type={props.slot.type} data-warn={warn() ? '' : undefined}>
+    <div
+      ref={el}
+      class="slot"
+      data-type={props.slot.type}
+      data-slot-id={props.slot.id}
+      data-warn={warn() ? '' : undefined}
+    >
       <Show when={props.showLabel ?? true}>
         <span class="slot-label">{props.slot.label}</span>
       </Show>
