@@ -171,3 +171,24 @@ it('keeps the side panel when another terminal closes', async () => {
   expect(store.activeTaskId).toBe('term-scratch');
   await vi.waitFor(() => expect(store.terminals['term-dev']).toBeUndefined());
 });
+
+const pickFromMenu = (name: string, label: string) => {
+  terminalCard(name)?.dispatchEvent(
+    new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }),
+  );
+  [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    .find((item) => item.textContent?.trim() === label)
+    ?.click();
+};
+
+it('opens a terminal from its right-click menu', () => {
+  pickFromMenu('Scratch', 'Open');
+  expect(store.boardPeek).toBe(true);
+  expect(store.activeTaskId).toBe('term-scratch');
+});
+
+it('closes a terminal from its right-click menu', async () => {
+  pickFromMenu('Scratch', 'Close');
+  await vi.waitFor(() => expect(store.terminals['term-scratch']).toBeUndefined());
+  expect(terminalCard('Scratch')).toBeUndefined();
+});

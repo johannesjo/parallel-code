@@ -1,14 +1,17 @@
 import { For, Show } from 'solid-js';
-import { openDocumentWorkspace } from '../documents/store';
+import { closeDocumentWorkspace, openDocumentWorkspace } from '../documents/store';
 import { documentAgentTaskId } from '../documents/task-id';
 import { store } from '../store/core';
 import { setActiveTask } from '../store/navigation';
 import { isDocumentProject, isProjectMissing } from '../store/projects';
 import { isAgentIdle } from '../store/taskStatus';
+import { closeTerminal } from '../store/terminals';
 import type { Project, Terminal } from '../store/types';
 import { BoardLane } from './board/BoardLane';
+import { createCardMenu } from './board/card-menu';
 import { openBesideBoard } from './board/TaskStatus';
-import { DocumentIcon, TerminalIcon } from './icons';
+import type { MoreMenuItem } from './chat/MoreMenu';
+import { CloseIcon, DocumentIcon, MinusIcon, TerminalIcon } from './icons';
 import { holdWorking } from './task-board-hold';
 
 /** Open standalone terminals in sidebar order, matching the board search. */
@@ -20,12 +23,13 @@ export function boardTerminals(query: string): Terminal[] {
     .filter((terminal) => !terminal.closingStatus && terminal.name.toLowerCase().includes(needle));
 }
 
-/** Document projects that can open, in sidebar order, matching the board search. */
+/** The open document workspace, matching the board search; a minimized one stays in the sidebar. */
 export function boardDocs(query: string): Project[] {
   if (!store.documentWorkspacesEnabled) return [];
   const needle = query.trim().toLowerCase();
   return store.projects.filter(
     (project) =>
+      project.id === store.activeDocumentProjectId &&
       isDocumentProject(project) &&
       !isProjectMissing(project.id) &&
       project.name.toLowerCase().includes(needle),
@@ -39,19 +43,42 @@ function isRunning(terminal: Terminal): boolean {
 }
 
 /** Shows the terminal in the board's side panel, as a task card does. */
-function openTerminalBeside(terminalId: string): void {
-  openBesideBoard(terminalId, () => setActiveTask(terminalId));
+function openTerminalBeside(terminalId: string, otherSide = false): void {
+  openBesideBoard(terminalId, () => setActiveTask(terminalId), otherSide);
+}
+
+/** Open, and open with the side panel moved across, as a task card's menu offers. */
+function openItems(id: string, open: (id: string, otherSide?: boolean) => void): MoreMenuItem[] {
+  return [
+    { label: 'Open', run: () => open(id) },
+    {
+      label: `Open on the ${store.boardSidePanelLeft ? 'right' : 'left'}`,
+      run: () => open(id, true),
+    },
+  ];
 }
 
 /** A plain terminal's card: lighter than a task's, with only its name and state. */
 function TerminalBoardCard(props: { terminal: Terminal }) {
   const shown = () => store.boardPeek && store.activeTaskId === props.terminal.id;
+  const menu = createCardMenu({
+    label: () => `Terminal ${props.terminal.name}`,
+    items: () => [
+      ...openItems(props.terminal.id, openTerminalBeside),
+      {
+        label: 'Close',
+        icon: <CloseIcon size={14} />,
+        run: () => void closeTerminal(props.terminal.id),
+      },
+    ],
+  });
   return (
     <li
       class="task-board-card task-board-terminal-card"
       classList={{ shown: shown() }}
       data-board-card={props.terminal.id}
       data-board-task-id={props.terminal.id}
+      onContextMenu={(event) => menu.onContextMenu(event)}
     >
       <button
         type="button"
@@ -66,25 +93,43 @@ function TerminalBoardCard(props: { terminal: Terminal }) {
         <span class="task-board-name">{props.terminal.name}</span>
       </button>
       <p class="task-board-meta">{isRunning(props.terminal) ? 'Running' : 'Idle'}</p>
+      <menu.Menu />
     </li>
   );
 }
 
 /** Shows the document workspace in the board's side panel, as a terminal card does. */
-function openDocBeside(projectId: string): void {
-  openBesideBoard(documentAgentTaskId(projectId), () => void openDocumentWorkspace(projectId));
+function openDocBeside(projectId: string, otherSide = false): void {
+  openBesideBoard(
+    documentAgentTaskId(projectId),
+    () => void openDocumentWorkspace(projectId),
+    otherSide,
+  );
 }
 
-/** A document project's card: its name, and whether its workspace is the open one. */
+/** The open document workspace's card: its name; Minimize takes it off the board. */
 function DocBoardCard(props: { project: Project }) {
   const taskId = () => documentAgentTaskId(props.project.id);
   const shown = () => store.boardPeek && store.activeTaskId === taskId();
+  const menu = createCardMenu({
+    label: () => `Document ${props.project.name}`,
+    items: () => [
+      ...openItems(props.project.id, openDocBeside),
+      {
+        label: 'Minimize',
+        icon: <MinusIcon size={14} />,
+        // As the workspace's own Minimize, which also decides what the side panel shows next.
+        run: closeDocumentWorkspace,
+      },
+    ],
+  });
   return (
     <li
       class="task-board-card task-board-terminal-card task-board-doc-card"
       classList={{ shown: shown() }}
       data-board-card={taskId()}
       data-board-task-id={taskId()}
+      onContextMenu={(event) => menu.onContextMenu(event)}
     >
       <button
         type="button"
@@ -98,9 +143,8 @@ function DocBoardCard(props: { project: Project }) {
         </span>
         <span class="task-board-name">{props.project.name}</span>
       </button>
-      <p class="task-board-meta">
-        {store.activeDocumentProjectId === props.project.id ? 'Open' : 'Document'}
-      </p>
+      <p class="task-board-meta">Document</p>
+      <menu.Menu />
     </li>
   );
 }
@@ -112,10 +156,10 @@ function laneTitle(hasTerminals: boolean, hasDocs: boolean): string {
 }
 
 /**
- * Standalone terminals and document workspaces, in a lane of their own past
- * the task lanes: neither ever needs you, and printing is too weak a signal
+ * Standalone terminals and the open document workspace, in a lane of their own
+ * past the task lanes: neither ever needs you, and printing is too weak a signal
  * to sort a shell by, so they stay out of the lanes that do. Shown while any
- * terminal is open or a document project exists; filtering never hides it.
+ * terminal or document workspace is open; filtering never hides it.
  */
 export function TerminalsLane(props: { terminals: Terminal[]; docs: Project[] }) {
   const title = () => laneTitle(boardTerminals('').length > 0, boardDocs('').length > 0);
