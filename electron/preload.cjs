@@ -114,6 +114,7 @@ const ALLOWED_CHANNELS = new Set([
   'mcp_publish_pr_draft_request',
   'mcp_publish_finish_items_request',
   'mcp_publish_github_list_request',
+  'mcp_task_suggestion_request',
   'mcp_create_independent_task_request',
   'mcp_import_worktree_request',
   'remote_get_notes_request',

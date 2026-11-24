@@ -16,6 +16,7 @@ import { parseReasoningFeed } from '../shared/reasoning-feed.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import type { CanvasRequest } from '../shared/canvas-view.js';
+import type { TaskSuggestionRequest, TaskSuggestionResult } from '../shared/task-suggestion.js';
 
 vi.mock('../ipc/git-exclude.js', () => ({ appendGitInfoExcludeBlock: () => 'appended' }));
 
@@ -77,6 +78,13 @@ const changeCardConfig = vi.fn(async (_taskId: string, _change: unknown) => ({
 }));
 const publishPrDraft = vi.fn(async (_taskId: string, _draft: unknown) => ({ ok: true }));
 const publishFinishItems = vi.fn(async (_taskId: string, _items: string[]) => ({ ok: true }));
+const changeTaskSuggestions = vi.fn(
+  async (_taskId: string, _request: TaskSuggestionRequest): Promise<TaskSuggestionResult> => ({
+    action: 'suggest',
+    suggestionId: 'suggestion_ab12cd34',
+    status: 'pending',
+  }),
+);
 const publishGitHubList = vi.fn(async (_taskId: string, _list: unknown) => ({ ok: true }));
 const read = vi.fn(async (_taskId: string) => structuredClone(map));
 const update = vi.fn(
@@ -120,6 +128,7 @@ beforeEach(async () => {
     changeCardConfig,
     publishPrDraft,
     publishFinishItems,
+    changeTaskSuggestions,
     publishGitHubList,
   });
   token = server.registerCanvasAgent('task-1', 'agent-1');
@@ -309,6 +318,29 @@ it('publishes finish items for the owning task only and validates them', async (
   expect(publishFinishItems).toHaveBeenCalledTimes(1);
 });
 
+it('queues task suggestions for the owning task only and validates them', async () => {
+  const request = {
+    action: 'suggest' as const,
+    title: 'Fix stale README badge',
+    tldr: 'The badge points at a removed workflow.',
+    prompt: 'Update README.md to use the ci.yml badge.',
+  };
+  await expect(client.changeTaskSuggestions('task-1', request)).resolves.toEqual({
+    action: 'suggest',
+    suggestionId: 'suggestion_ab12cd34',
+    status: 'pending',
+  });
+  expect(changeTaskSuggestions).toHaveBeenCalledWith('task-1', request);
+  await expect(client.changeTaskSuggestions('task-2', request)).rejects.toThrow('403');
+  const untitled = await fetch(`http://127.0.0.1:${server.port}/api/task-suggestions/task-1`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...request, title: ' ' }),
+  });
+  expect(untitled.status).toBe(400);
+  expect(changeTaskSuggestions).toHaveBeenCalledTimes(1);
+});
+
 it('publishes a tour for the owning task only and validates the payload', async () => {
   const card = { label: 'KEY DECISION', title: 'One idea', body: 'Body text.' };
   const tour = { subject: 'the retry bug', gist: card, cards: [card], context: 'The facts.' };
@@ -453,6 +485,8 @@ it('serves discoverable tools over real MCP stdio and reflects subsequent manual
       'card_config_remove',
       'pr_draft_publish',
       'finish_items_publish',
+      'suggest_task',
+      'withdraw_task_suggestion',
     ]);
     const opened = await mcp.callTool({ name: 'canvas_open', arguments: { view: 'mindmap' } });
     expect(opened.isError).not.toBe(true);

@@ -33,6 +33,7 @@ import type { PlanStep } from '../../electron/shared/agent-plan';
 import type { CloseSuggestion } from '../../electron/shared/close-suggestion';
 import type { TaskVisit } from '../lib/task-visit';
 import type { TaskFinishItems } from '../lib/finish-items';
+import type { TaskSuggestion } from '../../electron/shared/task-suggestion';
 import type { ReviewDismissal } from '../lib/review-summary';
 import type { ReviewModelSettings } from '../lib/task-review';
 import type { CheckSuite, ProjectCheck } from '../../electron/shared/checks';
@@ -462,6 +463,8 @@ export interface Task {
   lastVisit?: TaskVisit;
   /** Loose ends the agent recorded through `finish_items_publish`, shown in the Finish dialog. */
   finishItems?: TaskFinishItems;
+  /** Separate tasks the agent suggested through `suggest_task`, previewed before anything starts. */
+  taskSuggestions?: TaskSuggestion[];
   /** Runtime-only: a review is running, or the last one failed. */
   reviewStatus?: { state: 'running'; startedAt: number } | { state: 'failed'; message: string };
   /** Review risks the user set aside, keyed by review item id, with their reason. */
@@ -590,6 +593,8 @@ export interface PersistedTask {
   lastVisit?: unknown;
   /** Validated on load. */
   finishItems?: unknown;
+  /** Validated on load. */
+  taskSuggestions?: unknown;
   /** Validated on load. */
   reviewDismissed?: unknown;
   /** Validated on load. */
@@ -867,6 +872,8 @@ export interface AppStore {
     kanban?: KanbanNewTaskSource;
     /** Set when the form was opened from a board idea; the idea goes once the task exists. */
     ideaId?: string;
+    /** Set when the form was opened from an agent's task suggestion; it counts as started once the task exists. */
+    taskSuggestion?: { taskId: string; suggestionId: string };
     /** Settings of a draft offered again after its creation failed. */
     agentId?: string;
     gitIsolation?: GitIsolationMode;

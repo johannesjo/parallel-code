@@ -12,6 +12,8 @@ import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { completionReportSchema, toolOutputSchemas } from './tool-output-schemas.js';
 import { CLOSE_SUGGESTION_REASON_MAX } from '../shared/close-suggestion.js';
+import { isProjectPageAgentTaskId } from '../shared/project-page-agents.js';
+import { TASK_SUGGESTION_LIMITS } from '../shared/task-suggestion.js';
 /** Pure tool-list logic — extracted so it can be unit-tested without starting the MCP server. */
 
 export interface ToolDef {
@@ -40,6 +42,13 @@ export const APP_TASK_INSTRUCTIONS =
  */
 export const CONFIDENCE_INSTRUCTIONS =
   'When you rate your confidence in your changes, or a rating or review skill returns scores, publish them with confidence_publish so the task’s Confidence card and Finish review show them.';
+
+/**
+ * Clients such as Claude Code defer tool descriptions, so without this an agent that
+ * notices unrelated work starts it with create_task or never mentions it.
+ */
+export const TASK_SUGGESTION_INSTRUCTIONS =
+  'When you notice work outside your current task that deserves its own task (a bug, stale docs, a missing test), queue it with suggest_task: the user sees a preview card and decides whether to start it. Do not start such work yourself.';
 
 /**
  * Without this, "list them in Parallel Code" matches the canvas guidance and the
@@ -411,6 +420,56 @@ export const GITHUB_LIST_TOOLS: ToolDef[] = [
   },
 ];
 
+const suggestionCaps = TASK_SUGGESTION_LIMITS;
+
+export const TASK_SUGGESTION_TOOLS: ToolDef[] = [
+  {
+    name: 'suggest_task',
+    description:
+      'Suggest a separate Parallel Code task for something you noticed that is outside the scope of your current work: dead code, stale docs, a missing test, a confirmed TODO, a bug or security issue spotted in passing. ' +
+      'Nothing starts: the user sees a "Suggested task" card on this task with your title and tldr, can read the full prompt, and starts it as a new task with its own worktree, edits it first, or dismisses it. The call only queues the card and returns; carry on with your current work. ' +
+      'Do not use it for trivial fixes you can make inline, for anything the user asked you to do (use create_task when the user asks for separate tasks), for vague impressions or unverified hunches, or to split off parts of your own task. ' +
+      'The new task starts from your prompt alone on the main branch, without your conversation or uncommitted changes, so the prompt must stand alone: what to change and why, the files involved by repository-relative path, and what done looks like. Never copy a secret into it; say where it is instead. ' +
+      `title is a short imperative phrase starting with a verb (at most ${suggestionCaps.title} characters), for example "Fix stale README badge"; it also names the task. tldr is one or two plain sentences on what the task would do and why it is worth doing, without file paths or code (at most ${suggestionCaps.tldr} characters). ` +
+      'The result carries a suggestionId; if the suggestion later becomes moot, take it back with withdraw_task_suggestion.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', maxLength: suggestionCaps.title },
+        tldr: { type: 'string', maxLength: suggestionCaps.tldr },
+        prompt: {
+          type: 'string',
+          description: `The opening message of the new task, at most ${suggestionCaps.promptBytes} bytes.`,
+        },
+      },
+      required: ['title', 'tldr', 'prompt'],
+    },
+  },
+  {
+    name: 'withdraw_task_suggestion',
+    description:
+      'Take back a task suggestion you queued with suggest_task that has gone stale: it was fixed in this task, turned out not to be a problem, or you queued a better-scoped replacement (queue the replacement first, then withdraw the old one). ' +
+      'Only a suggestion the user has not answered can be withdrawn. If they already started or dismissed it, the result says so and nothing changes; that answer is final, so do not retry, re-suggest it or do the work here unless the user asks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        suggestionId: { type: 'string', description: 'The suggestionId suggest_task returned.' },
+        reason: {
+          type: 'string',
+          maxLength: suggestionCaps.reason,
+          description: 'Optional short note on why it is no longer needed.',
+        },
+      },
+      required: ['suggestionId'],
+    },
+  },
+];
+
+/** A suggestion card needs a task panel to appear on; project page agents and coordinators have none. */
+export function hasTaskSuggestionTools(taskId: string): boolean {
+  return !!taskId && !isProjectPageAgentTaskId(taskId);
+}
+
 export const SUBTASK_TOOLS: ToolDef[] = [
   {
     name: 'land_self',
@@ -713,7 +772,7 @@ const SUPERVISION_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
     return {
       ...tool,
       description:
-        'Create a visible Parallel Code task with its own Git worktree and agent terminal. Use this for requests to create a Parallel Code task or PC task, not native sub-agent tools. Choose relation: "child" only when the task is part of your assignment and you will wait for, review or build on its result; "independent" for a separate deliverable the user reviews on its own, which you will not wait for (for example an unrelated bug you noticed, or when the user asks for separate tasks). An independent task is a top-level task on the main branch: it is not listed in list_tasks, sends you no signal_done, and outlives you; the result reports only its taskId. The rest applies to children. Children branch from the main branch and their results merge into main, not into your branch; merge main into your branch when you need a landed result. Children inherit neither conversation nor your edits. Include required context in prompt. Use requestId for identical retries. Set baseOnParent:true only when the child must build on your own commits; it then branches from your committed snapshot and lands on your branch. With baseOnParent, supply expectedBranch and expectedHeadSha after inspecting your Git state; if dirty, explicitly choose useLastCommit:true to omit dirty edits. This never authorizes committing. The result reports integrationPolicy: review requires user approval; automatic permits the child to verify and self-land via land_self. The policy comes from this task’s user-selected automation options; do not override it in the child prompt.',
+        'Create a visible Parallel Code task with its own Git worktree and agent terminal. Use this for requests to create a Parallel Code task or PC task, not native sub-agent tools. Choose relation: "child" only when the task is part of your assignment and you will wait for, review or build on its result; "independent" for a separate deliverable the user asked for and reviews on its own, which you will not wait for (for example when the user asks for separate tasks). For work you noticed yourself, such as an unrelated bug, use suggest_task instead so the user previews it before anything starts. An independent task is a top-level task on the main branch: it is not listed in list_tasks, sends you no signal_done, and outlives you; the result reports only its taskId. The rest applies to children. Children branch from the main branch and their results merge into main, not into your branch; merge main into your branch when you need a landed result. Children inherit neither conversation nor your edits. Include required context in prompt. Use requestId for identical retries. Set baseOnParent:true only when the child must build on your own commits; it then branches from your committed snapshot and lands on your branch. With baseOnParent, supply expectedBranch and expectedHeadSha after inspecting your Git state; if dirty, explicitly choose useLastCommit:true to omit dirty edits. This never authorizes committing. The result reports integrationPolicy: review requires user approval; automatic permits the child to verify and self-land via land_self. The policy comes from this task’s user-selected automation options; do not override it in the child prompt.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -835,6 +894,7 @@ export function serverInstructions(options: {
     ...(hasCanvasTools(taskId, coordinatorId, canvasOnly)
       ? [CONFIDENCE_INSTRUCTIONS, CANVAS_INSTRUCTIONS]
       : []),
+    ...(hasTaskSuggestionTools(taskId) ? [TASK_SUGGESTION_INSTRUCTIONS] : []),
   ].join('\n\n');
 }
 
@@ -869,6 +929,7 @@ export function selectTools(
       : []),
     // Publishing opens the GitHub page's list picker; other tasks have no page to publish to.
     ...(isGitHubAgentTaskId(taskId) ? GITHUB_LIST_TOOLS : []),
+    ...(hasTaskSuggestionTools(taskId) ? TASK_SUGGESTION_TOOLS : []),
   ];
   if (capabilities) {
     const taskTools =
