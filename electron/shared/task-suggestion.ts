@@ -21,6 +21,14 @@ export const TASK_SUGGESTION_LIMITS = {
 } as const;
 
 const ID = /^suggestion_[a-z0-9]{8}$/;
+/**
+ * Control, bidi and zero-width characters, as delegation rejects in peer prompts.
+ * The card is the user's only look at the prompt before it runs, so nothing may
+ * hide or reorder text in it, or break out of the bracketed paste that sends it.
+ */
+const UNSAFE_TEXT =
+  // eslint-disable-next-line no-control-regex
+  /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/;
 
 export interface TaskSuggestionInput {
   title: string;
@@ -64,6 +72,8 @@ export function isTaskSuggestionId(value: unknown): value is string {
 
 function line(value: unknown, name: string, max: number): string {
   if (typeof value !== 'string') throw new Error(`${name} must be a string.`);
+  if (UNSAFE_TEXT.test(value))
+    throw new Error(`${name} must not contain control, bidi or zero-width characters.`);
   const result = value.replace(/\s+/g, ' ').trim();
   if (!result) throw new Error(`${name} must not be empty.`);
   if (result.length > max) throw new Error(`${name} must be at most ${max} characters.`);
@@ -72,6 +82,8 @@ function line(value: unknown, name: string, max: number): string {
 
 function prompt(value: unknown): string {
   if (typeof value !== 'string') throw new Error('prompt must be a string.');
+  if (UNSAFE_TEXT.test(value))
+    throw new Error('prompt must not contain control, bidi or zero-width characters.');
   const result = value.trim();
   if (!result) throw new Error('prompt must not be empty.');
   if (new TextEncoder().encode(result).length > TASK_SUGGESTION_LIMITS.promptBytes)
@@ -131,7 +143,14 @@ export function restoreTaskSuggestions(value: unknown): TaskSuggestion[] | undef
         id,
         createdAt,
         status: status as TaskSuggestionStatus,
-        ...parseTaskSuggestionInput(record),
+        // Answered entries keep only their title; see pruneTaskSuggestions.
+        ...(status === 'pending'
+          ? parseTaskSuggestionInput(record)
+          : {
+              title: line(record.title, 'title', TASK_SUGGESTION_LIMITS.title),
+              tldr: '',
+              prompt: '',
+            }),
         ...(typeof answeredAt === 'number' && Number.isFinite(answeredAt) && { answeredAt }),
         ...(typeof startedTaskId === 'string' && startedTaskId && { startedTaskId }),
       });
@@ -142,12 +161,23 @@ export function restoreTaskSuggestions(value: unknown): TaskSuggestion[] | undef
   return result.length ? result : undefined;
 }
 
-/** Keeps every pending suggestion and only the newest answered ones. */
+/**
+ * Keeps every pending suggestion and only the newest answered ones. An answered
+ * entry only has to tell a late withdraw what the user did and recognise a
+ * dismissed repeat, so it drops its summary and prompt instead of saving them.
+ */
 export function pruneTaskSuggestions(list: readonly TaskSuggestion[]): TaskSuggestion[] {
   const answered = list
     .filter((s) => s.status !== 'pending')
     .sort((a, b) => (b.answeredAt ?? b.createdAt) - (a.answeredAt ?? a.createdAt))
     .slice(0, TASK_SUGGESTION_LIMITS.answered);
   const keep = new Set(answered.map((s) => s.id));
-  return list.filter((s) => s.status === 'pending' || keep.has(s.id));
+  return list
+    .filter((s) => s.status === 'pending' || keep.has(s.id))
+    .map((s) => (s.status === 'pending' ? s : { ...s, tldr: '', prompt: '' }));
+}
+
+/** A suggestion whose task closed unanswered lives on as a board idea with this text. */
+export function taskSuggestionIdeaText(suggestion: TaskSuggestionInput): string {
+  return `${suggestion.title}\n\n${suggestion.prompt}`;
 }

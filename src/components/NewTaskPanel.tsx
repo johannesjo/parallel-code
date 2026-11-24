@@ -4,7 +4,7 @@ import type { AppStore, KanbanNewTaskSource, SpNewTaskSource } from '../store/ty
 import { linkNewTaskToSp } from '../store/superProductivityOpen';
 import { linkNewTaskToKanbanCard } from '../store/kanban';
 import { removeTaskIdea } from '../store/ideas';
-import { markTaskSuggestionStarted } from '../store/task-suggestions';
+import { holdTaskSuggestion, markTaskSuggestionStarted } from '../store/task-suggestions';
 import { nameTaskWithModel } from '../store/model-task-name';
 import { activeFeatureHint, markFeatureHintSeen } from '../store/onboarding';
 import { createTaskInBackground, registerOpenDraft } from '../store/task-creation';
@@ -1114,7 +1114,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       const card = kanbanSource();
       const idea = ideaId();
       const suggestion = suggestionSource();
-      // The panel closes before creation finishes so the next draft can start.
+      // The panel closes before creation finishes so the next draft can start;
+      // the agent must not withdraw the suggestion while its task is built.
+      const releaseSuggestion = suggestion ? holdTaskSuggestion(suggestion.suggestionId) : null;
       void createTaskInBackground({
         name: n,
         create: (quick) =>
@@ -1158,7 +1160,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           },
           dropUrl: store.newTaskDropUrl,
         },
-      });
+      }).finally(() => releaseSuggestion?.());
       // Loading lasts until the deferred close lands, so a second Enter can't
       // create the task twice.
       closing = true;

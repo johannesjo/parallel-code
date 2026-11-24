@@ -12,7 +12,10 @@ import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { completionReportSchema, toolOutputSchemas } from './tool-output-schemas.js';
 import { CLOSE_SUGGESTION_REASON_MAX } from '../shared/close-suggestion.js';
-import { isProjectPageAgentTaskId } from '../shared/project-page-agents.js';
+import {
+  DOCUMENT_AGENT_TASK_PREFIX,
+  isProjectPageAgentTaskId,
+} from '../shared/project-page-agents.js';
 import { TASK_SUGGESTION_LIMITS } from '../shared/task-suggestion.js';
 /** Pure tool-list logic — extracted so it can be unit-tested without starting the MCP server. */
 
@@ -465,9 +468,11 @@ export const TASK_SUGGESTION_TOOLS: ToolDef[] = [
   },
 ];
 
-/** A suggestion card needs a task panel to appear on; project page agents and coordinators have none. */
+/** A suggestion card needs a task panel to appear on; page, document and coordinator agents have none. */
 export function hasTaskSuggestionTools(taskId: string): boolean {
-  return !!taskId && !isProjectPageAgentTaskId(taskId);
+  return (
+    !!taskId && !isProjectPageAgentTaskId(taskId) && !taskId.startsWith(DOCUMENT_AGENT_TASK_PREFIX)
+  );
 }
 
 export const SUBTASK_TOOLS: ToolDef[] = [

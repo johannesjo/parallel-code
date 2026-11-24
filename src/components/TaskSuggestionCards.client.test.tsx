@@ -4,14 +4,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { setStore, store } from '../store/core';
 import { setActiveTask } from '../store/navigation';
 import { showNotification } from '../store/notification';
-import { startTaskSuggestion } from '../store/task-suggestions';
+import { holdTaskSuggestion, startTaskSuggestion } from '../store/task-suggestions';
 import type { Task } from '../store/types';
 import type { TaskSuggestion } from '../../electron/shared/task-suggestion';
 import { TaskSuggestionCards } from './TaskSuggestionCards';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(), fireAndForget: vi.fn() }));
 vi.mock('../store/persistence', () => ({ saveState: vi.fn(() => Promise.resolve()) }));
-vi.mock('../store/notification', () => ({ showNotification: vi.fn() }));
+vi.mock('../store/notification', () => ({
+  showNotification: vi.fn(),
+  NOTIFICATION_ERROR_MS: 10_000,
+}));
 vi.mock('../store/navigation', () => ({ setActiveTask: vi.fn(), toggleNewTaskPanel: vi.fn() }));
 vi.mock('../store/task-suggestions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../store/task-suggestions')>()),
@@ -81,7 +84,7 @@ it('dismisses a suggestion', () => {
   expect(document.querySelector('section')).toBeNull();
 });
 
-it('starts a suggestion and offers to open the new task', async () => {
+it('starts a suggestion and offers to open the new task in a notice', async () => {
   vi.mocked(startTaskSuggestion).mockImplementation(async () => {
     setStore('tasks', 'task-2', { id: 'task-2' } as Task);
     setStore('tasks', 'task-1', 'taskSuggestions', 0, 'status', 'started');
@@ -89,16 +92,34 @@ it('starts a suggestion and offers to open the new task', async () => {
   });
   button('Start task').click();
   expect(startTaskSuggestion).toHaveBeenCalledWith('task-1', pending.id);
-  await vi.waitFor(() => expect(document.body.textContent).toContain('Started “Fix stale'));
-  button('Open').click();
+  await vi.waitFor(() => expect(showNotification).toHaveBeenCalled());
+  const [message, opts] = vi.mocked(showNotification).mock.calls[0];
+  expect(message).toBe('Started “Fix stale README badge”');
+  opts?.action?.run();
   expect(setActiveTask).toHaveBeenCalledWith('task-2');
+  // The card leaves without a lingering receipt that would later shift the terminal.
+  expect(document.querySelector('section')).toBeNull();
+});
+
+it('locks the card while the user is starting it', () => {
+  const release = holdTaskSuggestion(pending.id);
+  try {
+    expect(button('Starting…').disabled).toBe(true);
+    expect(button('Dismiss').disabled).toBe(true);
+  } finally {
+    release();
+  }
+  expect(button('Start task').disabled).toBe(false);
 });
 
 it('keeps the card and says why when starting fails', async () => {
   vi.mocked(startTaskSuggestion).mockRejectedValue(new Error('worktree failed'));
   button('Start task').click();
   await vi.waitFor(() =>
-    expect(showNotification).toHaveBeenCalledWith(expect.stringContaining('worktree failed')),
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.stringContaining('worktree failed'),
+      expect.anything(),
+    ),
   );
   expect(button('Start task').disabled).toBe(false);
 });

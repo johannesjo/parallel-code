@@ -332,6 +332,34 @@ describe('task removal beside the board', () => {
     forgetTask('other', []);
     expect(state().boardPeek).toBe(true);
   });
+
+  it('keeps suggestions the user never answered as board ideas', () => {
+    const suggestion = { id: 'suggestion_ab12cd34', createdAt: 1, tldr: 'Why.' };
+    Object.assign(mockTasks.shown, {
+      projectId: 'p1',
+      taskSuggestions: [
+        { ...suggestion, title: 'Fix badge', prompt: 'Edit README.md.', status: 'pending' },
+        {
+          ...suggestion,
+          id: 'suggestion_00000001',
+          title: 'Gone',
+          prompt: '',
+          status: 'dismissed',
+        },
+      ],
+    });
+    state().taskIdeas = [{ id: 'old', text: 'Older idea', projectId: null, createdAt: 0 }];
+    forgetTask('shown', []);
+    expect(state().taskIdeas).toEqual([
+      {
+        id: expect.any(String),
+        text: 'Fix badge\n\nEdit README.md.',
+        projectId: 'p1',
+        createdAt: expect.any(Number),
+      },
+      { id: 'old', text: 'Older idea', projectId: null, createdAt: 0 },
+    ]);
+  });
 });
 
 describe('updateTaskBranch', () => {

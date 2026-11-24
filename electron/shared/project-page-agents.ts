@@ -1,6 +1,8 @@
 import { isGitHubAgentTaskId } from './github-list.js';
 
 const KANBAN_AGENT_PREFIX = 'kanban-agent-';
+/** A document workspace's agent; shared with the MCP server, which shows it no task cards. */
+export const DOCUMENT_AGENT_TASK_PREFIX = 'doc-agent-';
 
 /** The Kanban board's planning agent; its own session, apart from the GitHub page's. */
 export function kanbanAgentTaskId(projectId: string): string {

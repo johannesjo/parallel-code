@@ -1,20 +1,19 @@
 import './TaskSuggestionCards.css';
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import {
   dismissTaskSuggestion,
   editTaskSuggestion,
+  isTaskSuggestionInHand,
+  isTaskSuggestionStarting,
   pendingTaskSuggestions,
   startTaskSuggestion,
 } from '../store/task-suggestions';
 import { setActiveTask } from '../store/navigation';
-import { showNotification } from '../store/notification';
+import { NOTIFICATION_ERROR_MS, showNotification } from '../store/notification';
 import { store } from '../store/core';
 import { errMessage } from '../lib/log';
 import type { Task } from '../store/types';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
-
-/** How long the "Started" receipt stays; the new task is in the sidebar by then. */
-const RECEIPT_MS = 6000;
+import { ChevronDownIcon, ChevronRightIcon } from './icons';
 
 /**
  * Separate tasks this task's agent suggested through `suggest_task`, previewed
@@ -24,43 +23,37 @@ const RECEIPT_MS = 6000;
 export function TaskSuggestionCards(props: { task: Task }) {
   const pending = () => pendingTaskSuggestions(props.task);
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set());
-  const [starting, setStarting] = createSignal<ReadonlySet<string>>(new Set());
-  const [receipts, setReceipts] = createSignal<readonly { title: string; taskId: string }[]>([]);
-  const timers = new Set<ReturnType<typeof setTimeout>>();
-  onCleanup(() => timers.forEach(clearTimeout));
 
-  const toggle = (
-    set: (fn: (prev: ReadonlySet<string>) => ReadonlySet<string>) => void,
-    id: string,
-    on: boolean,
-  ) =>
-    set((prev) => {
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
       const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
+      if (!next.delete(id)) next.add(id);
       return next;
     });
+  }
 
   const agentName = () => {
     const agentId = props.task.agentIds[0];
-    return (agentId && store.agents[agentId]?.def.name) || 'the default agent';
+    return (agentId && store.agents[agentId]?.def.name) || 'its agent';
   };
 
   async function start(id: string, title: string) {
-    if (starting().has(id)) return;
-    toggle(setStarting, id, true);
     try {
       const taskId = await startTaskSuggestion(props.task.id, id);
-      setReceipts((list) => [...list, { title, taskId }]);
-      const timer = setTimeout(() => {
-        timers.delete(timer);
-        setReceipts((list) => list.filter((r) => r.taskId !== taskId));
-      }, RECEIPT_MS);
-      timers.add(timer);
+      // A notice, not a line here: removing a line later would resize the terminal.
+      showNotification(`Started “${title}”`, {
+        tone: 'success',
+        action: {
+          label: 'Open',
+          run: () => {
+            if (taskId in store.tasks) setActiveTask(taskId);
+          },
+        },
+      });
     } catch (error) {
-      showNotification(`Could not start “${title}”: ${errMessage(error)}`);
-    } finally {
-      toggle(setStarting, id, false);
+      showNotification(`Could not start “${title}”: ${errMessage(error)}`, {
+        durationMs: NOTIFICATION_ERROR_MS,
+      });
     }
   }
 
@@ -70,29 +63,12 @@ export function TaskSuggestionCards(props: { task: Task }) {
   }
 
   return (
-    <Show when={pending().length > 0 || receipts().length > 0}>
+    <Show when={pending().length > 0}>
       <section class="task-suggestions" aria-label="Suggested tasks">
-        <For each={receipts()}>
-          {(receipt) => (
-            <div class="task-suggestion-receipt" role="status">
-              <CheckIcon size={12} />
-              <span class="task-suggestion-receipt-text">Started “{receipt.title}”</span>
-              <Show when={Object.hasOwn(store.tasks, receipt.taskId)}>
-                <button
-                  type="button"
-                  class="task-suggestion-link"
-                  onClick={() => setActiveTask(receipt.taskId)}
-                >
-                  Open
-                </button>
-              </Show>
-            </div>
-          )}
-        </For>
         <For each={pending()}>
           {(suggestion) => {
             const open = () => expanded().has(suggestion.id);
-            const busy = () => starting().has(suggestion.id);
+            const busy = () => isTaskSuggestionInHand(suggestion.id);
             return (
               <article class="task-suggestion" aria-label={`Suggested task: ${suggestion.title}`}>
                 <div class="task-suggestion-label">Suggested task</div>
@@ -106,7 +82,7 @@ export function TaskSuggestionCards(props: { task: Task }) {
                     title={`Starts a new task with ${agentName()} in the background`}
                     onClick={() => void start(suggestion.id, suggestion.title)}
                   >
-                    {busy() ? 'Starting…' : 'Start task'}
+                    {isTaskSuggestionStarting(suggestion.id) ? 'Starting…' : 'Start task'}
                   </button>
                   <button
                     type="button"
@@ -128,7 +104,7 @@ export function TaskSuggestionCards(props: { task: Task }) {
                     type="button"
                     class="task-suggestion-disclosure"
                     aria-expanded={open()}
-                    onClick={() => toggle(setExpanded, suggestion.id, !open())}
+                    onClick={() => toggleExpanded(suggestion.id)}
                   >
                     {open() ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
                     {open() ? 'Hide prompt' : 'Show prompt'}

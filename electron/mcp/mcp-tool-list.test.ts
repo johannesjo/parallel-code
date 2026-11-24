@@ -186,6 +186,7 @@ it('offers task suggestions only to sessions with a task panel to show them on',
   expect(names('normal-task')).toContain('suggest_task');
   expect(names('gh-agent-p1')).not.toContain('suggest_task');
   expect(names('kanban-agent-p1')).not.toContain('suggest_task');
+  expect(names('doc-agent-p1')).not.toContain('suggest_task');
   expect(selectTools('', 'coordinator-xyz').map((tool) => tool.name)).not.toContain('suggest_task');
   expect(
     serverInstructions({ taskId: 'normal-task', coordinatorId: '', canvasOnly: true }),

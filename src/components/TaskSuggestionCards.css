@@ -94,6 +94,8 @@
 
 /* The primary action is marked by full-strength text, not colour. */
 .task-suggestion-actions .task-suggestion-start {
+  /* Fits "Starting…", so the row does not move when the label swaps. */
+  min-width: 7.5em;
   color: var(--fg);
   font-weight: 600;
 }
@@ -107,35 +109,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* Fits "Hide prompt" as well as "Show prompt". */
+  min-width: 8.5em;
   margin-left: auto;
   border-color: transparent;
-}
-
-.task-suggestion-receipt {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--success);
-}
-
-.task-suggestion-receipt-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-suggestion-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--link);
-  font: inherit;
-  cursor: pointer;
-}
-
-.task-suggestion-link:hover {
-  text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {
