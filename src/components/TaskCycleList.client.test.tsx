@@ -139,6 +139,38 @@ describe('held Ctrl+Tab list', () => {
     expect(rows()).toHaveLength(0);
   });
 
+  it('dims the app behind the list, and a click on the backdrop leaves without switching', () => {
+    ctrlTab();
+    vi.advanceTimersByTime(CYCLE_REVEAL_MS);
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    rows()[2]?.dispatchEvent(press);
+    // Keeps the keyboard in its pane, and the list open for the click.
+    expect(press.defaultPrevented).toBe(true);
+    expect(rows()).toHaveLength(4);
+    (document.querySelector('.task-cycle-backdrop') as HTMLElement).click();
+    expect(rows()).toHaveLength(0);
+    releaseCtrl();
+    expect(nav.opened).toEqual([]);
+  });
+
+  // On macOS a click with Ctrl down is a right-click: no click event follows.
+  it('treats a Ctrl-click (context menu) like a click, without opening a menu', () => {
+    ctrlTab();
+    vi.advanceTimersByTime(CYCLE_REVEAL_MS);
+    const menu = () => new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    const onRow = menu();
+    rows()[2]?.dispatchEvent(onRow);
+    expect(onRow.defaultPrevented).toBe(true);
+    expect(nav.opened).toEqual(['b']);
+    ctrlTab();
+    vi.advanceTimersByTime(CYCLE_REVEAL_MS);
+    const onBackdrop = menu();
+    document.querySelector('.task-cycle-backdrop')?.dispatchEvent(onBackdrop);
+    expect(onBackdrop.defaultPrevented).toBe(true);
+    expect(rows()).toHaveLength(0);
+    expect(nav.opened).toEqual(['b']);
+  });
+
   it('cancels when the window loses focus', () => {
     ctrlTab();
     window.dispatchEvent(new Event('blur'));

@@ -4667,13 +4667,19 @@ html[data-look='islands-light'] .window-title-icon {
   font-size: 11px;
 }
 
-/* Held Ctrl+Tab list. Placed like the Cmd+K switcher, but no backdrop: it
-   comes and goes with a key hold and never takes focus. */
+/* Held Ctrl+Tab list. Placed and dimmed like the Cmd+K switcher, but it never
+   takes focus: the keys keep going to the shortcut handlers. */
+.task-cycle-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  background: rgba(0, 0, 0, 0.55);
+}
+
 .task-cycle {
   position: fixed;
   top: 14vh;
   left: 50%;
-  z-index: var(--z-overlay);
   width: min(520px, calc(100vw - 32px));
   padding: 10px;
   transform: translateX(-50%);
