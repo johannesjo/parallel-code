@@ -4667,6 +4667,22 @@ html[data-look='islands-light'] .window-title-icon {
   font-size: 11px;
 }
 
+/* Held Ctrl+Tab list. Placed like the Cmd+K switcher, but no backdrop: it
+   comes and goes with a key hold and never takes focus. */
+.task-cycle {
+  position: fixed;
+  top: 14vh;
+  left: 50%;
+  z-index: var(--z-overlay);
+  width: min(520px, calc(100vw - 32px));
+  padding: 10px;
+  transform: translateX(-50%);
+  border: 1px solid var(--island-border);
+  border-radius: var(--radius-lg);
+  background: var(--island-bg);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
 /* Shown to teach the key, so it reads as a plain hint, not a control. */
 .task-switcher-shortcut {
   color: var(--fg-muted);

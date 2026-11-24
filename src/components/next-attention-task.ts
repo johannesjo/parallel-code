@@ -2,7 +2,7 @@ import { store } from '../store/core';
 import { isAiTerminalPanel } from '../store/focused-panel';
 import { boardShown } from '../store/project-pages';
 import { previousTaskId } from '../store/previous-task';
-import { samePanelKindIn } from '../store/store';
+import { activateTaskFromPointer, samePanelKindIn } from '../store/store';
 import type { Task } from '../store/types';
 import { askingPanel, openTask } from './board/task-state';
 import { openBesideBoard } from './board/TaskStatus';
@@ -73,6 +73,24 @@ function revealBoardCard(taskId: string): void {
 export function openNextAttentionTask(): void {
   const task = nextInQueue(attentionQueue(), store.activeTaskId);
   if (task) openBesideBoardOrInLayout(task, landingPanel(task.id));
+}
+
+/** Waiting task ids in the order Ctrl+Tab visits them, and the one it opens next. */
+export function attentionTargets(): { ids: string[]; next: string | undefined } {
+  const queue = attentionQueue();
+  return { ids: queue.map((task) => task.id), next: nextInQueue(queue, store.activeTaskId)?.id };
+}
+
+/**
+ * Opens a task the way Ctrl+Tab does, beside the board while it is shown;
+ * other open items (terminals, document workspaces) open the plain way.
+ */
+export function openCycledItem(id: string): void {
+  const task = store.tasks[id];
+  // The list is a snapshot; the task may have started closing since.
+  if (task?.closingStatus === 'closing' || task?.closingStatus === 'removing') return;
+  if (task) openBesideBoardOrInLayout(task, landingPanel(id));
+  else activateTaskFromPointer(id);
 }
 
 /**

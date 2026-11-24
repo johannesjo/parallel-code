@@ -424,7 +424,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     id: 'app.nav.next-attention',
     layer: 'app',
     category: 'Navigation',
-    description: 'Go to next task that needs you, then stopped ones',
+    description: 'Go to next task that needs you, then stopped ones; hold to pick any task',
     platform: 'both',
     // One hand, and Ctrl on macOS too: Cmd+Tab is the system app switcher.
     key: 'Tab',

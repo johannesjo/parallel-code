@@ -13,24 +13,27 @@ import { sortByProjectGroup } from '../store/sidebar-order';
 import { Dialog } from './Dialog';
 import { StatusDot } from './StatusDot';
 
+/** Name and project · branch (or kind) of an open item. */
+export function switcherItem(id: string): SwitcherItem {
+  const task = store.tasks[id];
+  const project = task && store.projects.find((p) => p.id === task.projectId);
+  const detail = task
+    ? [project?.name, task.branchName].filter(Boolean).join(' · ')
+    : store.terminals[id]
+      ? 'Terminal'
+      : 'Document workspace';
+  return { id, name: openItemName(id), detail };
+}
+
 /** Every open item across projects, in tile order; collapsed tasks stay out
  *  because reopening one restarts its agents. */
-function switcherItems(): SwitcherItem[] {
+export function switcherItems(): SwitcherItem[] {
   const documentProjectId = store.activeDocumentProjectId;
   const taskOrder = sortByProjectGroup(store.taskOrder);
   const ids = documentProjectId
     ? [...taskOrder, documentAgentTaskId(documentProjectId)]
     : taskOrder;
-  return ids.map((id) => {
-    const task = store.tasks[id];
-    const project = task && store.projects.find((p) => p.id === task.projectId);
-    const detail = task
-      ? [project?.name, task.branchName].filter(Boolean).join(' · ')
-      : store.terminals[id]
-        ? 'Terminal'
-        : 'Document workspace';
-    return { id, name: openItemName(id), detail };
-  });
+  return ids.map(switcherItem);
 }
 
 interface Match {

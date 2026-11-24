@@ -3,7 +3,8 @@ import { KanbanPage } from './components/KanbanPage';
 import { TaskBoard } from './components/TaskBoard';
 import { openBesideBoard } from './components/board/TaskStatus';
 import { navigateBoard, navigateBoardTask } from './components/task-board-keys';
-import { openNextAttentionTask, openPreviousTask } from './components/next-attention-task';
+import { cycleBack, cycleForward } from './components/task-cycle';
+import { TaskCycleList } from './components/TaskCycleList';
 import {
   BoardSidePanelClose,
   BoardSidePanelHandle,
@@ -823,8 +824,8 @@ function App() {
       },
       toggleBoardView: () => withViewTransition(toggleBoardView),
       toggleGitHubIssues: () => toggleGitHubIssues(),
-      openNextAttentionTask: () => openNextAttentionTask(),
-      openPreviousTask: () => openPreviousTask(),
+      openNextAttentionTask: (e) => cycleForward(e),
+      openPreviousTask: () => cycleBack(),
       switchDocument: () => {
         if (store.activeDocumentProjectId && isDocumentAgentTaskId(store.activeTaskId))
           setFilesOpen(true);
@@ -1141,6 +1142,7 @@ function App() {
         <IdeaDialog />
         <PromptPeek />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
+        <TaskCycleList />
         <TaskSwitcher
           open={taskSwitcherOpen()}
           onClose={() => setTaskSwitcherOpen(false)}
