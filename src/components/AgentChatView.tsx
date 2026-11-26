@@ -12,6 +12,7 @@ import { saveState } from '../store/persistence';
 import {
   sendPrompt,
   setTaskPromptDraft,
+  setTaskPromptDraftActive,
   clearPrefillPrompt,
   clearInitialPrompt,
 } from '../store/tasks';
@@ -300,6 +301,9 @@ export function AgentChatView(props: {
     if (prefill !== undefined) {
       setTaskPromptDraft(props.task.id, prefill);
       clearPrefillPrompt(props.task.id);
+      // Only the terminal prompt input clears this flag, so the chat must not keep it:
+      // left set, it holds back staged notifications and shows "waiting for your draft".
+      setTaskPromptDraftActive(props.task.id, false);
     }
   });
   return (

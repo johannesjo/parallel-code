@@ -110,6 +110,15 @@ function writesToAgent(): unknown[] {
 }
 
 describe('TerminalView', () => {
+  it('reads soft-wrapped output back as whole lines, keeping a space at the wrap', async () => {
+    let read: (() => string) | undefined;
+    const term = mountTerminal(undefined, undefined, { onBufferReady: (r) => (read = r) });
+    term.resize(10, 5);
+    await new Promise<void>((resolve) => term.write('123456789 abc\r\nnext\r\n\r\n', resolve));
+
+    expect(read?.()).toBe('123456789 abc\nnext');
+  });
+
   it.each([
     'https://example.com/',
     '\x1b]8;;https://example.com/\x07https://example.com/\x1b]8;;\x07',

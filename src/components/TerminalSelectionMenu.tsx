@@ -22,7 +22,8 @@ export function TerminalSelectionMenu(props: {
   y: number;
   text: string;
   recipients: { id: string; label: string }[];
-  onSend: (text: string, recipientAgentId?: string) => void;
+  /** Absent when the terminal has no agent to hand text to, such as a task's shell. */
+  onSend?: (text: string, recipientAgentId?: string) => void;
   onOpinion?: () => void;
   /** The Markdown or HTML path right-clicked, when there was one. */
   documentPath?: string;
@@ -59,7 +60,7 @@ export function TerminalSelectionMenu(props: {
     }
   }
   function send(id?: string) {
-    props.onSend(props.text, id);
+    props.onSend?.(props.text, id);
     props.onClose(false);
   }
   return (
@@ -145,7 +146,7 @@ export function TerminalSelectionMenu(props: {
             <CopyIcon size={14} />
             Copy
           </button>
-          <For each={props.recipients}>
+          <For each={props.onSend ? props.recipients : []}>
             {(recipient) => (
               <button role="menuitem" onClick={() => send(recipient.id)}>
                 <SendIcon size={14} />
@@ -153,7 +154,7 @@ export function TerminalSelectionMenu(props: {
               </button>
             )}
           </For>
-          <Show when={!props.recipients.length}>
+          <Show when={props.onSend && !props.recipients.length}>
             <button role="menuitem" onClick={() => send()}>
               <EyeIcon size={14} />
               Ask another agent…

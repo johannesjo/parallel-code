@@ -19,12 +19,14 @@ import {
   getTaskShellLayout,
   setTaskShellAutoLayout,
 } from '../store/store';
+import { stageTaskPrompt } from '../store/staged-prompt';
 import { TerminalView } from './TerminalView';
 import { fileLinkMenu, type ChangesLink } from './file-link-menu';
 import { findBareFile } from '../lib/find-bare-file';
 import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { editAsDocument } from '../documents/store';
-import { CloseIcon, TerminalSmallIcon } from './icons';
+import { CloseIcon, SendIcon, TerminalSmallIcon } from './icons';
+import { terminalOutputPrompt } from '../lib/terminal-output-prompt';
 import { AddCommandBookmark } from './AddCommandBookmark';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -285,6 +287,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
               const launch = consumePendingShellLaunch(shellId);
               const setupScript = consumePendingSetupScript(shellId);
               const runScript = consumePendingRunScript(shellId);
+              let readOutput: (() => string) | undefined;
               const badge = () => {
                 const run = runShellInfo(shellId);
                 return shellBadge({
@@ -405,6 +408,19 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                       shellFocusFn = focusFn;
                       if (registeredKey) registerFocusFn(registeredKey, focusFn);
                     }}
+                    onBufferReady={(read) => (readOutput = read)}
+                    paneActions={[
+                      {
+                        label: 'Send output to agent',
+                        icon: () => <SendIcon size={14} />,
+                        title:
+                          "Add this terminal's output to the agent's prompt, to send with your note",
+                        run: () => {
+                          const output = readOutput?.();
+                          if (output) stageTaskPrompt(props.task.id, terminalOutputPrompt(output));
+                        },
+                      },
+                    ]}
                     fontSize={12}
                     // The setup terminal opens on its own and a run terminal is
                     // a log; neither may take focus from the prompt.

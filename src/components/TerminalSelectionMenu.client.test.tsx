@@ -56,6 +56,18 @@ it('offers another agent when none exists and a second opinion when no text is s
   button('Ask another agent…').click();
   expect(onSend).toHaveBeenCalledWith('Proposal', undefined);
 });
+it('offers only Copy for a selection when the terminal has no agent to send to', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(
+    () => (
+      <TerminalSelectionMenu x={20} y={30} text="ls output" recipients={[]} onClose={vi.fn()} />
+    ),
+    host,
+  );
+  expect(button('Copy')).toBeDefined();
+  expect(document.body.textContent).not.toContain('Ask another agent');
+});
 it('keeps second opinion accessible through the menu without a selection', () => {
   const { onOpinion } = mount('', []);
   expect(document.body.textContent).not.toContain('Copy');

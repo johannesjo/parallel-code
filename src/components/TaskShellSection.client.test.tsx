@@ -4,6 +4,7 @@ import type { Task } from '../store/types';
 import { TaskShellSection } from './TaskShellSection';
 import { editAsDocument } from '../documents/store';
 import { store, updateProject, runBookmarkInTask, spawnShellForTask } from '../store/store';
+import { stageTaskPrompt } from '../store/staged-prompt';
 import { IPC } from '../../electron/ipc/channels';
 import type { FileLinkMenu } from './file-link-menu';
 import { forgetRunShells, setPendingRunScript } from '../store/runs';
@@ -46,6 +47,7 @@ vi.mock('../store/store', () => ({
   setTaskShellAutoLayout: vi.fn(),
   setShellLayoutOverride,
 }));
+vi.mock('../store/staged-prompt', () => ({ stageTaskPrompt: vi.fn() }));
 
 vi.mock('./TerminalView', () => ({
   TerminalView: (props: Record<string, unknown>) => {
@@ -171,6 +173,26 @@ describe('TaskShellSection', () => {
     );
 
     expect(terminalProps[0]?.onEditAsDocument).toBe(editAsDocument);
+  });
+
+  it("adds the shell's whole output to the task's agent prompt", () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(
+      render(() => <TaskShellSection task={makeTask(['shell-1'])} isActive />, container),
+    );
+    const props = terminalProps[0] as {
+      onBufferReady: (read: () => string) => void;
+      paneActions: { label: string; run: () => void }[];
+    };
+    props.onBufferReady(() => '$ npm test\n1 failed');
+
+    props.paneActions.find((action) => action.label === 'Send output to agent')?.run();
+
+    expect(stageTaskPrompt).toHaveBeenCalledWith(
+      'task-1',
+      'Terminal output:\n```\n$ npm test\n1 failed\n```',
+    );
   });
 
   it('offers a clicked shell file link the side panel and the Markdown dialog', async () => {

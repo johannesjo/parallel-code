@@ -44,6 +44,8 @@ vi.mock('../store/tasks', () => ({
   clearInitialPrompt: (taskId: string) => setStore('tasks', taskId, 'initialPrompt', undefined),
   setTaskPromptDraft: (taskId: string, value: string) =>
     setStore('tasks', taskId, 'promptDraft', value),
+  setTaskPromptDraftActive: (taskId: string, active: boolean) =>
+    setStore('tasks', taskId, 'promptDraftActive', active),
 }));
 vi.mock('../store/focus', () => ({ registerAction: vi.fn(), unregisterAction: vi.fn() }));
 vi.mock('../store/focused-panel', () => ({
@@ -502,6 +504,17 @@ describe('Codex chat view', () => {
     await tick();
     expect(mocks.chatProps?.state.requests).toHaveLength(1);
     expect(mocks.chatProps?.active).toBe(false);
+  });
+
+  it('takes appended text into the draft without leaving it marked as being typed', async () => {
+    // Only the terminal prompt clears this flag; left set, it would hold back
+    // staged notifications and show the task as waiting on a draft forever.
+    setStore('tasks', 'task-1', { prefillPrompt: 'Terminal output', promptDraftActive: true });
+    dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
+    await tick();
+
+    expect(task().promptDraft).toBe('Terminal output');
+    expect(task().promptDraftActive).toBe(false);
   });
 
   it('keeps drafts on failure and clears only the accepted unchanged draft', async () => {

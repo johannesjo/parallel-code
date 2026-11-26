@@ -54,6 +54,7 @@ import {
 } from '../lib/terminalFitManager';
 import { dataTransferToShellArgs, escapePath } from '../lib/terminalDrop';
 import { cleanCopiedTerminalText } from '../lib/copy-text';
+import { terminalBufferText } from '../remote/terminalText';
 import { hasTerminalUserActivity, nextTerminalInputPending } from '../lib/terminalInputPending';
 import { isEditableDocumentPath } from '../lib/document-path';
 import {
@@ -772,18 +773,7 @@ export function TerminalView(props: TerminalViewProps) {
       if (term?.hasSelection()) setOverviewTick((t) => t + 1); // refresh the button's position
     });
 
-    props.onBufferReady?.(() => {
-      if (!term) return '';
-      const buf = term.buffer.active;
-      const lines: string[] = [];
-      for (let i = 0; i <= buf.length - 1; i++) {
-        const line = buf.getLine(i);
-        if (line) lines.push(line.translateToString(true));
-      }
-      // Trim trailing empty lines
-      while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-      return lines.join('\n');
-    });
+    props.onBufferReady?.(() => (term ? terminalBufferText(term.buffer.active) : ''));
 
     // eslint-disable-next-line solid/reactivity -- key handler reads current signal/binding values intentionally on each keypress
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -1550,7 +1540,7 @@ export function TerminalView(props: TerminalViewProps) {
           <TerminalSelectionMenu
             {...selection}
             recipients={props.handoffRecipients ?? []}
-            onSend={(text, id) => props.onSendSelection?.(text, id)}
+            onSend={props.onSendSelection}
             onOpinion={selection.actions ? undefined : props.onSecondOpinion}
             paneActions={selection.actions ? undefined : props.paneActions}
             onDoubleClick={selection.linkRange && selectLinkInstead(selection.linkRange)}
