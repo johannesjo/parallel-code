@@ -22,6 +22,7 @@ const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, moc
       on: vi.fn(),
     }));
 
+    let nextPid = 1000;
     const mockPtySpawn = vi.fn(
       (_command: string, _args: string[], options: { cols: number; rows: number }) => {
         let onDataHandler: ((data: string) => void) | undefined;
@@ -30,6 +31,7 @@ const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, moc
         >();
 
         const proc = {
+          pid: nextPid++,
           cols: options.cols,
           rows: options.rows,
           write: vi.fn(),
@@ -106,6 +108,7 @@ import {
   killAgent,
   killAllAgents,
   listRunningAgentIds,
+  listBusyShellIds,
   onPtyEvent,
   projectImageTag,
   resizeAgent,
@@ -1213,6 +1216,64 @@ describe('listRunningAgentIds', () => {
     const gone = mockPtySpawn.mock.results[1].value as ReturnType<typeof mockPtySpawn>;
     gone.emitExit({ exitCode: 0, signal: undefined });
     expect(listRunningAgentIds()).toEqual(['agent-live']);
+  });
+});
+
+describe('listBusyShellIds', () => {
+  it('counts a silent direct launch until exit, including after reattachment', async () => {
+    const args = buildSpawnArgs({ isShell: true, command: 'sleep', args: ['60'] });
+    await spawnAgent(createMockNotify(), args);
+    await spawnAgent(createMockNotify(), buildSpawnArgs());
+    await spawnAgent(createMockNotify(), { ...args, command: '', attachExisting: true });
+    expect(await listBusyShellIds()).toEqual([args.agentId]);
+    killAgent(args.agentId);
+    expect(await listBusyShellIds()).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'uses terminal ownership for a pipeline and a shell prompt ending on a blank line',
+    async () => {
+      const args = buildSpawnArgs({ isShell: true, command: '', args: [], dockerMode: false });
+      await spawnAgent(createMockNotify(), args);
+      const proc = mockPtySpawn.mock.results[0].value as ReturnType<typeof mockPtySpawn>;
+      function sample(foreground: number) {
+        mockExecFile.mockImplementationOnce((_file, _args, _options, cb) =>
+          cb(null, [proc.pid, proc.pid, foreground].join('    ')),
+        );
+        return listBusyShellIds();
+      }
+      writeToAgent(args.agentId, 'true | sh -c "printf progress; sleep 60"\r');
+      proc.emitData('progress');
+      await vi.waitFor(() =>
+        expect(getAgentPromptSnapshot(args.agentId)?.text).toContain('progress'),
+      );
+      expect(await sample(proc.pid + 1)).toEqual([args.agentId]);
+      expect(mockExecFile).toHaveBeenCalledWith(
+        '/bin/ps',
+        ['-p', String(proc.pid), '-o', 'pid=,pgid=,tpgid='],
+        expect.any(Object),
+        expect.any(Function),
+      );
+      proc.emitData('\r\nprompt\r\n');
+      await vi.waitFor(() =>
+        expect(getAgentPromptSnapshot(args.agentId)?.text).toContain('prompt'),
+      );
+      expect(await sample(proc.pid)).toEqual([]);
+    },
+  );
+
+  it('tracks a silent command inside Docker until the prompt returns', async () => {
+    const args = buildSpawnArgs({ isShell: true, command: '', args: [] });
+    await spawnAgent(createMockNotify(), args);
+    const proc = mockPtySpawn.mock.results[0].value as ReturnType<typeof mockPtySpawn>;
+    proc.emitData('repo $ ');
+    await vi.waitFor(() => expect(getAgentPromptSnapshot(args.agentId)?.text).toContain('repo $'));
+    expect(await listBusyShellIds()).toEqual([]);
+    writeToAgent(args.agentId, 'sleep 60\r');
+    proc.emitData('sleep 60\r\n');
+    await vi.waitFor(async () => expect(await listBusyShellIds()).toEqual([args.agentId]));
+    proc.emitData('repo $ ');
+    await vi.waitFor(async () => expect(await listBusyShellIds()).toEqual([]));
   });
 });
 

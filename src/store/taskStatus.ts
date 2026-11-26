@@ -1,6 +1,6 @@
 import { createEffect, createRoot, createSignal, untrack } from 'solid-js';
 import { isClaudeCommand } from '../lib/claude-cloud';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { isAgentChat } from './agent-chat';
 import { isAgentSuspended } from './agent-suspend';
 import { invoke } from '../lib/ipc';
@@ -193,7 +193,7 @@ function clearAutoTrustState(agentId: string): void {
 
 export type TaskDotStatus = 'busy' | 'waiting' | 'ready' | 'review';
 /** `active` means an agent is working. `shell_busy` means only a plain terminal
- *  is producing output — informational, and never counted as needing attention. */
+ *  is busy — informational, and never counted as needing attention. */
 export type TaskAttentionState =
   | 'idle'
   | 'active'
@@ -711,6 +711,8 @@ function agentQuestionSince(
 // --- Agent activity tracking ---
 // Reactive set of agent IDs considered "active" (updated on coarser schedule).
 const [activeAgents, setActiveAgents] = createSignal<Set<string>>(new Set());
+// Sampled from the live PTYs, independently of output and pane visibility.
+const [busyShells, setBusyShells] = createStore<Record<string, boolean | undefined>>({});
 
 // How long after the last data event before transitioning back to idle.
 // AI agents routinely go silent for 10-30s during normal work (thinking,
@@ -1118,7 +1120,7 @@ export function isAgentIdle(agentId: string): boolean {
   const agent = store.agents[agentId];
   if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
     return agent.chatState?.status === 'ready';
-  return !isAgentWorking(agentId, activeAgents());
+  return !busyShells[agentId] && !isAgentWorking(agentId, activeAgents());
 }
 
 /** Lightweight busy marker for input the app just submitted — adds to active
@@ -1139,6 +1141,7 @@ export function forgetAgentOutput(agentId: string): void {
 
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
+  setBusyShells(agentId, undefined);
   setLastOutputAt(agentId, undefined);
   forgetPrintedPrLink(agentId);
   const state = agentStates.get(agentId);
@@ -1308,10 +1311,10 @@ export function getTaskAttentionState(taskId: string): TaskAttentionState {
 
 function hasBusyShell(taskId: string): boolean {
   const active = activeAgents(); // reactive read
-  return hasShellActivity(taskId, (id) => active.has(id));
+  return store.tasks[taskId]?.shellAgentIds.some((id) => active.has(id) || busyShells[id]) ?? false;
 }
 
-/** A plain terminal is producing output. Ready and review outrank it in the
+/** A plain terminal is busy. Ready and review outrank it in the
  *  attention state, yet a finished task can still have a dev server running,
  *  so this reports it under them too. Questions, errors and working agents
  *  outside review keep the say. */
@@ -1655,14 +1658,34 @@ function computeAllTasksInterval(): number {
 
 export function startTaskStatusPolling(): void {
   if (allTasksTimer || activeTaskTimer) return;
-  // Active task polls every 5s for responsive UI
-  activeTaskTimer = setInterval(refreshActiveTaskGitStatus, 5_000);
+  // One sample for all terminals, including tasks whose panes are off screen.
+  let samplingShells = false;
+  const refresh = async () => {
+    void refreshActiveTaskGitStatus();
+    if (
+      samplingShells ||
+      !store.taskOrder.some((id) => store.tasks[id]?.shellAgentIds.length || store.terminals[id])
+    )
+      return;
+    samplingShells = true;
+    const timer = activeTaskTimer;
+    try {
+      const ids = await invoke<string[]>(IPC.ListBusyShellIds);
+      if (timer === activeTaskTimer)
+        setBusyShells(reconcile(Object.fromEntries(ids.map((id) => [id, true]))));
+    } catch (error) {
+      logWarn('tasks.shell', 'Could not sample terminal activity', { error });
+    } finally {
+      samplingShells = false;
+    }
+  };
+  activeTaskTimer = setInterval(refresh, 5_000);
   // Scale interval: 30s base + 5s per additional task beyond 3
   lastPollingTaskCount = store.taskOrder.length;
   allTasksTimer = setInterval(refreshAllTaskGitStatus, computeAllTasksInterval());
   stopTurnEndRefresh = watchTurnEnds();
   // Run once immediately
-  refreshActiveTaskGitStatus();
+  refresh();
   refreshAllTaskGitStatus();
 }
 
@@ -1685,6 +1708,7 @@ export function stopTaskStatusPolling(): void {
     clearInterval(activeTaskTimer);
     activeTaskTimer = null;
   }
+  setBusyShells(reconcile({}));
   stopTurnEndRefresh?.();
   stopTurnEndRefresh = null;
   lastPollingTaskCount = 0;

@@ -24,6 +24,10 @@ import {
   clearTaskGitStatusTracking,
   getBranchDivergence,
   markAgentBusy,
+  isTaskTerminalBusy,
+  getTaskAttentionState,
+  isAgentIdle,
+  markAgentOutput,
   clearAgentActivity,
   startTaskStatusPolling,
   stopTaskStatusPolling,
@@ -322,6 +326,63 @@ describe('git status freshness', () => {
       expect(worktreeStatusCalls('t-active')).toHaveLength(1);
     } finally {
       setStore('activeTaskId', previousActive);
+    }
+  });
+
+  it('keeps a ready task’s quiet terminal busy until the foreground job ends', async () => {
+    const taskId = 'quiet-task';
+    const shell = 'quiet-shell';
+    seedTask(taskId);
+    setStore('taskOrder', [...store.taskOrder, taskId]);
+    setStore('tasks', taskId, 'shellAgentIds', [shell]);
+    let jobs = [shell];
+    invokeMock.mockImplementation(async (channel) =>
+      channel === IPC.ListBusyShellIds ? jobs : worktreeStatus('task/quiet-task'),
+    );
+    vi.useFakeTimers();
+    try {
+      startTaskStatusPolling();
+      markAgentOutput(shell, new TextEncoder().encode('running...'), taskId);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getTaskAttentionState(taskId)).toBe('ready');
+      expect(isTaskTerminalBusy(taskId)).toBe(true);
+      expect(isAgentIdle(shell)).toBe(false);
+      jobs = [];
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(isTaskTerminalBusy(taskId)).toBe(false);
+      expect(isAgentIdle(shell)).toBe(true);
+    } finally {
+      stopTaskStatusPolling();
+      clearAgentActivity(shell);
+      vi.useRealTimers();
+    }
+  });
+
+  it('allows one outstanding shell sample and discards it after polling stops', async () => {
+    seedTask('slow-task');
+    setStore('taskOrder', [...store.taskOrder, 'slow-task']);
+    setStore('tasks', 'slow-task', 'shellAgentIds', ['slow-shell']);
+    let finishSample: (shells: string[]) => void = () => {};
+    const sample = new Promise<string[]>((resolve) => {
+      finishSample = resolve;
+    });
+    invokeMock.mockImplementation(async (channel) =>
+      channel === IPC.ListBusyShellIds ? sample : worktreeStatus('task/slow-task'),
+    );
+    vi.useFakeTimers();
+    try {
+      startTaskStatusPolling();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(
+        invokeMock.mock.calls.filter(([channel]) => channel === IPC.ListBusyShellIds),
+      ).toHaveLength(1);
+      stopTaskStatusPolling();
+      finishSample(['slow-shell']);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(isAgentIdle('slow-shell')).toBe(true);
+    } finally {
+      stopTaskStatusPolling();
+      vi.useRealTimers();
     }
   });
 

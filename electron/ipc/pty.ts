@@ -53,6 +53,9 @@ interface PtySession {
   taskId: string;
   agentId: string;
   isShell: boolean;
+  /** This terminal exits with its program or run/setup script. */
+  runsCommand: boolean;
+  shellCommandSubmitted?: boolean;
   canvasTools?: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
   subscribers: Set<(encoded: string) => void>;
@@ -970,6 +973,7 @@ export async function spawnAgent(
     taskId: args.taskId,
     agentId: args.agentId,
     isShell: args.isShell ?? false,
+    runsCommand: !!args.command,
     canvasTools: args.canvasTools,
     flushTimer: null,
     subscribers: new Set(),
@@ -1036,7 +1040,8 @@ function writeSessionInput(session: PtySession, data: string): void {
   const draft = followTerminalDraft(session.inputPending, data);
   if (draft.submitted) {
     invalidateAgentActivity(session.agentId, session.launchId);
-    if (!session.isShell) emitPtyEvent('prompt-submitted', session.agentId);
+    if (session.isShell) session.shellCommandSubmitted = true;
+    else emitPtyEvent('prompt-submitted', session.agentId);
   }
   session.inputPending = draft.pending;
   // Claude Code fires no Stop hook for a user interrupt, so consumers that
@@ -1241,6 +1246,49 @@ export function killAgent(agentId: string): void {
     }
     session.proc.kill();
   }
+}
+
+/** Compare process groups because a pipeline can outlive its leader and a child
+ * shell can have the same executable name as the interactive shell. */
+async function sampleShellJobControl(pids: number[]): Promise<Map<number, boolean>> {
+  const busy = new Map<number, boolean>();
+  if (!pids.length || (process.platform !== 'linux' && process.platform !== 'darwin')) return busy;
+  return new Promise((resolve) => {
+    execFile(
+      '/bin/ps',
+      ['-p', pids.join(','), '-o', 'pid=,pgid=,tpgid='],
+      { timeout: 2_000 },
+      (err, stdout) => {
+        // A shell may exit during the sample. A missing row leaves screen evidence in charge.
+        if (!err) {
+          for (const line of stdout.trim().split('\n')) {
+            const [pid, group, foreground] = line.trim().split(/\s+/).map(Number);
+            if (group > 0 && foreground > 0) busy.set(pid, group !== foreground);
+          }
+        }
+        resolve(busy);
+      },
+    );
+  });
+}
+
+/** Shells occupied by a job, including those with no recent terminal output. */
+export async function listBusyShellIds(): Promise<string[]> {
+  const shells = [...sessions.values()].filter((session) => session.isShell);
+  // Docker exposes the host client here. Its process group cannot tell which
+  // program owns the terminal inside the container.
+  const localPids = shells.filter((s) => !s.runsCommand && !s.containerName).map((s) => s.proc.pid);
+  const jobControl = await sampleShellJobControl(localPids);
+  return shells
+    .filter((session) => {
+      if (sessions.get(session.agentId) !== session) return false;
+      if (session.runsCommand) return true;
+      return (
+        jobControl.get(session.proc.pid) ??
+        (session.shellCommandSubmitted && session.queries.hasCommandScreen())
+      );
+    })
+    .map((session) => session.agentId);
 }
 
 /** Every agent with a live process: PTY sessions, plus chats that run without one. */

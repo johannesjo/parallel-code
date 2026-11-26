@@ -40,6 +40,7 @@ import {
   killAgent,
   countRunningAgents,
   listRunningAgentIds,
+  listBusyShellIds,
   killAllAgents,
   getAgentMeta,
   notifyAgentListChanged,
@@ -978,6 +979,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return killAgent(args.agentId);
   });
   ipcMain.handle(IPC.CountRunningAgents, () => countRunningAgents());
+  ipcMain.handle(IPC.ListBusyShellIds, () => listBusyShellIds());
   ipcMain.handle(IPC.ListRunningAgentIds, () => listRunningAgentIds());
   ipcMain.handle(IPC.KillAllAgents, () => {
     pendingSpawns.clear();

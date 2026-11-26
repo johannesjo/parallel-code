@@ -12,6 +12,7 @@
   "ResumeAgent": "resume_agent",
   "KillAgent": "kill_agent",
   "CountRunningAgents": "count_running_agents",
+  "ListBusyShellIds": "list_busy_shell_ids",
   "ListRunningAgentIds": "list_running_agent_ids",
   "KillAllAgents": "kill_all_agents",
   "ListAgents": "list_agents",

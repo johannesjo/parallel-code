@@ -52,6 +52,8 @@ export interface TerminalQueryResponder {
    * so far is parsed. Null once disposed.
    */
   serialize(): Promise<string | null>;
+  /** A submitted command can stay silent on a fresh line or in a full-screen program. */
+  hasCommandScreen(): boolean;
   resize(cols: number, rows: number): void;
   /** Change how many lines are kept above the viewport; lowering it drops the oldest. */
   setScrollback(lines: number): void;
@@ -159,6 +161,14 @@ export function createTerminalQueryResponder(opts: {
         bracketedPaste: term.modes.bracketedPasteMode,
         alternateScreen: buffer.type === 'alternate',
       };
+    },
+    hasCommandScreen() {
+      const buffer = term.buffer.active;
+      return (
+        buffer.type === 'alternate' ||
+        (buffer.cursorX === 0 &&
+          buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) === '')
+      );
     },
     serialize() {
       if (disposed) return Promise.resolve(null);
