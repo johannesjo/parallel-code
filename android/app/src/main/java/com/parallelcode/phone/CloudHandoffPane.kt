@@ -45,6 +45,9 @@ internal fun CloudHandoffDialog(taskId: String, client: PhoneClient, onDismiss: 
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var started by rememberSaveable { mutableStateOf(false) }
+    // Set while a start is sent. Still set but no longer busy means a rotation dropped the reply:
+    // the desktop may already be starting the session, so Start is not offered again.
+    var requested by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(taskId) {
@@ -65,17 +68,20 @@ internal fun CloudHandoffDialog(taskId: String, client: PhoneClient, onDismiss: 
         }
     }
 
-    val ready = handoff?.takeIf { it.available && !started }
+    val interrupted = requested && !busy && !started
+    val ready = handoff?.takeIf { it.available && !started && !interrupted }
 
     fun start() {
         val info = ready ?: return
         busy = true
+        requested = true
         error = null
         scope.launch {
             try {
                 client.startCloudHandoff(taskId, prompt, info.canPush && push)
                 started = true
             } catch (e: ApiException) {
+                requested = false
                 error = e.message
             } finally {
                 busy = false
@@ -94,6 +100,10 @@ internal fun CloudHandoffDialog(taskId: String, client: PhoneClient, onDismiss: 
                     loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
+                    interrupted -> Text(
+                        "Your computer may already be starting this cloud session. Check the Claude app " +
+                            "or claude.ai/code before starting another.",
+                    )
                     started -> Text(
                         "The cloud session is starting on your computer. Follow it in the Claude app " +
                             "or on claude.ai/code. The local agent keeps running.",
