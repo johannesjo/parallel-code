@@ -102,7 +102,7 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           </Show>
         </div>
       </Show>
-      <Show when={props.state.alreadyLanded()}>
+      <Show when={props.state.alreadyLanded() || props.state.nothingToMerge()}>
         <div
           role="status"
           style={{
@@ -114,8 +114,13 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
             'font-size': '13px',
           }}
         >
-          Already in {props.state.baseBranchName()}: every commit on this branch is there, so
-          nothing is left to merge.
+          <Show
+            when={props.state.alreadyLanded()}
+            fallback="This branch has no commits ahead of its base and no uncommitted changes."
+          >
+            Already in {props.state.baseBranchName()}: every commit on this branch is there, so
+            nothing is left to merge.
+          </Show>
         </div>
       </Show>
       <Show when={props.state.worktreeStatus()?.has_uncommitted_changes}>
@@ -129,8 +134,14 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           Uncommitted changes in the worktree are not part of this merge.
         </div>
       </Show>
-      {/* No merge runs once the branch has landed, so the base checkout's changes do not matter. */}
-      <Show when={!props.state.alreadyLanded() && props.state.targetUncommitted()}>
+      {/* No merge runs once the branch has landed or holds nothing, so the base checkout's changes do not matter. */}
+      <Show
+        when={
+          !props.state.alreadyLanded() &&
+          !props.state.nothingToMerge() &&
+          props.state.targetUncommitted()
+        }
+      >
         {(target) => (
           <div
             data-testid="target-uncommitted"
@@ -156,7 +167,12 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           </div>
         )}
       </Show>
-      <Show when={!props.state.worktreeStatus.loading && !props.state.hasCommittedChangesToMerge()}>
+      <Show
+        when={
+          props.state.worktreeStatus()?.has_uncommitted_changes &&
+          !props.state.hasCommittedChangesToMerge()
+        }
+      >
         <div
           style={{
             ...bannerStyle(theme.warning),

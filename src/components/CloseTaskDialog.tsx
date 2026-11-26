@@ -36,10 +36,16 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
   const [worktreeStatus] = createResource(
     () =>
       props.open && props.task.gitIsolation === 'worktree' && !props.task.externalWorktree
-        ? props.task.worktreePath
+        ? {
+            worktreePath: props.task.worktreePath,
+            baseBranch: props.task.baseBranch,
+            forTaskClose: true,
+          }
         : null,
-    (path) => invoke<WorktreeStatus>(IPC.GetWorktreeStatus, { worktreePath: path }),
+    (args) => invoke<WorktreeStatus>(IPC.GetWorktreeStatus, args),
   );
+  const hasCommitsToLose = () =>
+    worktreeStatus()?.has_commits_ahead ?? worktreeStatus()?.has_committed_changes;
   const confirmWaitingForStatus = () =>
     shouldDisableCloseTaskConfirm(props.task, worktreeStatus.loading);
   const deletesWorktree = () =>
@@ -90,8 +96,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
             <Show
               when={
                 !props.task.externalWorktree &&
-                (worktreeStatus()?.has_uncommitted_changes ||
-                  worktreeStatus()?.has_committed_changes)
+                (worktreeStatus()?.has_uncommitted_changes || hasCommitsToLose())
               }
             >
               <div
@@ -113,7 +118,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                     Warning: There are uncommitted changes that will be permanently lost.
                   </div>
                 </Show>
-                <Show when={worktreeStatus()?.has_committed_changes}>
+                <Show when={hasCommitsToLose()}>
                   <div
                     style={{
                       ...bannerStyle(theme.warning),
@@ -121,7 +126,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                       'font-weight': '600',
                     }}
                   >
-                    Warning: This branch has commits that have not been merged into{' '}
+                    Warning: This branch has commits outside the history of{' '}
                     {worktreeStatus()?.base_branch ?? 'its base branch'}.
                   </div>
                 </Show>

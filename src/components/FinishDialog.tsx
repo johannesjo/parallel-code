@@ -141,9 +141,12 @@ export function FinishDialog(props: FinishDialogProps) {
     headSha: () => (merge.worktreeStatus.error ? null : merge.worktreeStatus()?.head_sha),
   });
   const prMerging = () => pr.busy() === 'merge';
-  // Merged on GitHub, or the commits reached the base another way, such as a
-  // cherry-pick: either way closing the task is all that is left.
-  const landed = () => pr.mode() === 'merged' || (pr.mode() === 'local' && merge.alreadyLanded());
+  // The commits reached the base another way, such as a cherry-pick, or the
+  // branch holds no work, such as when it went out on another branch.
+  const nothingLeft = () => merge.alreadyLanded() || merge.nothingToMerge();
+  // Merged on GitHub, or nothing left to merge locally: either way closing the
+  // task is all that is left.
+  const landed = () => pr.mode() === 'merged' || (pr.mode() === 'local' && nothingLeft());
   // A PR merges on GitHub, so a base that moved on locally matters only where
   // it conflicts or GitHub asks for the branch to be updated.
   const showBaseSync = () => {
@@ -186,9 +189,7 @@ export function FinishDialog(props: FinishDialogProps) {
   const pushFirst = () => pr.mode() === 'pr' && pr.headDiffers();
   // A local merge uses local commits, so pushing is only on offer, never required.
   const offerPush = () =>
-    pr.mode() === 'local' &&
-    !merge.alreadyLanded() &&
-    (remote() === 'unpushed' || remote() === 'differs');
+    pr.mode() === 'local' && !nothingLeft() && (remote() === 'unpushed' || remote() === 'differs');
   // Undefined while loading; a loaded status without a remote means there is no origin.
   const createPrRemote = () =>
     merge.mergeStatus.loading || merge.mergeStatus.error || !merge.mergeStatus()
@@ -253,6 +254,8 @@ export function FinishDialog(props: FinishDialogProps) {
     const blocker = pushBlocker();
     if (blocker) return blocker;
     if (pushFirst() || offerPush()) return undefined;
+    // An empty branch counts as landed, but it was never merged: it holds nothing.
+    if (pr.mode() === 'local' && merge.nothingToMerge()) return 'Nothing to push.';
     if (landed()) return 'Already merged.';
     if (pr.mode() === 'pr' && !pr.pr()) return pr.blocker();
     // .error first: reading an errored resource throws.
@@ -276,6 +279,7 @@ export function FinishDialog(props: FinishDialogProps) {
   /** `asIs` merges the PR without the unpushed commits, so the task stays open for them. */
   const mergePr = async (asIs = false) => {
     const number = pr.number();
+    const mergedHead = pr.pr()?.headRefOid;
     const outcome = await pr.merge();
     if (outcome === 'failed') return;
     if (outcome === 'queued') {
@@ -285,17 +289,25 @@ export function FinishDialog(props: FinishDialogProps) {
     }
     showNotification(`Merged PR #${number}`, { tone: 'success' });
     if (!asIs && !merge.requiresSeparateClose() && closeAfterPrMerge()) {
-      const { id, worktreePath } = props.task;
+      const { id, worktreePath, branchName, baseBranch } = props.task;
       props.onClose();
       // Fetched now, not on open: a running agent may have written files since.
-      const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, { worktreePath }).catch(
-        (err: unknown) => {
-          console.error('Worktree status before closing failed:', err);
-          return undefined;
-        },
-      );
-      // Unsaved edits would be lost silently, so those go through the close warning.
-      if (status && !status.has_uncommitted_changes) closeTaskNow(id, 'merged');
+      const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
+        worktreePath,
+        baseBranch,
+        forTaskClose: true,
+      }).catch((err: unknown) => {
+        console.error('Worktree status before closing failed:', err);
+        return undefined;
+      });
+      // Only the clean checkout of the exact commit merged on GitHub can close silently.
+      if (
+        mergedHead &&
+        status?.current_branch === branchName &&
+        status.head_sha === mergedHead &&
+        status.has_uncommitted_changes === false
+      )
+        closeTaskNow(id, 'merged');
       else props.onCloseTask();
       return;
     }
@@ -471,11 +483,11 @@ export function FinishDialog(props: FinishDialogProps) {
               {retroBox()}
             </FollowUps>
             {/* Without a PR the section only offers one, where the PR shows once it exists;
-                without an origin, or with the work on the base already, it needs no word on PRs. */}
+                without an origin, or with nothing left to merge, it needs no word on PRs. */}
             <Show
               when={taskPrUrl(props.task)}
               fallback={
-                <Show when={remote() && !merge.alreadyLanded()}>
+                <Show when={remote() && !nothingLeft()}>
                   <CreatePrEntry
                     disabled={push.pushing() || merge.merging()}
                     creating={creatingPr()}
@@ -523,7 +535,7 @@ export function FinishDialog(props: FinishDialogProps) {
             <Show
               when={
                 pr.mode() === 'local' &&
-                !merge.alreadyLanded() &&
+                !nothingLeft() &&
                 !(merge.worktreeStatus() && !merge.hasCommittedChangesToMerge())
               }
             >

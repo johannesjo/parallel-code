@@ -1,5 +1,7 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { IPC } from '../../electron/ipc/channels';
+import { invoke } from '../lib/ipc';
 import { setStore } from '../store/core';
 import { boardSidePanelOpen } from '../store/project-pages';
 import { closeTask } from '../store/store';
@@ -94,6 +96,23 @@ it('shows why the coordinator suggested closing the task', () => {
   expect(document.body.textContent).toContain(
     'The coordinator suggested closing this task: Superseded by the retry task',
   );
+});
+
+it('warns about a merge commit even when the change list is empty', async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({
+    base_branch: 'feature',
+    has_commits_ahead: true,
+    has_committed_changes: false,
+  });
+  openDialog({ ...task, gitIsolation: 'worktree', baseBranch: 'feature' });
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain('commits outside the history of feature'),
+  );
+  expect(invoke).toHaveBeenCalledWith(IPC.GetWorktreeStatus, {
+    worktreePath: task.worktreePath,
+    baseBranch: 'feature',
+    forTaskClose: true,
+  });
 });
 
 it('offers no retro when the task has no running agent', () => {

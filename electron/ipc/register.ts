@@ -1192,7 +1192,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
     const worktreePath = worktreePathArg(args);
-    return getWorktreeStatus(worktreePath, optionalBaseBranch(args));
+    return getWorktreeStatus(worktreePath, optionalBaseBranch(args), args.forTaskClose === true);
   });
   ipcMain.handle(IPC.CommitAll, (_e, args) => {
     const worktreePath = worktreePathArg(args);

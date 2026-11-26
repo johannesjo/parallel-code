@@ -86,6 +86,7 @@ export function createMergeState(props: MergeStateProps) {
   const [worktreeStatus, { refetch: refetchWorktreeStatus, mutate: mutateWorktreeStatus }] =
     createResource(resourceSource, (src) =>
       invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
+        forTaskClose: true,
         worktreePath: src.path,
         baseBranch: src.baseBranch,
       }),
@@ -149,6 +150,17 @@ export function createMergeState(props: MergeStateProps) {
    *  The check ran on the worktree's HEAD, which says nothing about the task's
    *  own branch while another one is checked out. */
   const alreadyLanded = () => mergeStatus()?.already_landed === true && !hasBranchMismatch();
+  /** The task's branch holds no work at all, committed or not, such as when
+   *  that work went out on another branch. A merge commit counts as work: it
+   *  can carry changes of its own. */
+  const nothingToMerge = () => {
+    const status = worktreeStatus();
+    return (
+      status?.has_commits_ahead === false &&
+      status.has_uncommitted_changes === false &&
+      !hasBranchMismatch()
+    );
+  };
   /** Uncommitted changes in the base checkout; the merge sets them aside. */
   const targetUncommitted = () => mergeStatus()?.target_uncommitted;
   /** The task's uncommitted files the base changed too: they block bringing it in. */
@@ -204,10 +216,13 @@ export function createMergeState(props: MergeStateProps) {
     if (wantMain() && !mainTarget()) return 'Finding the main branch…';
     if (!worktreeStatus()) return 'Checking the branch…';
     if (hasBranchMismatch()) return "The worktree is not on this task's branch.";
-    if (!hasCommittedChangesToMerge())
+    // A branch with no work at all is nothingToMerge, which offers Close task instead.
+    if (!hasCommittedChangesToMerge()) {
+      if (worktreeStatus()?.has_commits_ahead) return 'Review the branch history before merging.';
       return worktreeStatus()?.has_uncommitted_changes
         ? 'Commit the changes to merge them.'
-        : 'No commits on this branch yet.';
+        : 'Could not confirm whether this branch has commits to merge.';
+    }
     if (hasConflicts()) return `Resolve the conflicts with ${baseBranchName()} first.`;
     if (targetUncommitted()?.overlap.length)
       return `Commit or stash the changes in ${baseBranchName()} that this merge touches.`;
@@ -327,6 +342,7 @@ export function createMergeState(props: MergeStateProps) {
     commitCount,
     hasConflicts,
     alreadyLanded,
+    nothingToMerge,
     targetUncommitted,
     uncommittedOverlap,
     hasCommittedChangesToMerge,

@@ -699,6 +699,7 @@ export function parseStatusV2(out: string): {
 export async function getWorktreeStatus(
   worktreePath: string,
   baseBranch?: string,
+  forTaskClose = false,
 ): Promise<WorktreeStatus> {
   if (!fs.existsSync(worktreePath)) {
     return UNREADABLE_WORKTREE_STATUS;
@@ -712,7 +713,14 @@ export async function getWorktreeStatus(
     // poll; `--no-ahead-behind` skips the upstream count this doesn't use.
     ({ stdout: statusOut } = await exec(
       'git',
-      ['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '--no-ahead-behind'],
+      [
+        '--no-optional-locks',
+        'status',
+        '--porcelain=v2',
+        '--branch',
+        '--no-ahead-behind',
+        ...(forTaskClose ? ['--untracked-files=normal', '--ignore-submodules=none'] : []),
+      ],
       { cwd: worktreePath, maxBuffer: MAX_BUFFER },
     ));
   } catch {
@@ -741,7 +749,32 @@ export async function getWorktreeStatus(
     /* ignore */
   }
 
+  // Finish and Close need actual branch history. The diff base above can omit
+  // patch-equivalent commits and merges. Use the HEAD from the status snapshot.
+  let hasCommitsAhead: boolean | undefined;
+  if (forTaskClose && resolvedBaseBranch && headSha) {
+    try {
+      const cwd = { cwd: worktreePath };
+      // Finish targets a branch. Git's shorthand lookup can prefer a same-named tag.
+      const { stdout: symbolic } = await exec(
+        'git',
+        ['rev-parse', '--verify', '--symbolic-full-name', resolvedBaseBranch],
+        cwd,
+      );
+      const ref = symbolic.trim();
+      const baseRef =
+        ref.startsWith('refs/heads/') || ref.startsWith('refs/remotes/')
+          ? ref
+          : `refs/heads/${resolvedBaseBranch}`;
+      const { stdout } = await exec('git', ['rev-list', '-1', `${baseRef}..${headSha}`, '--'], cwd);
+      hasCommitsAhead = stdout.trim().length > 0;
+    } catch {
+      // An unresolved base cannot establish that closing is safe.
+    }
+  }
+
   return {
+    ...(hasCommitsAhead !== undefined && { has_commits_ahead: hasCommitsAhead }),
     has_committed_changes: hasCommittedChanges,
     has_uncommitted_changes: hasUncommittedChanges,
     current_branch: currentBranch,

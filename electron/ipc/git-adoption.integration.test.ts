@@ -115,13 +115,53 @@ describe('branch adoption against real git', () => {
     expect(status.lines_removed).toBe(0);
   });
 
-  it('getWorktreeStatus counts an untracked file as uncommitted', async () => {
+  it('counts untracked work even when Git is configured to hide it', async () => {
     const { worktreePath } = makeRepo('untracked');
+    run(worktreePath, ['config', 'status.showUntrackedFiles', 'no']);
     fs.writeFileSync(path.join(worktreePath, 'new.txt'), 'new\n');
 
-    const status = await getWorktreeStatus(worktreePath);
+    expect((await getWorktreeStatus(worktreePath)).has_uncommitted_changes).toBe(false);
+    const status = await getWorktreeStatus(worktreePath, 'main', true);
     expect(status.has_uncommitted_changes).toBe(true);
     expect(status.has_committed_changes).toBe(false);
+  });
+
+  it('sees untracked submodule files before closing even when Git hides them', async () => {
+    const { root: moduleRepo } = makeRepo('module');
+    const { root, worktreePath } = makeRepo('with-module');
+    run(root, ['-c', 'protocol.file.allow=always', 'submodule', 'add', moduleRepo, 'module']);
+    run(root, ['commit', '-m', 'add submodule']);
+    run(worktreePath, ['merge', '--ff-only', 'main']);
+    run(worktreePath, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init']);
+    run(worktreePath, ['config', 'submodule.module.ignore', 'dirty']);
+    fs.writeFileSync(path.join(worktreePath, 'module', 'new.txt'), 'unfinished work');
+    expect(await getWorktreeStatus(worktreePath, 'main', true)).toMatchObject({
+      has_commits_ahead: false,
+      has_uncommitted_changes: true,
+    });
+  });
+
+  it('checks the full branch history before closing, including work saved in a merge', async () => {
+    const { root, worktreePath } = makeRepo('merge-only');
+    const status = () => getWorktreeStatus(worktreePath, 'main', true);
+    fs.writeFileSync(path.join(root, 'base.txt'), 'base work');
+    run(root, ['add', 'base.txt']);
+    run(root, ['commit', '-m', 'advance main']);
+    expect((await status()).has_commits_ahead).toBe(false);
+    expect(
+      (await getWorktreeStatus(worktreePath, 'missing-base', true)).has_commits_ahead,
+    ).toBeUndefined();
+
+    run(worktreePath, ['merge', '--no-ff', '--no-commit', 'main']);
+    fs.writeFileSync(path.join(worktreePath, 'resolution.txt'), 'work saved in the merge');
+    run(worktreePath, ['add', 'resolution.txt']);
+    run(worktreePath, ['commit', '-m', 'resolve the merge']);
+    // A tag on the task's merge commit must never stand in for the local base branch.
+    run(worktreePath, ['tag', 'main']);
+    expect(await status()).toMatchObject({
+      has_commits_ahead: true,
+      has_uncommitted_changes: false,
+    });
   });
 
   it('getWorktreeStatus reports an unborn branch with no HEAD sha', async () => {

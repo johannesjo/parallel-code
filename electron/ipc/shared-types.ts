@@ -73,6 +73,8 @@ export interface CoverageSummary {
 }
 
 export interface WorktreeStatus {
+  /** Actual commits ahead of the requested base, including merges. Absent when unchecked or unreadable. */
+  has_commits_ahead?: boolean;
   has_committed_changes: boolean;
   has_uncommitted_changes: boolean;
   current_branch: string | null;
