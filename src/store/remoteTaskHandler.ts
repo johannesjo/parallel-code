@@ -29,6 +29,7 @@ import {
   sendPrompt,
   updateTaskNotes,
 } from './tasks';
+import { cloudHandoffForMobile, startCloudHandoffFromMobile } from './claude-cloud';
 import { getVerifyCommand } from './verification';
 import { getPrChecks } from './pr-checks-state';
 import { loadFailedChecksPrompt } from './github';
@@ -96,6 +97,12 @@ interface GetTaskDiffRequest extends RendererRequest {
 interface SendFixCiPromptRequest extends RendererRequest {
   taskId: string;
   prompt: string;
+}
+
+interface StartCloudHandoffRequest extends RendererRequest {
+  taskId: string;
+  prompt: string;
+  push: boolean;
 }
 
 function reply(reqId: string, ok: boolean, data?: unknown, error?: string): void {
@@ -505,6 +512,15 @@ async function handleSendFixCiPrompt(req: SendFixCiPromptRequest): Promise<void>
   }
 }
 
+async function handleStartCloudHandoff(req: StartCloudHandoffRequest): Promise<void> {
+  try {
+    await startCloudHandoffFromMobile(req.taskId, { prompt: req.prompt, push: req.push === true });
+    reply(req.reqId, true, { ok: true });
+  } catch (err) {
+    reply(req.reqId, false, undefined, errMessage(err));
+  }
+}
+
 /** Subscribe to mobile task-creation requests. Returns an unsubscribe fn. */
 export function startRemoteTaskHandlers(): () => void {
   const offReadReasoning = window.electron.ipcRenderer.on(
@@ -591,6 +607,25 @@ export function startRemoteTaskHandlers(): () => void {
     (data: unknown) => {
       if (data && typeof data === 'object')
         void handleSendFixCiPrompt(data as SendFixCiPromptRequest);
+    },
+  );
+  const offGetCloud = window.electron.ipcRenderer.on(
+    IPC.Remote_GetCloudHandoffRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetTaskDiffRequest;
+      try {
+        reply(req.reqId, true, cloudHandoffForMobile(req.taskId));
+      } catch (err) {
+        reply(req.reqId, false, undefined, errMessage(err));
+      }
+    },
+  );
+  const offStartCloud = window.electron.ipcRenderer.on(
+    IPC.Remote_StartCloudHandoffRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object')
+        void handleStartCloudHandoff(data as StartCloudHandoffRequest);
     },
   );
   const offMerge = window.electron.ipcRenderer.on(IPC.Remote_MergeTaskRequest, (data: unknown) => {
@@ -781,6 +816,8 @@ export function startRemoteTaskHandlers(): () => void {
     offReadiness();
     offFixCiPrompt();
     offSendFixCi();
+    offGetCloud();
+    offStartCloud();
     offMerge();
   };
 }

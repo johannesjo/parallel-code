@@ -1,5 +1,6 @@
 import { Show, createEffect, createSignal, createUniqueId, on } from 'solid-js';
 import { startCloudSession } from '../store/store';
+import { cloudHandoffPrompt } from '../lib/claude-cloud';
 import { theme } from '../lib/theme';
 import type { Task } from '../store/types';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -13,14 +14,6 @@ interface CloudHandoffDialogProps {
   /** Shows the task, where the cloud session's terminal opens. */
   showTask: () => void;
   onDone: () => void;
-}
-
-/**
- * The cloud session starts without this conversation, so the prompt names the task.
- * Not the prompt history: it records every answer typed into the terminal and drops old entries.
- */
-function cloudHandoffPrompt(task: Pick<Task, 'name'>): string {
-  return `Continue this task: ${task.name}\nThe branch has the work so far.`;
 }
 
 /**
@@ -49,7 +42,7 @@ export function CloudHandoffDialog(props: CloudHandoffDialogProps) {
       (open) => {
         attempt++;
         if (!open) return;
-        setPrompt(cloudHandoffPrompt(props.task));
+        setPrompt(cloudHandoffPrompt(props.task.name));
         pushRun.reset();
       },
     ),

@@ -1,9 +1,16 @@
 /** Task actions that reach claude.ai: Remote Control for the running agent, and a cloud handoff. */
 
-import { cloudLaunchArgs, isClaudeCommand, remoteControlCommand } from '../lib/claude-cloud';
+import type { RemoteCloudHandoff } from '../../electron/remote/protocol';
+import {
+  cloudHandoffPrompt,
+  cloudLaunchArgs,
+  isClaudeCommand,
+  remoteControlCommand,
+} from '../lib/claude-cloud';
+import { Channel } from '../lib/ipc';
 import { isAgentChat } from './agent-chat';
 import { setStore, store } from './core';
-import { spawnProgramForTask, typeIntoAgent } from './tasks';
+import { pushTask, spawnProgramForTask, typeIntoAgent } from './tasks';
 import { isAgentAskingQuestion } from './taskStatus';
 import type { Agent, Task } from './types';
 
@@ -87,4 +94,56 @@ export function startCloudSession(taskId: string, prompt: string): void {
     args: cloudLaunchArgs(prompt),
     envFile: store.agentEnvFiles[agent.def.id],
   });
+}
+
+/** Whether a phone may hand the task to the cloud, with what its dialog shows. */
+export function cloudHandoffForMobile(taskId: string): RemoteCloudHandoff {
+  const task = store.tasks[taskId];
+  if (!task) return { available: false, reason: 'Task not found.' };
+  if (!cloudHandoffAgent(task))
+    return {
+      available: false,
+      reason: 'Only Claude Code tasks outside Docker can continue in the cloud.',
+    };
+  return {
+    available: true,
+    prompt: cloudHandoffPrompt(task.name),
+    branchName: task.branchName,
+    canPush: task.gitIsolation === 'worktree',
+  };
+}
+
+/** Tasks whose phone handoff is under way, so a retry after a slow push starts no second session. */
+const handoffsInFlight = new Set<string>();
+
+/**
+ * A phone's cloud handoff, as the desktop dialog runs it: push first when asked, since the
+ * cloud clones from GitHub, then start the session. A failed push starts nothing.
+ */
+export async function startCloudHandoffFromMobile(
+  taskId: string,
+  options: { prompt: string; push: boolean },
+): Promise<void> {
+  const task = store.tasks[taskId];
+  if (!task || !cloudHandoffAgent(task)) throw new Error('This task cannot continue in the cloud');
+  if (handoffsInFlight.has(taskId)) throw new Error('A cloud session is already starting');
+  handoffsInFlight.add(taskId);
+  try {
+    if (options.push && task.gitIsolation === 'worktree') {
+      // Nobody reads the push output on the phone; the error message carries a failure.
+      const channel = new Channel<string>();
+      try {
+        await pushTask(taskId, channel);
+      } finally {
+        channel.dispose();
+      }
+    }
+    // Closed or turned into a Docker task while the push ran.
+    const current = store.tasks[taskId];
+    if (!current || !cloudHandoffAgent(current))
+      throw new Error('The task changed during the push');
+    startCloudSession(taskId, options.prompt);
+  } finally {
+    handoffsInFlight.delete(taskId);
+  }
 }

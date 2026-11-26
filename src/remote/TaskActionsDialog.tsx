@@ -19,6 +19,8 @@ interface TaskActionsDialogProps {
   onDone: () => void;
   /** Open on the close confirmation, as a Done card's Close does on the desktop. */
   startOnClose?: boolean;
+  /** Leaves Finish for the cloud handoff dialog. */
+  onContinueInCloud: () => void;
 }
 
 /** Where Finish opens: its main screen, or straight on the close confirmation. */
@@ -216,6 +218,14 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
                 Close the task and delete its worktree afterwards
               </label>
             </section>
+            {/* Not in the footer: it hands the work on rather than finishing it. */}
+            <button
+              class="mobile-button"
+              disabled={busy()}
+              onClick={() => props.onContinueInCloud()}
+            >
+              Continue in cloud…
+            </button>
           </Show>
           <Show when={error()}>
             <p class="mobile-error" role="alert">

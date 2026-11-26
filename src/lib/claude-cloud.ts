@@ -25,3 +25,12 @@ export function remoteControlCommand(taskName: string, connect: boolean): string
 export function cloudLaunchArgs(prompt: string): string[] {
   return [`--cloud=${prompt.trim()}`];
 }
+
+/**
+ * The default prompt for a cloud handoff. The cloud session starts without this conversation,
+ * so it names the task. Not the prompt history: it records every answer typed into the
+ * terminal and drops old entries.
+ */
+export function cloudHandoffPrompt(taskName: string): string {
+  return `Continue this task: ${taskName}\nThe branch has the work so far.`;
+}

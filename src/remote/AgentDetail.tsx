@@ -6,6 +6,7 @@ import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
 import { PARALLEL_CODE_TERMINAL_THEME } from '../lib/parallelCodeTerminalTheme';
 import { fetchNotes, saveNotes, ApiError } from './api';
 import { TaskDiffView } from './TaskDiffView';
+import { CloudHandoffDialog } from './CloudHandoffDialog';
 import { TaskActionsDialog, type FinishStep } from './TaskActionsDialog';
 import { clearPairedToken } from './auth';
 import { readLocal, writeLocal } from './storage';
@@ -77,6 +78,8 @@ export function AgentDetail(props: AgentDetailProps) {
   // Which step the Finish dialog shows, or undefined while it is closed.
   // eslint-disable-next-line solid/reactivity -- taken once on mount, by design
   const [finishStep, setFinishStep] = createSignal(props.takeStartOnFinish());
+  // The task id, held from the click: a reconnect blanking `taskId()` must not drop the user's edits.
+  const [cloudTask, setCloudTask] = createSignal<string>();
   const [multilinePaste, setMultilinePaste] = createSignal(false);
   const [terminalBottom, setTerminalBottom] = createSignal(true);
   const [zoom, setZoom] = createSignal(1);
@@ -905,6 +908,10 @@ export function AgentDetail(props: AgentDetailProps) {
           onClose={() => setFinishStep()}
           onNeedsPairing={props.onNeedsPairing}
           startOnClose={finishStep() === 'close'}
+          onContinueInCloud={() => {
+            setFinishStep();
+            setCloudTask(taskId());
+          }}
           // Merging with cleanup, or closing, removes the task. Returning to the
           // list avoids leaving the user on a screen for an agent that is gone.
           onDone={() => {
@@ -912,6 +919,9 @@ export function AgentDetail(props: AgentDetailProps) {
             props.onBack();
           }}
         />
+      </Show>
+      <Show when={cloudTask()}>
+        {(id) => <CloudHandoffDialog taskId={id()} onClose={() => setCloudTask()} />}
       </Show>
     </div>
   );

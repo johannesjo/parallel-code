@@ -47,6 +47,7 @@ describe('TaskActionsDialog readiness symbols', () => {
             onClose={() => {}}
             onNeedsPairing={() => {}}
             onDone={() => {}}
+            onContinueInCloud={() => {}}
           />
         ),
         host,
@@ -76,6 +77,7 @@ function mount(canAct: boolean, startOnClose = false) {
   const host = document.createElement('div');
   document.body.append(host);
   const done = vi.fn();
+  const cloud = vi.fn();
   disposers.push(
     render(
       () => (
@@ -86,6 +88,7 @@ function mount(canAct: boolean, startOnClose = false) {
           onClose={() => {}}
           onNeedsPairing={() => {}}
           onDone={done}
+          onContinueInCloud={cloud}
           startOnClose={startOnClose}
         />
       ),
@@ -94,7 +97,7 @@ function mount(canAct: boolean, startOnClose = false) {
   );
   const button = (label: string) =>
     [...host.querySelectorAll('button')].find((b) => b.textContent === label);
-  return { host, done, button };
+  return { host, done, cloud, button };
 }
 
 describe('TaskActionsDialog as Finish', () => {
@@ -124,11 +127,19 @@ describe('TaskActionsDialog as Finish', () => {
     expect(closeTask).toHaveBeenCalledWith('task-1', false);
   });
 
+  it('hands off to the cloud dialog without finishing the task', () => {
+    const { done, cloud, button } = mount(true);
+    button('Continue in cloud…')?.click();
+    expect(cloud).toHaveBeenCalledOnce();
+    expect(done).not.toHaveBeenCalled();
+  });
+
   it('shows a view-only phone the checks but no actions', async () => {
     const { host, button } = mount(false);
     await vi.waitFor(() => expect(host.querySelectorAll('.mobile-readiness-row').length).toBe(3));
     expect(button('Merge')).toBeUndefined();
     expect(button('Close task…')).toBeUndefined();
+    expect(button('Continue in cloud…')).toBeUndefined();
     expect(host.textContent).toContain('Pair this phone to merge or close tasks.');
     expect(button('Done')).toBeDefined();
   });

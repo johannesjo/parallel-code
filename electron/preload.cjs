@@ -126,6 +126,8 @@ const ALLOWED_CHANNELS = new Set([
   'remote_merge_task_request',
   'remote_get_fix_ci_prompt_request',
   'remote_send_fix_ci_prompt_request',
+  'remote_get_cloud_handoff_request',
+  'remote_start_cloud_handoff_request',
   'remote_update_task_status',
   'remote_renderer_reply',
   'plan_content',

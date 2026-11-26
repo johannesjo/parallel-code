@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { typeIntoAgent, spawnProgramForTask } = vi.hoisted(() => ({
+const { typeIntoAgent, spawnProgramForTask, pushTask } = vi.hoisted(() => ({
   typeIntoAgent: vi.fn(() => Promise.resolve()),
   spawnProgramForTask: vi.fn(() => 'shell-1'),
+  pushTask: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('./tasks', () => ({ typeIntoAgent, spawnProgramForTask }));
+vi.mock('./tasks', () => ({ typeIntoAgent, spawnProgramForTask, pushTask }));
+vi.mock('../lib/ipc', () => ({
+  Channel: class {
+    dispose = vi.fn();
+  },
+}));
 
 import { produce } from 'solid-js/store';
 import { setStore, store } from './core';
 import {
   cloudHandoffCommand,
+  cloudHandoffForMobile,
   remoteControlAgent,
   runRemoteControl,
+  startCloudHandoffFromMobile,
   startCloudSession,
 } from './claude-cloud';
 import type { Agent, Task } from './types';
@@ -96,5 +104,78 @@ describe('cloud handoff', () => {
       args: ['--cloud=Keep going'],
       envFile: 'CLAUDE_CONFIG_DIR=/home/me/.claude-work',
     });
+  });
+});
+
+describe('cloud handoff from a phone', () => {
+  beforeEach(() => {
+    spawnProgramForTask.mockClear();
+    pushTask.mockReset();
+    pushTask.mockResolvedValue(undefined);
+  });
+
+  it('offers the default prompt and a push for a worktree Claude task', () => {
+    setup({ task: { branchName: 'task/fix-login', gitIsolation: 'worktree' } });
+    expect(cloudHandoffForMobile('task-1')).toEqual({
+      available: true,
+      prompt: 'Continue this task: Fix login\nThe branch has the work so far.',
+      branchName: 'task/fix-login',
+      canPush: true,
+    });
+  });
+
+  it('says why another agent or a missing task cannot continue in the cloud', () => {
+    setup({ command: 'codex' });
+    expect(cloudHandoffForMobile('task-1').available).toBe(false);
+    expect(cloudHandoffForMobile('missing').available).toBe(false);
+  });
+
+  it('pushes the branch before starting the session', async () => {
+    setup({ task: { gitIsolation: 'worktree' } });
+    await startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: true });
+    expect(pushTask).toHaveBeenCalledWith('task-1', expect.anything());
+    expect(spawnProgramForTask).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({ args: ['--cloud=Keep going'] }),
+    );
+  });
+
+  it('starts nothing when the push fails', async () => {
+    setup({ task: { gitIsolation: 'worktree' } });
+    pushTask.mockRejectedValueOnce(new Error('rejected (non-fast-forward)'));
+    await expect(
+      startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: true }),
+    ).rejects.toThrow('non-fast-forward');
+    expect(spawnProgramForTask).not.toHaveBeenCalled();
+  });
+
+  it('skips the push when not asked, or for a task without its own branch', async () => {
+    setup({ task: { gitIsolation: 'worktree' } });
+    await startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: false });
+    setup({ task: { gitIsolation: 'direct' } });
+    await startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: true });
+    expect(pushTask).not.toHaveBeenCalled();
+    expect(spawnProgramForTask).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a second start while the first push is still running', async () => {
+    setup({ task: { gitIsolation: 'worktree' } });
+    let finishPush = () => {};
+    pushTask.mockImplementationOnce(() => new Promise<void>((resolve) => (finishPush = resolve)));
+    const first = startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: true });
+    await expect(
+      startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: true }),
+    ).rejects.toThrow('already starting');
+    finishPush();
+    await first;
+    expect(spawnProgramForTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a task that cannot continue in the cloud', async () => {
+    setup({ task: { dockerMode: true } });
+    await expect(
+      startCloudHandoffFromMobile('task-1', { prompt: 'Keep going', push: false }),
+    ).rejects.toThrow();
+    expect(spawnProgramForTask).not.toHaveBeenCalled();
   });
 });

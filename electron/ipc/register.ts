@@ -104,6 +104,7 @@ import type {
   RemoteBoardLane,
   RemoteCiStatus,
   RemoteCloseResult,
+  RemoteCloudHandoff,
   RemoteMergeReadiness,
   RemoteTaskContext,
   RemoteTaskDiff,
@@ -2046,6 +2047,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.Remote_SendFixCiPromptRequest, { taskId, prompt }).then(
         () => {},
       ),
+    getCloudHandoff: (taskId: string) =>
+      callRenderer<RemoteCloudHandoff>(IPC.Remote_GetCloudHandoffRequest, { taskId }),
+    startCloudHandoff: (req: { taskId: string; prompt: string; push: boolean }) =>
+      callRenderer<{ ok: boolean }>(IPC.Remote_StartCloudHandoffRequest, req).then(() => {}),
     mergeTaskFromMobile: (req: { taskId: string; squash: boolean; cleanup: boolean }) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_MergeTaskRequest, req).then(() => {}),
     getTaskAttention: (taskId: string): RemoteAttentionState => taskAttention.get(taskId) ?? 'idle',

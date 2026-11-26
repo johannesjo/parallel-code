@@ -118,6 +118,14 @@ export interface RemoteMergeReadiness {
   branchName: string;
 }
 
+/**
+ * Whether a task can continue in a claude.ai cloud session, with what the phone's
+ * dialog shows: the desktop's default prompt and whether its branch can be pushed first.
+ */
+export type RemoteCloudHandoff =
+  | { available: true; prompt: string; branchName: string; canPush: boolean }
+  | { available: false; reason: string };
+
 /** Metadata attached to a task's remote agent entry. */
 export type RemoteTaskContext = Pick<
   RemoteAgent,

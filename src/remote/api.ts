@@ -2,6 +2,7 @@
 // these cover the request/response actions: pairing, task creation, and
 // reading/saving task notes.
 
+import type { RemoteCloudHandoff } from '../../electron/remote/protocol';
 import { getToken, getPairedToken } from './auth';
 
 export class ApiError extends Error {
@@ -233,6 +234,27 @@ export async function sendFixCiPrompt(taskId: string, prompt: string): Promise<v
   await request<{ ok: boolean }>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/fix-ci`, {
     method: 'POST',
     body: { prompt },
+    token,
+  });
+}
+
+/** Whether the task can continue in a claude.ai cloud session, with its default prompt. Paired only. */
+export function fetchCloudHandoff(taskId: string): Promise<RemoteCloudHandoff> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  return request(`/api/mobile/tasks/${encodeURIComponent(taskId)}/cloud`, { token });
+}
+
+/** Push the branch when asked, then start the cloud session on the desktop. Paired only. */
+export async function startCloudHandoff(
+  taskId: string,
+  options: { prompt: string; push: boolean },
+): Promise<void> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  await request<{ ok: boolean }>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/cloud`, {
+    method: 'POST',
+    body: options,
     token,
   });
 }

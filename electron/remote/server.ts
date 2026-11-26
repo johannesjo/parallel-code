@@ -34,6 +34,7 @@ import {
   type RemoteAttentionState,
   type RemoteTaskContext,
   type RemoteCloseResult,
+  type RemoteCloudHandoff,
   type RemoteMergeReadiness,
   type RemoteTaskDiff,
 } from './protocol.js';
@@ -474,6 +475,8 @@ const GITHUB_LIST_MAX_BODY_BYTES = 1024 * 1024;
 // Several failed jobs at 4,000 log characters each; the chat route allows the same.
 const FIX_CI_MAX_PROMPT_CHARS = 60_000;
 const FIX_CI_MAX_BODY_BYTES = 256 * 1024;
+// The cloud prompt becomes one argv entry; Windows caps a whole command line near 32k characters.
+const CLOUD_MAX_PROMPT_CHARS = 8_000;
 const CANVAS_MAX_IN_FLIGHT = 4;
 // The renderer reports failures as plain messages; 409 tells the agent to read again, 400 to fix its input.
 const CANVAS_CONFLICT =
@@ -1129,6 +1132,10 @@ export function startRemoteServer(opts: {
   getFixCiPrompt?: (taskId: string) => Promise<string | null>;
   /** Send a phone-reviewed Fix CI prompt to the task's agent (renderer-backed). */
   sendFixCiPrompt?: (taskId: string, prompt: string) => Promise<void>;
+  /** Whether a task can continue in a cloud session, with its default prompt (renderer-backed). */
+  getCloudHandoff?: (taskId: string) => Promise<RemoteCloudHandoff>;
+  /** Optionally push, then start a cloud session for a paired phone (renderer-backed). */
+  startCloudHandoff?: (req: { taskId: string; prompt: string; push: boolean }) => Promise<void>;
   /** Merge a task on behalf of a paired phone (renderer-backed). */
   mergeTaskFromMobile?: (req: {
     taskId: string;
@@ -1871,6 +1878,53 @@ export function startRemoteServer(opts: {
             )
               return jsonEnd(400, { error: 'prompt must be a non-empty string' });
             return sendFixCiPrompt(taskId, body.prompt).then(
+              () => jsonEnd(200, { ok: true }),
+              (err: unknown) => jsonEnd(500, { error: String(err) }),
+            );
+          })
+          .catch(() => jsonEnd(400, { error: 'bad request' }));
+        return;
+      }
+
+      // --- Paired-mobile cloud handoff ---
+      // GET says whether the task can continue on claude.ai, with the desktop's
+      // default prompt; POST optionally pushes the branch, then starts the session
+      // in a desktop terminal. Paired only: it pushes and launches a program.
+      const cloudMatch = url.pathname.match(/^\/api\/mobile\/tasks\/([^/]+)\/cloud$/);
+      if (cloudMatch) {
+        if (tokenClass !== 'paired') return jsonEnd(403, { error: 'forbidden' });
+        if (req.method !== 'GET' && req.method !== 'POST')
+          return jsonEnd(405, { error: 'method not allowed' });
+        const getCloudHandoff = opts.getCloudHandoff;
+        const startCloudHandoff = opts.startCloudHandoff;
+        if (!getCloudHandoff || !startCloudHandoff)
+          return jsonEnd(503, { error: 'cloud handoff unavailable' });
+        let taskId: string;
+        try {
+          taskId = decodeURIComponent(cloudMatch[1]);
+        } catch {
+          return jsonEnd(400, { error: 'invalid task id' });
+        }
+        if (taskId === '__proto__' || taskId === 'constructor' || taskId === 'prototype') {
+          return jsonEnd(400, { error: 'invalid task id' });
+        }
+        if (req.method === 'GET') {
+          getCloudHandoff(taskId)
+            .then((result) => jsonEnd(200, result))
+            .catch((err) => jsonEnd(500, { error: String(err) }));
+          return;
+        }
+        readJsonBody(req)
+          .then((body) => {
+            if (
+              typeof body.prompt !== 'string' ||
+              !body.prompt.trim() ||
+              body.prompt.length > CLOUD_MAX_PROMPT_CHARS
+            )
+              return jsonEnd(400, { error: 'prompt must be a non-empty string' });
+            if (typeof body.push !== 'boolean')
+              return jsonEnd(400, { error: 'push must be a boolean' });
+            return startCloudHandoff({ taskId, prompt: body.prompt, push: body.push }).then(
               () => jsonEnd(200, { ok: true }),
               (err: unknown) => jsonEnd(500, { error: String(err) }),
             );
