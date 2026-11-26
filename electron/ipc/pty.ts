@@ -26,6 +26,7 @@ import {
   type TerminalQueryResponder,
 } from './terminal-query-responder.js';
 import {
+  getAgentActivityEvidence,
   registerAgentLaunch,
   retireAgentLaunch,
   invalidateAgentActivity,
@@ -1005,10 +1006,22 @@ export async function spawnAgent(
 // escape sequences like arrow keys arrive longer).
 const INTERRUPT_KEYSTROKES = new Set(['\x1b', '\x03']);
 
-export function writeToAgent(agentId: string, data: string): void {
+export function writeToAgent(
+  agentId: string,
+  data: string,
+  stopOnQuestion = false,
+): false | undefined {
   if (handingOff.has(agentId)) throw new Error('Wait for the view switch to finish.');
   const session = sessions.get(agentId);
   if (!session) throw new Error(`Agent not found: ${agentId}`);
+  if (stopOnQuestion) {
+    // Let the caller retry after the peer finishes instead of queuing an unchecked write.
+    if (session.peerInputQueue) return false;
+    if (getAgentActivityEvidence(agentId)?.activity === 'waiting')
+      throw new Error(
+        'The agent needs your input. Check its terminal before sending another prompt.',
+      );
+  }
   const at = Date.now();
   if (hasTerminalUserActivity(data)) session.lastInputAt = at;
   if (session.peerInputQueue) {

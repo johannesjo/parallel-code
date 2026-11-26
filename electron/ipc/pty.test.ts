@@ -1115,6 +1115,28 @@ describe('PTY hook launch ownership', () => {
       event: 'PromptSubmitted',
     });
   });
+
+  it('withholds automatic Enter when a permission request arrives after a paste', async () => {
+    const agentId = 'agent-hook-wait';
+    const taskId = 'hook-task';
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ agentId, taskId, command: 'claude' }));
+    const launchId = getAgentActivityEvidence(agentId)?.launchId;
+    if (!launchId) throw new Error('Missing launch');
+    writeToAgent(agentId, 'fix CI', true);
+    observeAgentHook({
+      agentId,
+      taskId,
+      launchId,
+      at: Date.now(),
+      event: 'PermissionRequest',
+      state: 'waiting',
+    });
+    expect(() => writeToAgent(agentId, '\r', true)).toThrow('needs your input');
+    const proc = mockPtySpawn.mock.results[0].value as ReturnType<typeof mockPtySpawn>;
+    expect(proc.write).not.toHaveBeenCalledWith('\r');
+    writeToAgent(agentId, '\r');
+    expect(proc.write).toHaveBeenCalledWith('\r');
+  });
 });
 
 describe('spawnAgent session reattach', () => {
@@ -1637,6 +1659,7 @@ describe('peer prompt delivery', () => {
     });
     const delivery = writeAgentPrompt(args.agentId, prompt, () => {}, onSubmitted);
     await vi.advanceTimersByTimeAsync(30);
+    expect(writeToAgent(args.agentId, 'fix CI', true)).toBe(false);
     writeToAgent(args.agentId, '\x1b[I');
     writeToAgent(args.agentId, 'competing body');
     await vi.advanceTimersByTimeAsync(70);

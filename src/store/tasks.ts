@@ -56,7 +56,7 @@ import {
 } from './taskStatus';
 import { recordMergedLines, recordTaskMerged } from './completion';
 import { NOTIFICATION_ERROR_MS, showNotification } from './notification';
-import { warn as logWarn } from '../lib/log';
+import { errMessage, warn as logWarn } from '../lib/log';
 import { cleanTaskName } from '../lib/clean-task-name';
 import { prefersMotion } from '../lib/reducedMotion';
 import type {
@@ -268,11 +268,20 @@ function assertTaskCanReceiveInput(taskId: string, agentId: string): void {
   }
 }
 
+interface TerminalWriteOptions {
+  signal?: AbortSignal;
+  /** Recheck reported questions in the main process before each PTY write. */
+  stopOnQuestion?: boolean;
+}
+
+/** A guarded write yielded to a prompt already being delivered to this terminal. */
+export class AgentInputBusyError extends Error {}
+
 async function writeToAgentWhenReady(
   taskId: string,
   agentId: string,
   data: string,
-  signal?: AbortSignal,
+  { signal, stopOnQuestion }: TerminalWriteOptions = {},
 ): Promise<void> {
   const deadline = Date.now() + AGENT_WRITE_READY_TIMEOUT_MS;
   let lastErr: unknown;
@@ -281,7 +290,13 @@ async function writeToAgentWhenReady(
     signal?.throwIfAborted();
     assertTaskCanReceiveInput(taskId, agentId);
     try {
-      await invoke(IPC.WriteToAgent, { agentId, data, ...(signal ? { automation: true } : {}) });
+      const written = await invoke<false | undefined>(IPC.WriteToAgent, {
+        agentId,
+        data,
+        ...(signal ? { automation: true } : {}),
+        ...(stopOnQuestion ? { stopOnQuestion: true, taskId } : {}),
+      });
+      if (written === false) throw new AgentInputBusyError('Another prompt is being delivered.');
       return;
     } catch (err) {
       lastErr = err;
@@ -895,8 +910,12 @@ function markCanvasGuided(agentId: string, generation: number | undefined): void
 // the PromptInput textarea, the xterm.js terminal loses DOM focus.  For agents
 // that enable focus tracking (\x1b[?1004h), xterm.js sends \x1b[O (Focus Out)
 // to the PTY, which may suspend readline input processing; \x1b[I re-activates it.
-function focusAgent(taskId: string, agentId: string, signal?: AbortSignal): Promise<void> {
-  return writeToAgentWhenReady(taskId, agentId, '\x1b[I', signal);
+function focusAgent(
+  taskId: string,
+  agentId: string,
+  options?: TerminalWriteOptions,
+): Promise<void> {
+  return writeToAgentWhenReady(taskId, agentId, '\x1b[I', options);
 }
 
 /**
@@ -913,7 +932,7 @@ async function submitToAgent(
   taskId: string,
   agentId: string,
   text: string,
-  signal?: AbortSignal,
+  options?: TerminalWriteOptions,
 ): Promise<void> {
   // Send text and Enter separately so TUI apps (Claude Code, Codex)
   // don't treat the \r as part of a pasted block.  When the agent has enabled
@@ -926,23 +945,29 @@ async function submitToAgent(
     taskId,
     agentId,
     useBracketed ? `${BRACKETED_PASTE_START}${body}${BRACKETED_PASTE_END}` : body,
-    signal,
+    options,
   );
   await new Promise((r) => setTimeout(r, pasteDelayMs(body)));
-  await writeToAgentWhenReady(taskId, agentId, '\r', signal);
+  try {
+    await writeToAgentWhenReady(taskId, agentId, '\r', options);
+  } catch (err) {
+    if (!options?.stopOnQuestion) throw err;
+    // Retrying the whole prompt here could duplicate text already in the composer.
+    throw new Error(`The pasted prompt may still be in the terminal, unsent. ${errMessage(err)}`, {
+      cause: err,
+    });
+  }
 }
 
 export async function sendPrompt(
   taskId: string,
   agentId: string,
   text: string,
-  options: {
+  options: TerminalWriteOptions & {
     /** App-composed prompts carry their own canvas contract, so none is appended. */
     appPrompt?: boolean;
     /** Images attached in the chat composer; terminal agents take text only. */
     images?: ChatImage[];
-    /** Cancel app-initiated delivery when its authorization changes. */
-    signal?: AbortSignal;
   } = {},
 ): Promise<void> {
   options.signal?.throwIfAborted();
@@ -975,7 +1000,7 @@ export async function sendPrompt(
     return;
   }
 
-  await focusAgent(taskId, agentId, options.signal);
+  await focusAgent(taskId, agentId, options);
   // MCP server instructions are not always surfaced by the CLI. Include the
   // canvas contract with the first explicit mention of a session, including resumes.
   // Check availability after waiting for startup to finish.
@@ -984,7 +1009,7 @@ export async function sendPrompt(
   const guidedGeneration = store.agents[agentId]?.generation;
   if (withGuidance) effectiveText += `\n\n---\n${CANVAS_INSTRUCTIONS}`;
   setTaskLastInputAt(taskId);
-  await submitToAgent(taskId, agentId, effectiveText, options.signal);
+  await submitToAgent(taskId, agentId, effectiveText, options);
   markAgentBusy(agentId);
   // App sends bypass xterm's onData handler, which normally clears this flag on Enter.
   if (agentId === task?.agentIds[0]) setTaskTerminalInputPending(taskId, false);

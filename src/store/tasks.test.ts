@@ -1832,6 +1832,19 @@ describe('sendPrompt', () => {
     expect(mockSetStore).toHaveBeenCalledWith('tasks', 'task-1', 'lastPrompt', 'hello Codex');
   });
 
+  it('requests the question guard for every write of a babysit prompt', async () => {
+    await sendPrompt('task-1', 'agent-1', 'fix CI', { appPrompt: true, stopOnQuestion: true });
+    const writes = mockInvoke.mock.calls.filter(([channel]) => channel === IPC.WriteToAgent);
+    expect(writes.map(([, args]) => args)).toEqual(
+      ['\x1b[I', 'fix CI', '\r'].map((data) => ({
+        taskId: 'task-1',
+        agentId: 'agent-1',
+        data,
+        stopOnQuestion: true,
+      })),
+    );
+  });
+
   it('sends raw prompt text when bracketed paste is not enabled', async () => {
     await sendPrompt('task-1', 'agent-1', 'hello Codex');
 

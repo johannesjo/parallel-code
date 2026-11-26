@@ -953,7 +953,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       assertString(args.taskId, 'taskId');
       if (mcp.coordinator()?.isAutomationWriteInFlight(args.taskId)) return false;
     }
-    return writeToAgent(args.agentId, args.data);
+    return writeToAgent(args.agentId, args.data, args.stopOnQuestion === true);
   });
   registerAttentionHandlers(
     win,

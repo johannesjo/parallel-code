@@ -784,7 +784,7 @@ describe('acknowledged phone messages', () => {
 
   it('reports a partial submission if the agent exits before Enter', async () => {
     vi.mocked(pty.writeToAgent)
-      .mockImplementationOnce(() => {})
+      .mockReturnValueOnce(undefined)
       .mockImplementationOnce(() => {
         throw new Error('gone');
       });

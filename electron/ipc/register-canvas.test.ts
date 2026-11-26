@@ -898,10 +898,12 @@ it('blocks automatic renderer writes immediately when orchestration is disabled,
   );
   expect(writeToAgent).not.toHaveBeenCalled();
   write?.(undefined, { agentId: 'agent', data: 'Manual prompt' });
-  expect(writeToAgent).toHaveBeenCalledWith('agent', 'Manual prompt');
+  expect(writeToAgent).toHaveBeenCalledWith('agent', 'Manual prompt', false);
   enabled.mockReturnValue(true);
   write?.(undefined, { agentId: 'agent', data: 'Child update', automation: true });
-  expect(writeToAgent).toHaveBeenCalledWith('agent', 'Child update');
+  expect(writeToAgent).toHaveBeenCalledWith('agent', 'Child update', false);
+  write?.(undefined, { agentId: 'agent', data: 'CI update', stopOnQuestion: true });
+  expect(writeToAgent).toHaveBeenCalledWith('agent', 'CI update', true);
 });
 
 it('routes deletion of a parent with a pending first child through guarded close', async () => {

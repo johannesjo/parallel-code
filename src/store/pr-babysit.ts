@@ -23,8 +23,8 @@ import { saveState } from './persistence';
 import { getPrChecks } from './pr-checks-state';
 import { taskPrsKnown } from './pr-checks';
 import { taskPrs, taskPrsChecks } from './task-prs';
-import { isAgentAskingQuestion, isAgentIdle } from './taskStatus';
-import { sendPrompt } from './tasks';
+import { isAgentIdle, isAgentSettled } from './taskStatus';
+import { AgentInputBusyError, sendPrompt } from './tasks';
 
 // shortcut: polling store reads is cheap and CI moves in minutes; an effect
 // plus timers for typing holds would only matter if latency did.
@@ -144,7 +144,7 @@ export function babysitAgentBlocker(taskId: string): string | null {
     return 'The task is closing';
   if (isLandedTaskState(task.landingState)) return 'The task has landed';
   if (!isAgentIdle(agentId)) return 'The agent is busy';
-  if (isAgentAskingQuestion(agentId)) return 'The agent seems to be waiting for an answer';
+  if (!isAgentSettled(agentId)) return 'The agent seems to be waiting for an answer';
   return composerInputBlocker(task, true);
 }
 
@@ -227,16 +227,17 @@ async function deliverFailures(taskId: string, headSha: string): Promise<void> {
   const agentId = readyAgentId(taskId);
   if (!agentId) return;
   const attempts = babysit.attempts + 1;
-  // Recorded first so a slow send cannot overlap a second one for the same commit.
+  await sendPrompt(taskId, agentId, prompt, { appPrompt: true, stopOnQuestion: true });
+  // The watcher holds inFlight throughout delivery. Count the attempt only after submission.
+  if (getPrBabysit(taskId) !== babysit) return;
   setPrBabysit(taskId, { attempts, lastSentSha: headSha });
-  await sendPrompt(taskId, agentId, prompt, { appPrompt: true });
   showNotification(
     `Babysit sent CI failures or conflicts to the agent (${attempts}/${MAX_BABYSIT_ATTEMPTS}).`,
   );
   // A paste the agent holds instead of submitting would otherwise fail silently.
   // shortcut: one late look — a turn that ends inside the window is a false alarm.
   await new Promise((r) => setTimeout(r, START_CHECK_MS));
-  if (store.agents[agentId]?.status === 'running' && isAgentIdle(agentId)) {
+  if (readyAgentId(taskId) === agentId) {
     const name = store.tasks[taskId]?.name ?? 'the task';
     showNotification(
       `Babysit pasted CI failures or conflicts into “${name}”, but the agent did not start. Check its terminal; it may need Enter.`,
@@ -309,6 +310,7 @@ export function startPrBabysitWatcher(): () => void {
         inFlight.add(taskId);
         deliverFailures(taskId, step.headSha)
           .catch((err: unknown) => {
+            if (err instanceof AgentInputBusyError) return; // Retry on the next tick.
             // Retrying every tick would hammer GitHub, so stop and tell the user.
             stopPrBabysit(taskId);
             logWarn('pr-babysit', 'Sending CI failures failed', { err: errMessage(err) });

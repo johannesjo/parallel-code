@@ -1,5 +1,6 @@
 import { reconcile } from 'solid-js/store';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { invoke } from '../lib/ipc';
 import { setStore, store } from './core';
 import { getPullRequestDetails, loadFailedChecksPrompt } from './github';
 import { showNotification } from './notification';
@@ -15,6 +16,7 @@ import {
   type PrChecksState,
 } from './pr-checks-state';
 import { sendPrompt } from './tasks';
+import { applyAgentHookEvent, clearAgentHookStatus } from './agentHookStatus';
 import { isAgentIdle } from './taskStatus';
 import type { PullRequestDetails } from '../ipc/types';
 import type { Agent, Task } from './types';
@@ -22,10 +24,13 @@ import type { Agent, Task } from './types';
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(), fireAndForget: vi.fn() }));
 vi.mock('./persistence', () => ({ saveState: vi.fn(() => Promise.resolve()) }));
 vi.mock('./notification', () => ({ showNotification: vi.fn() }));
-vi.mock('./tasks', () => ({ sendPrompt: vi.fn(() => Promise.resolve()) }));
-vi.mock('./taskStatus', () => ({
+vi.mock('./tasks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./tasks')>()),
+  sendPrompt: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('./taskStatus', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./taskStatus')>()),
   isAgentIdle: vi.fn(() => true),
-  isAgentAskingQuestion: () => false,
 }));
 vi.mock('./github', () => ({
   // Babysit sends only the CI logs of PRs the user opened.
@@ -82,6 +87,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearAgentHookStatus('agent-1');
   stop?.();
   stop = undefined;
   removePrChecks('task-1');
@@ -104,12 +110,45 @@ it('sends each failing commit to the agent once', async () => {
   await tick();
   await tick();
   expect(sendPrompt).toHaveBeenCalledTimes(1);
-  expect(sendPrompt).toHaveBeenCalledWith('task-1', 'agent-1', 'fix CI', { appPrompt: true });
+  expect(sendPrompt).toHaveBeenCalledWith('task-1', 'agent-1', 'fix CI', {
+    appPrompt: true,
+    stopOnQuestion: true,
+  });
 
   setPrChecks('task-1', failing('b'));
   await tick();
   expect(sendPrompt).toHaveBeenCalledTimes(2);
   expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 2, lastSentSha: 'b' });
+});
+
+it('retries a busy terminal on the next tick without consuming a fix attempt', async () => {
+  const real = await vi.importActual<typeof import('./tasks')>('./tasks');
+  vi.mocked(sendPrompt).mockImplementationOnce(real.sendPrompt);
+  vi.mocked(invoke).mockResolvedValueOnce(undefined).mockResolvedValueOnce(false);
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 0 });
+  expect(showNotification).not.toHaveBeenCalled();
+
+  await tick();
+  expect(sendPrompt).toHaveBeenCalledTimes(2);
+  expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 1, lastSentSha: 'a' });
+});
+
+it('warns about an unsent paste and avoids repeating it when Enter is blocked', async () => {
+  const real = await vi.importActual<typeof import('./tasks')>('./tasks');
+  vi.mocked(sendPrompt).mockImplementationOnce(real.sendPrompt);
+  vi.mocked(invoke)
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('The agent needs your input.'));
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await tick();
+  expect(store.tasks['task-1']?.prBabysit).toBeUndefined();
+  expect(showNotification).toHaveBeenCalledWith(expect.stringContaining('in the terminal, unsent'));
+  expect(sendPrompt).toHaveBeenCalledOnce();
 });
 
 it('tells the user when the agent does not start on the sent failures', async () => {
@@ -132,6 +171,35 @@ it('stays quiet when the agent starts on the sent failures', async () => {
   expect(showNotification).not.toHaveBeenCalledWith(
     expect.stringContaining('the agent did not start'),
   );
+});
+
+it('skips the delayed Enter reminder when the fix turn has asked for permission', async () => {
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await tick();
+  expect(sendPrompt).toHaveBeenCalledOnce();
+  applyAgentHookEvent({
+    taskId: 'task-1',
+    agentId: 'agent-1',
+    state: 'waiting',
+    event: 'PermissionRequest',
+    at: Date.now(),
+  });
+  await tick();
+  expect(showNotification).not.toHaveBeenCalledWith(expect.stringContaining('may need Enter'));
+});
+
+it('holds failing CI until the agent finishes answering a hook-reported permission request', async () => {
+  const agent = { taskId: 'task-1', agentId: 'agent-1' };
+  applyAgentHookEvent({ ...agent, at: Date.now(), event: 'PermissionRequest', state: 'waiting' });
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await tick();
+  expect(sendPrompt).not.toHaveBeenCalled();
+
+  applyAgentHookEvent({ ...agent, at: Date.now(), event: 'Stop', state: 'done' });
+  await tick();
+  expect(sendPrompt).toHaveBeenCalledOnce();
 });
 
 it('holds the failures while the user has an unsent draft', async () => {
@@ -193,7 +261,7 @@ it('asks the agent to resolve merge conflicts with the base branch', async () =>
     expect.stringContaining(
       'Pull request #12 (https://github.com/acme/app/pull/12) has merge conflicts',
     ),
-    { appPrompt: true },
+    { appPrompt: true, stopOnQuestion: true },
   );
   expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 1, lastSentSha: 'a' });
 });
@@ -326,6 +394,7 @@ it('sends the failures of every failing PR together', async () => {
   expect(sendPrompt).toHaveBeenCalledTimes(1);
   expect(sendPrompt).toHaveBeenCalledWith('task-1', 'agent-1', 'fix app\n\nfix lib', {
     appPrompt: true,
+    stopOnQuestion: true,
   });
   expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 1, lastSentSha: 'a,x' });
 });
@@ -342,6 +411,7 @@ it('sends only the newly failing PR when another one starts failing', async () =
   await tick();
   expect(sendPrompt).toHaveBeenLastCalledWith('task-1', 'agent-1', 'fix app', {
     appPrompt: true,
+    stopOnQuestion: true,
   });
 
   // The agent already has the app's failure; only the library's is new.
@@ -350,6 +420,7 @@ it('sends only the newly failing PR when another one starts failing', async () =
   expect(sendPrompt).toHaveBeenCalledTimes(2);
   expect(sendPrompt).toHaveBeenLastCalledWith('task-1', 'agent-1', 'fix lib', {
     appPrompt: true,
+    stopOnQuestion: true,
   });
   expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 2, lastSentSha: 'a,x' });
 });
@@ -366,6 +437,7 @@ it('sends a push that still fails, without the other PR it already sent', async 
   await tick();
   expect(sendPrompt).toHaveBeenLastCalledWith('task-1', 'agent-1', 'fix app\n\nfix lib', {
     appPrompt: true,
+    stopOnQuestion: true,
   });
 
   setPrChecks('task-1', failing('a2'));
@@ -373,6 +445,7 @@ it('sends a push that still fails, without the other PR it already sent', async 
   expect(sendPrompt).toHaveBeenCalledTimes(2);
   expect(sendPrompt).toHaveBeenLastCalledWith('task-1', 'agent-1', 'fix app', {
     appPrompt: true,
+    stopOnQuestion: true,
   });
   expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 2, lastSentSha: 'a2,x' });
 });

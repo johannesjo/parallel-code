@@ -343,6 +343,19 @@ describe('looksLikeQuestion', () => {
     expect(looksLikeQuestion('Continue? [y/N] ')).toBe(true);
   });
 
+  it('keeps a hookless task waiting on a confirmation drawn below an old prompt', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1');
+    const encode = (text: string) => new TextEncoder().encode(text);
+    markAgentOutput('agent-1', encode('❯\r\n'), 'task-1');
+    markAgentOutput('agent-1', encode('Continue? [Y/n] '), 'task-1');
+    vi.advanceTimersByTime(16_000);
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+
+    markAgentOutput('agent-1', encode('\r\n❯ '), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+  });
+
   it('detects normal trust dialog with spaces', () => {
     expect(looksLikeQuestion('Do you trust this folder?')).toBe(true);
   });
@@ -710,17 +723,22 @@ describe('looksLikeQuestion', () => {
     expect(looksLikeQuestion(asking)).toBe(true);
   });
 
-  it('keeps an idle agent quiet when its reply lands after the prompt was drawn', () => {
+  it.each([
+    'Would you like me to continue with the docs?',
+    'The installer printed: Continue? [Y/n]',
+    'Installer output:\r\n' + 'line of output\r\n'.repeat(100) + 'Continue? [Y/n]',
+  ])('keeps an idle agent quiet when history is inserted above its composer: %s', (reply) => {
     // Renderers that insert history above an unchanged composer (Codex's
     // scroll-region inserts) emit the reply after the prompt in the stream.
     const idle = [
       '› ',
       '  gpt-5.5 · ~/project',
       '\x1b[1;20r\x1b[20;1H',
-      '• Tests pass. Would you like me to continue with the docs?',
+      `• ${reply}`,
       '\x1b[r',
     ].join('\r\n');
     expect(looksLikeQuestion(idle)).toBe(false);
+    expect(looksLikeQuestion(idle + '\r\nContinue? [Y/n]')).toBe(true);
   });
 });
 
@@ -907,6 +925,51 @@ describe('isAutoTrustSettling', () => {
       expect(enterWasSent()).toBe(true);
     });
 
+    it.each(['', '› Draft text', 'Do you trust this folder?', '❯ Yes'])(
+      'waits when a redraw replaces the dialog with %j before Enter',
+      (replacement) => {
+        markAgentOutput('agent-1', encode(CLAUDE_TRUST_DIALOG), 'task-1');
+        markAgentOutput('agent-1', encode(screenClear + replacement), 'task-1');
+        vi.advanceTimersByTime(300);
+        expect(enterWasSent()).toBe(false);
+      },
+    );
+
+    it('ignores a superseded trust dialog during background analysis', () => {
+      mockActiveTaskId = 'other';
+      const redraw = CLAUDE_TRUST_DIALOG + screenClear + 'Continue? [y/N]';
+      markAgentOutput('agent-1', encode(redraw), 'task-1');
+      vi.advanceTimersByTime(1_200);
+      expect(enterWasSent()).toBe(false);
+      expect(isAgentAskingQuestion('agent-1')).toBe(true);
+    });
+
+    it('waits through an erase-line split from the rest of a redraw', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_TRUST_DIALOG), 'task-1');
+      markAgentOutput('agent-1', encode('\x1b[2K'), 'task-1');
+      vi.advanceTimersByTime(60);
+      expect(enterWasSent()).toBe(false);
+      markAgentOutput('agent-1', encode('\x1b[1A' + CLAUDE_TRUST_DIALOG), 'task-1');
+      vi.advanceTimersByTime(300);
+      expect(enterWasSent()).toBe(true);
+    });
+
+    it('surfaces the dialog if auto-trust is turned off before Enter', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_TRUST_DIALOG), 'task-1');
+      mockAutoTrustFolders = false;
+      vi.advanceTimersByTime(60);
+      expect(enterWasSent()).toBe(false);
+      expect(isAgentAskingQuestion('agent-1')).toBe(true);
+    });
+
+    it('withdraws a scheduled confirmation when Claude overwrites the dialog in place', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_TRUST_DIALOG), 'task-1');
+      markAgentOutput('agent-1', encode('\x1b[2K\x1b[1A'.repeat(3) + 'Continue? [y/N]'), 'task-1');
+      vi.advanceTimersByTime(300);
+      expect(enterWasSent()).toBe(false);
+      expect(isAgentAskingQuestion('agent-1')).toBe(true);
+    });
+
     it('reads the focused option from a ● radio marker, as Gemini CLI draws it', () => {
       const gemini = (marks: [string, string, string]) =>
         [
@@ -949,16 +1012,19 @@ describe('isAutoTrustSettling', () => {
       );
     });
 
-    it('stays blocked after the blocked frame scrolls out of the tail', () => {
-      markAgentOutput('agent-1', encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG), 'task-1');
-      vi.advanceTimersByTime(500);
-      // Redraws alone overflow the 16 KB tail while the dialog stays on screen.
-      const redraws = (screenClear + CLAUDE_DECLINE_DIALOG_ARROW_REDRAW).repeat(60);
-      markAgentOutput('agent-1', encode(redraws), 'task-1');
-      vi.advanceTimersByTime(2_100);
+    it.each(['', screenClear])(
+      'remembers a decline after the frame leaves the tail (clear %j)',
+      (clear) => {
+        markAgentOutput('agent-1', encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG + clear), 'task-1');
+        vi.advanceTimersByTime(500);
+        // Redraws alone overflow the 16 KB tail while the dialog stays on screen.
+        const redraws = (screenClear + CLAUDE_DECLINE_DIALOG_ARROW_REDRAW).repeat(60);
+        markAgentOutput('agent-1', encode(redraws), 'task-1');
+        vi.advanceTimersByTime(2_100);
 
-      expect(enterWasSent()).toBe(false);
-    });
+        expect(enterWasSent()).toBe(false);
+      },
+    );
 
     it('accepts a later dialog once the blocked one has left the tail', () => {
       markAgentOutput('agent-1', encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG), 'task-1');
@@ -2257,6 +2323,25 @@ describe('hook-reported agent status', () => {
 
       claudeWorks(100);
 
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it.each(['Running tests…', 'Printing a shell marker: $'])(
+      'keeps a quiet tool working after %j',
+      (line) => {
+        hook('agent-1', 'working', 'PreToolUse');
+        vi.advanceTimersByTime(1_000);
+        markAgentOutput('agent-1', encode(line), 'task-1');
+        vi.advanceTimersByTime(15_000);
+        expect(getTaskAttentionState('task-1')).toBe('active');
+      },
+    );
+
+    it('restores Working when a tool reports progress after a quiet prompt', () => {
+      finishTurnWithoutStop();
+      vi.advanceTimersByTime(2_000);
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+      hook('agent-1', 'working', 'PostToolUse');
       expect(getTaskAttentionState('task-1')).toBe('active');
     });
 

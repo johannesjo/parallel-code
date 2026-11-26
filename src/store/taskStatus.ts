@@ -65,23 +65,33 @@ const TRUST_EXCLUSION_KEYWORDS =
 // hooks, so Enter would quit the agent — leave those dialogs for the user.
 // "noexit" covers TUI-garbled text where the space between words is lost.
 const DECLINE_OPTION = /^(?:\d+\.\s*)?(?:no\b|noexit|don'?t|exit|quit|cancel|deny)/i;
+const ACCEPT_OPTION = /^(?:\d+\.\s*)?(?:yes|(?:i\s*)?trust|allow|accept|proceed)/i;
+const OPTION_CURSOR = /[❯›]|●(?=\s*\d+\.)/;
 
 /** `wait` means no option is focused yet (partial frame), so Enter's target is unknown. */
 type TrustDialogVerdict = 'accept' | 'wait' | 'decline';
 
 function trustDialogVerdict(tail: string): TrustDialogVerdict {
+  if (!looksLikeTrustDialog(tail)) return 'wait';
   const visible = stripAnsi(tail);
   if (TRUST_EXCLUSION_KEYWORDS.test(visible)) return 'decline';
   // Gemini CLI marks the selected radio option with ●. Copilot also prints ● as
   // an output bullet, so only a ● before a numbered option counts as a cursor.
   const focused = visible
-    .split(/[❯›]|●(?=\s*\d+\.)/)
+    .split(OPTION_CURSOR)
     .slice(1)
     .map((line) => (line.split(/\r?\n/, 1)[0] ?? '').trim());
   // Check older frames too: a redraw focusing "Yes" can land in the same
   // analysis window as the frame that focused "No, exit".
   if (focused.some((text) => DECLINE_OPTION.test(text))) return 'decline';
-  return focused.at(-1) ? 'accept' : 'wait';
+
+  // Claude moves back up to overwrite a dialog. A line erase at the very
+  // end may be the first half of that redraw, split across PTY writes.
+  const frame = tail.slice(Math.max(0, findLastFrameStart(tail)));
+  // eslint-disable-next-line no-control-regex
+  const current = frame.split(/\x1b\[\d*A|\x1b\[[012]?K\s*$/).at(-1) ?? '';
+  if (!looksLikeTrustDialog(current) || !OPTION_CURSOR.test(stripAnsi(current))) return 'wait';
+  return ACCEPT_OPTION.test(focused.at(-1) ?? '') ? 'accept' : 'wait';
 }
 
 /** True when a detected trust dialog must not be accepted automatically. */
@@ -129,6 +139,7 @@ interface AgentTrackingState {
 const agentStates = new Map<string, AgentTrackingState>();
 // Tooltips must update even when output leaves the agent's activity unchanged.
 const [lastOutputAt, setLastOutputAt] = createStore<Record<string, number | undefined>>({});
+const [lastPromptAt, setLastPromptAt] = createStore<Record<string, number | undefined>>({});
 
 function getAgentState(agentId: string): AgentTrackingState {
   let state = agentStates.get(agentId);
@@ -343,9 +354,9 @@ function findLastFrameStart(rawTail: string): number {
 /** Patterns indicating the terminal is asking a question — do NOT auto-send.
  *  Includes both normal-text and TUI-garbled variants (no spaces between words
  *  after ANSI cursor-positioning sequences are stripped). */
+const YES_NO_PROMPT = /\[y\/n\]\s*$/i;
 const QUESTION_PATTERNS: RegExp[] = [
-  /\[Y\/n\]\s*$/i,
-  /\[y\/N\]\s*$/i,
+  YES_NO_PROMPT,
   /\(y(?:es)?\/n(?:o)?\)\s*$/i,
   /\btrust\b.*\?/i,
   /\bupdate\b.*\?/i,
@@ -416,6 +427,19 @@ export function looksLikeQuestion(tail: string): boolean {
   const analysisTail = clearIdx >= 0 ? tail.slice(clearIdx) : tail;
 
   const visible = stripAnsi(analysisTail);
+  // An explicit confirmation at the end of the output can follow an older idle composer.
+  // Codex also inserts transcript text inside a scrolling region above its composer.
+  // Resume checking for confirmations once that region has been reset.
+  if (YES_NO_PROMPT.test(visible)) {
+    // eslint-disable-next-line no-control-regex
+    const afterRegionStart = analysisTail.split(/\x1b\[\d*;\d+r/).at(-1) ?? '';
+    if (afterRegionStart === analysisTail) return true;
+    const reset = afterRegionStart.lastIndexOf('\x1b[r');
+    if (reset >= 0 && YES_NO_PROMPT.test(stripAnsi(afterRegionStart.slice(reset + 3)))) return true;
+    // A long reply can push the composer outside the ordinary readiness probe.
+    const beforeRegion = analysisTail.slice(0, analysisTail.length - afterRegionStart.length);
+    if (hasBarePromptLine(stripAnsi(beforeRegion))) return false;
+  }
   // Codex's update menu has no "?" (#336). Codex draws it with cursor moves,
   // so read it in rows; it is a question only until a prompt is drawn below it.
   const rows = stripAnsi(cursorRowsToLines(analysisTail));
@@ -555,7 +579,6 @@ function isQuestionLine(line: string): boolean {
 }
 
 function isAutoHandledTrustQuestion(tail: string): boolean {
-  if (!looksLikeTrustDialog(tail)) return false;
   if (blocksAutoTrust(tail)) return false;
   const visible = stripAnsi(tail); // full visible — see looksLikeQuestion for rationale
   const lines = visible.split(/\r?\n/).filter((l) => l.trim().length > 0);
@@ -767,6 +790,7 @@ function resetIdleTimer(agentId: string, timeoutMs = IDLE_TIMEOUT_MS): void {
   const state = getAgentState(agentId);
   state.lastIdleResetAt = Date.now();
   state.idleConfirmPending = timeoutMs < IDLE_TIMEOUT_MS;
+  setLastPromptAt(agentId, state.idleConfirmPending ? state.lastIdleResetAt : undefined);
   if (state.idleTimer !== undefined) clearTimeout(state.idleTimer);
   state.idleTimer = setTimeout(() => {
     removeFromActive(agentId);
@@ -851,9 +875,6 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
   if (isAutoTrustPending(agentId)) {
     return false;
   }
-  if (!looksLikeTrustDialog(rawTail)) {
-    return false;
-  }
   const state = getAgentState(agentId);
   if (blocksAutoTrustFor(state, rawTail)) {
     return false;
@@ -865,7 +886,13 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
     // The dialog may have been redrawn during the delay (e.g. focus moved to
     // "No, exit"); Enter must only confirm what is focused now.
     const tail = state.outputTailBuffer;
-    if (!looksLikeTrustDialog(tail) || blocksAutoTrustFor(state, tail)) return;
+    if (
+      (!store.autoTrustFolders && !isAutoTrustForced(agentId)) ||
+      blocksAutoTrustFor(state, tail)
+    ) {
+      updateQuestionState(agentId, terminalAsks(agentId, tail, state.taskId));
+      return;
+    }
     // Clear stale trust-dialog content (including ❯ selection cursor) so
     // chunkContainsAgentPrompt only fires on the agent's real prompt.
     state.outputTailBuffer = '';
@@ -946,7 +973,7 @@ function analyzeAgentOutput(agentId: string): void {
   // Also force this for coordinator sub-tasks with skipPermissions — they run
   // autonomously and trust dialogs must never block them regardless of the setting.
   if (hasQuestion && (store.autoTrustFolders || isAutoTrustForced(agentId))) {
-    if (looksLikeTrustDialog(rawTail) && !blocksAutoTrustFor(state, rawTail)) {
+    if (!blocksAutoTrustFor(state, rawTail)) {
       // Auto-trust may not have fired yet if this is the first analysis for
       // an active task that just became visible — trigger it now.
       tryAutoTrust(agentId, rawTail);
@@ -1083,6 +1110,9 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
       clearTimeout(state.idleTimer);
       state.idleTimer = undefined;
     }
+    // Only an agent composer can supersede its working hook. Tools can print
+    // shell prompts and quoted confirmations as ordinary output.
+    setLastPromptAt(agentId, looksLikeBareAgentPrompt(lastLine) || codexComposer ? now : undefined);
     removeFromActive(agentId);
     return;
   }
@@ -1136,13 +1166,14 @@ export function markAgentBusy(agentId: string): void {
  *  Past output must not make that silence read as Claude idling at its prompt (see
  *  `isHookWorking`); the first output after a remount dates it again. */
 export function forgetAgentOutput(agentId: string): void {
+  setLastPromptAt(agentId, undefined);
   setLastOutputAt(agentId, undefined);
 }
 
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
   setBusyShells(agentId, undefined);
-  setLastOutputAt(agentId, undefined);
+  forgetAgentOutput(agentId);
   forgetPrintedPrLink(agentId);
   const state = agentStates.get(agentId);
   if (state) {
@@ -1211,14 +1242,8 @@ function isClaudeAgent(agentId: string): boolean {
   return isClaudeCommand(store.agents?.[agentId]?.def?.command ?? '');
 }
 
-/** Whether a hook's `working` claim still stands. A lost `Stop` would hold it
- *  until the stale timer, so once Claude printed output in this turn and then
- *  dropped out of the active set (its prompt plus 2 s of silence; it repaints
- *  about every 0.1 s mid-turn), the turn is over. Background work leaves the
- *  lead silent at its prompt on purpose; without output since the turn began
- *  (no terminal mounted, just reattached) silence proves nothing; and only
- *  Claude's repaint cadence was measured. Further output restores the claim.
- *  `lastOutputAt` trails output by under a second, which Claude's turns outlast. */
+/** Claude can lose its Stop hook. A quiet prompt or dialog observed after its
+ *  latest foreground work report can then establish that it is waiting. */
 function isHookWorking(
   agentId: string,
   hook: AgentHookStatus,
@@ -1226,9 +1251,9 @@ function isHookWorking(
 ): boolean {
   if (hook.state !== 'working') return false;
   if (hook.background || active.has(agentId) || !isClaudeAgent(agentId)) return true;
-  // Read last: it changes once a second while output streams, and the agent is active then.
-  const outputAt = lastOutputAt[agentId];
-  return outputAt === undefined || outputAt <= hook.since;
+  if (lastOutputAt[agentId] === undefined) return true;
+  const inputAt = Math.max(lastPromptAt[agentId] ?? 0, questionAgents().get(agentId) ?? 0);
+  return inputAt <= hook.updatedAt;
 }
 
 /** For readers of a hook's `working` state: whether that claim still stands (see `isHookWorking`). */

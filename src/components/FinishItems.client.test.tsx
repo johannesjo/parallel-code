@@ -13,7 +13,7 @@ vi.mock('../store/notification', () => ({ showNotification: vi.fn() }));
 vi.mock('../store/tasks', () => ({ sendPrompt: vi.fn(() => Promise.resolve()) }));
 vi.mock('../store/taskStatus', () => ({
   isAgentIdle: vi.fn(() => true),
-  isAgentAskingQuestion: () => false,
+  isAgentSettled: () => true,
 }));
 
 const task: Task = {
