@@ -20,7 +20,12 @@ import androidx.compose.runtime.setValue
  * Pass null for an action the screen doesn't offer.
  */
 @Composable
-internal fun TaskActionsMenu(onFixCi: (() -> Unit)?, onMerge: (() -> Unit)?, onClose: () -> Unit) {
+internal fun TaskActionsMenu(
+    onFixCi: (() -> Unit)?,
+    onMerge: (() -> Unit)?,
+    onContinueInCloud: (() -> Unit)?,
+    onClose: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
@@ -31,6 +36,7 @@ internal fun TaskActionsMenu(onFixCi: (() -> Unit)?, onMerge: (() -> Unit)?, onC
             // Red like the desktop's Fix CI button: a failed check is urgent.
             onFixCi?.let { TaskActionItem("Fix CI", danger = true) { pick(it) } }
             onMerge?.let { TaskActionItem("Merge", danger = false) { pick(it) } }
+            onContinueInCloud?.let { TaskActionItem("Continue in cloud…", danger = false) { pick(it) } }
             TaskActionItem("Close task", danger = true) { pick(onClose) }
         }
     }

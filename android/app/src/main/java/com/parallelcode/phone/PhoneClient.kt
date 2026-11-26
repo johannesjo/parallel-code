@@ -30,6 +30,8 @@ interface PhoneClient {
     suspend fun mergeTask(taskId: String, squash: Boolean, cleanup: Boolean)
     suspend fun fetchFixCiPrompt(taskId: String): String?
     suspend fun sendFixCiPrompt(taskId: String, prompt: String)
+    suspend fun fetchCloudHandoff(taskId: String): CloudHandoff
+    suspend fun startCloudHandoff(taskId: String, prompt: String, push: Boolean)
     suspend fun closeTask(taskId: String, force: Boolean): List<String>
     fun getTerminalBuffer(agentId: String): TerminalBuffer
     fun releaseTerminal(agentId: String)

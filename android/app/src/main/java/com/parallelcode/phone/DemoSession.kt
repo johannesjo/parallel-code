@@ -194,6 +194,27 @@ internal class DemoSession : PhoneClient {
         updateTask(taskId) { it.copy(ci = "success", attention = "idle", lastLine = "Sample CI fixed; no workflow ran") }
     }
 
+    override suspend fun fetchCloudHandoff(taskId: String): CloudHandoff {
+        val task = task(taskId)
+        if (task.isChat) return CloudHandoff(available = false, reason = "Sample chats stay on this demo desktop.")
+        return CloudHandoff(
+            available = true,
+            prompt = "Continue this task: ${task.taskName}\nThe branch has the work so far.",
+            branchName = "demo/${task.taskId}",
+            canPush = true,
+        )
+    }
+
+    override suspend fun startCloudHandoff(taskId: String, prompt: String, push: Boolean) {
+        requireControl()
+        if (prompt.isBlank() || prompt.length > MAX_CLOUD_PROMPT_LENGTH) throw ApiException("Enter a sample cloud prompt.")
+        val task = task(taskId)
+        if (task.isChat) throw ApiException("Sample chats stay on this demo desktop.")
+        val pushed = if (push) "Sample branch pushed. " else ""
+        appendTerminal(task.agentId, "\r\n${pushed}Demo cloud session requested: $prompt\r\nNo cloud session started.\r\n")
+        updateTask(taskId) { it.copy(lastLine = "Sample cloud handoff; nothing left this phone") }
+    }
+
     override suspend fun closeTask(taskId: String, force: Boolean): List<String> {
         requireControl()
         task(taskId)

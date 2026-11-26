@@ -23,6 +23,7 @@ Native companion app for the desktop's **Connect Phone** (Remote Access) feature
 - **New task:** pick a project, agent and model, then describe the work; needs pairing.
 - **Notifications:** optional, in Settings. A foreground service keeps the connection open in the background and notifies when an agent needs input, hits an error, or finishes (each can be turned off); tapping one opens that agent.
 - **PR checks:** a task with an open pull request shows what its checks say: **CI failed** (red, listed under Needs you), **CI running**, or **Ready to merge**. Once paired, **Fix CI** on a task with failed checks loads the failed checks and their log tails from the desktop into an editable prompt; read it, since the logs come from GitHub, then send it to the agent.
+- **Continue in cloud:** from the ⋮ menu on an agent’s screen, for Claude Code tasks outside Docker; needs pairing. Edit the prompt, optionally push the branch first, and the desktop starts a claude.ai cloud session from the task's branch. Follow it in the Claude app or on claude.ai/code; the local agent keeps running.
 - **Close task:** from the ⋮ menu on an agent’s screen, next to Merge and Fix CI; needs pairing. Like the desktop, it warns before losing uncommitted or unmerged work.
 
 - **Built-in chat:** read the conversation, send messages, stop the agent, and answer its approvals and questions once paired. Choosing the model and attaching images stay on the computer.

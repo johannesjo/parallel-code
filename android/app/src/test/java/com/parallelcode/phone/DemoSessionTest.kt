@@ -136,6 +136,16 @@ class DemoSessionTest {
     }
 
     @Test
+    fun cloudHandoffIsOfferedForTerminalSamplesAndStartsNothing() = runBlocking<Unit> {
+        val client: PhoneClient = DemoSession()
+        val handoff = client.fetchCloudHandoff("demo-terminal")
+        assertTrue(handoff.available && handoff.canPush)
+        assertFalse(client.fetchCloudHandoff("demo-review").available)
+        client.startCloudHandoff("demo-terminal", "Keep going", push = true)
+        assertTrue(client.getTerminalBuffer("demo-terminal").screen.text().contains("No cloud session started"))
+    }
+
+    @Test
     fun switchingPairingRenamingAndForgettingUseOnlySampleCredentials() = runBlocking<Unit> {
         val session = DemoSession()
         val originalTasks = session.agents.value

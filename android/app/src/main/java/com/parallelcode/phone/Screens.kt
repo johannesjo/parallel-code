@@ -902,6 +902,8 @@ fun AgentScreen(
     var merging by remember { mutableStateOf(false) }
     // The task id, held from the click: a reconnect blanking `agent` must not drop the user's edits.
     var fixingCiTask by rememberSaveable { mutableStateOf<String?>(null) }
+    // Held from the click like fixingCiTask, so a reconnect keeps the dialog and its edits.
+    var cloudTask by rememberSaveable { mutableStateOf<String?>(null) }
     var viewSize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var terminalExpanded by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = terminalExpanded) { terminalExpanded = false }
@@ -956,6 +958,10 @@ fun AgentScreen(
             onDismiss = { fixingCiTask = null },
             onSent = { fixingCiTask = null },
         )
+    }
+
+    cloudTask?.let { taskId ->
+        CloudHandoffDialog(taskId = taskId, client = client, onDismiss = { cloudTask = null })
     }
 
     if (closing && agent != null) {
@@ -1020,6 +1026,7 @@ fun AgentScreen(
                             TaskActionsMenu(
                                 onFixCi = if (agent.ci == "failure") ({ fixingCiTask = agent.taskId }) else null,
                                 onMerge = { merging = true },
+                                onContinueInCloud = { cloudTask = agent.taskId },
                                 onClose = { closing = true },
                             )
                         }

@@ -506,6 +506,23 @@ class RemoteClient(
 
     private fun fixCiPath(taskId: String) = "/api/mobile/tasks/${encodePath(taskId)}/fix-ci"
 
+    /** Whether the task can continue in a claude.ai cloud session, with its default prompt. Paired only. */
+    override suspend fun fetchCloudHandoff(taskId: String): CloudHandoff =
+        parseCloudHandoff(api("GET", cloudPath(taskId), null, pairedTokenOrThrow(), slow = true))
+
+    /** Push the branch when asked, then start the cloud session on the desktop. */
+    override suspend fun startCloudHandoff(taskId: String, prompt: String, push: Boolean) {
+        api(
+            "POST",
+            cloudPath(taskId),
+            JSONObject().put("prompt", prompt).put("push", push),
+            pairedTokenOrThrow(),
+            slow = true,
+        )
+    }
+
+    private fun cloudPath(taskId: String) = "/api/mobile/tasks/${encodePath(taskId)}/cloud"
+
     private val _usage = MutableStateFlow<List<ProviderUsage>>(emptyList())
 
     private val usageRoute = MissingRoutes()

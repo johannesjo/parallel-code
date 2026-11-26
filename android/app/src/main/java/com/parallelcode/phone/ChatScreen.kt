@@ -167,6 +167,7 @@ fun ChatScreen(
                             TaskActionsMenu(
                                 onFixCi = if (agent.ci == "failure") ({ fixingCiTask = agent.taskId }) else null,
                                 onMerge = null,
+                                onContinueInCloud = null,
                                 onClose = { closing = true },
                             )
                         }
