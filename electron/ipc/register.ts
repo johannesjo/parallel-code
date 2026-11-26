@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, app, clipboard, BrowserWindow, Notification } from 'electron';
+import { ipcMain, dialog, shell, app, BrowserWindow, Notification } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
@@ -22,6 +22,7 @@ import {
   handoffCodexTerminal,
   handoffClaudeTerminal,
 } from './pty.js';
+import { resolveClipboardPaste } from './clipboard-paste.js';
 import { loadEnvFile } from './env-file.js';
 import { registerAttentionHandlers } from './register-attention.js';
 import { projectAgentEnv, setProjectAgentEnv } from './project-env.js';
@@ -464,49 +465,6 @@ function getOptionalImageTag(value: unknown): string | undefined {
   const imageTag = value?.trim();
   if (imageTag === '') throw new Error('imageTag must be a non-empty string');
   return imageTag;
-}
-
-/** First file URL on the clipboard, or null if none.
- *  macOS uses `public.file-url` (one URL per call).
- *  Linux file managers vary:
- *    - Files (Nautilus), Nemo, etc. publish `x-special/gnome-copied-files`
- *      as `<verb>\nfile:///path1\nfile:///path2`, where <verb> is `copy`
- *      or `cut`. This is the dominant Linux desktop format and MUST be
- *      checked before `text/uri-list` because some apps publish both
- *      flavours and the GNOME flavour is the authoritative one.
- *    - Falls back to `text/uri-list` (newline-separated) for KDE, Xfce,
- *      and any cross-desktop publisher that follows RFC 2483. */
-function readClipboardFileUrl(formats: string[]): string | null {
-  if (formats.includes('public.file-url')) {
-    const url = clipboard.read('public.file-url').trim();
-    if (url) return url;
-  }
-  if (formats.includes('x-special/gnome-copied-files')) {
-    const payload = clipboard.read('x-special/gnome-copied-files');
-    // First line is the verb (copy/cut); subsequent lines are file URLs.
-    const lines = payload.split('\n');
-    for (let i = 1; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith('file://')) return trimmed;
-    }
-  }
-  if (formats.includes('text/uri-list')) {
-    const list = clipboard.read('text/uri-list');
-    for (const line of list.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#') && trimmed.startsWith('file://')) return trimmed;
-    }
-  }
-  return null;
-}
-
-/** Convert a file:// URL to an absolute path, returning '' on failure. */
-function fileUrlToPath(url: string): string {
-  try {
-    return fileURLToPath(url);
-  } catch {
-    return '';
-  }
 }
 
 /** Strip path separators and clamp to a sane length so a renderer-supplied
@@ -1779,35 +1737,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   );
 
   // --- Clipboard ---
-  const clipboardImagePath = path.join(os.tmpdir(), 'parallel-code-clipboard.png');
-
-  // Resolve the most useful representation of the current clipboard contents
-  // for pasting into a terminal. Order of preference:
-  //   1. file references (Finder copy, Nautilus copy, etc.) → return absolute path
-  //   2. raster image (screenshot, image-app copy)         → save PNG to tmp + return path
-  //   3. plain text                                        → return as-is
-  //
-  // Without (1), copying an image file from Finder gives only the basename via
-  // navigator.clipboard.readText(), which is useless to a CLI agent that needs a
-  // path it can stat. macOS exposes file copies via the 'public.file-url' format,
-  // Linux via 'text/uri-list'. Windows is not a published target.
   ipcMain.handle(IPC.ResolveClipboardPaste, async () => {
     try {
-      const formats = clipboard.availableFormats();
-      const fileUrl = readClipboardFileUrl(formats);
-      if (fileUrl) {
-        const filePath = fileUrlToPath(fileUrl);
-        if (filePath) return { kind: 'file', path: filePath };
-      }
-      const img = clipboard.readImage();
-      if (!img.isEmpty()) {
-        const buf = img.toPNG();
-        await fs.promises.writeFile(clipboardImagePath, buf);
-        return { kind: 'image', path: clipboardImagePath };
-      }
-      const text = clipboard.readText();
-      if (text) return { kind: 'text', text };
-      return { kind: 'empty' };
+      return await resolveClipboardPaste();
     } catch (e) {
       console.error('[clipboard] resolveClipboardPaste failed:', e);
       return { kind: 'empty' };
@@ -1959,13 +1891,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return result.response;
   });
 
+  // Since Electron 43 a dialog without defaultPath always opens in Downloads, so the
+  // OS no longer restores the last-used folder; remember it ourselves.
+  // shortcut: per-session only — persist it if users miss it across restarts.
+  let lastDialogDir: string | undefined;
   ipcMain.handle(IPC.DialogOpen, async (_e, args) => {
     const properties: Array<'openDirectory' | 'openFile' | 'multiSelections'> = [];
     if (args?.directory) properties.push('openDirectory');
     else properties.push('openFile');
     if (args?.multiple) properties.push('multiSelections');
-    const result = await dialog.showOpenDialog(win, { properties });
+    const result = await dialog.showOpenDialog(win, { properties, defaultPath: lastDialogDir });
     if (result.canceled) return null;
+    if (result.filePaths[0]) lastDialogDir = path.dirname(result.filePaths[0]);
     return args?.multiple ? result.filePaths : (result.filePaths[0] ?? null);
   });
 

@@ -16,10 +16,11 @@ import { registerAllHandlers } from './register.js';
 
 type Handler = (event: unknown, args: Record<string, unknown>) => unknown;
 
-const { handlers, duplicates, onPtyEvent } = vi.hoisted(() => ({
+const { handlers, duplicates, onPtyEvent, showOpenDialog } = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, args: Record<string, unknown>) => unknown>(),
   duplicates: [] as string[],
   onPtyEvent: vi.fn((_event: string, _listener: (agentId: string) => void) => () => {}),
+  showOpenDialog: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -33,7 +34,7 @@ vi.mock('electron', () => ({
     },
   },
   app: { getPath: () => os.tmpdir(), isPackaged: false },
-  dialog: {},
+  dialog: { showOpenDialog },
   shell: {},
   clipboard: {},
   BrowserWindow: {},
@@ -206,6 +207,23 @@ describe('registerAllHandlers wiring', () => {
       ]),
     );
     expect(onPtyEvent.mock.calls.map(([event]) => event)).toEqual(['exit']);
+  });
+});
+
+describe('DialogOpen', () => {
+  it('reopens in the folder last picked from, ignoring cancels', async () => {
+    register();
+    const open = handlers.get(IPC.DialogOpen);
+    const defaultPaths = () => showOpenDialog.mock.calls.map(([, opts]) => opts.defaultPath);
+
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/home/u/code/app'] });
+    expect(await open?.(undefined, { directory: true })).toBe('/home/u/code/app');
+    showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    expect(await open?.(undefined, { directory: true })).toBeNull();
+    showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    await open?.(undefined, {});
+
+    expect(defaultPaths()).toEqual([undefined, '/home/u/code', '/home/u/code']);
   });
 });
 
