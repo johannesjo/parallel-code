@@ -84,6 +84,17 @@ describe('autosave snapshot includes new-task-default fields', () => {
     setStore('defaultPropagateSkipPermissions', false);
   });
 
+  it('a hidden task side column changes the snapshot', () => {
+    setStore('taskSideCollapsed', false);
+    const before = persistedSnapshot();
+    setStore('taskSideCollapsed', true);
+    try {
+      expect(persistedSnapshot()).not.toBe(before);
+    } finally {
+      setStore('taskSideCollapsed', false);
+    }
+  });
+
   it('terminalScreenReaderMode changes the snapshot', () => {
     setStore('terminalScreenReaderMode', false);
     const before = persistedSnapshot();

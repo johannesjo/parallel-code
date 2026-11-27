@@ -78,6 +78,7 @@ export const [store, setStore] = createStore<AppStore>({
   kanbanHideDetails: false,
   modelTaskNames: false,
   taskNameModel: DEFAULT_TASK_NAME_MODEL,
+  taskSideCollapsed: false,
   briefModel: DEFAULT_BRIEF_MODEL,
   showCards: true,
   // A new install starts with the free cards on; restore adds them switched off for existing ones.
