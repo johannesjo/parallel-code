@@ -1,6 +1,6 @@
 import { createStore } from 'solid-js/store';
 import { NOTIFICATION_ERROR_MS, showNotification } from './notification';
-import { ptyExitSignal, setupExitLabel } from './worktree-setup';
+import { setupExitLabel } from './worktree-setup';
 
 /**
  * Run commands (a project's named dev servers) as seen from one task: each
@@ -81,11 +81,10 @@ export function noteRunShellExit(
   shellId: string,
   taskName: string,
   exitCode: number | null,
-  rawSignal: string | null = null,
+  signal: string | null = null,
 ): void {
   const run = runShells[shellId];
   if (run?.state !== 'running') return;
-  const signal = ptyExitSignal(rawSignal);
   const state = exitState(run, exitCode, signal);
   setRunShells(shellId, 'state', state);
   if (state === 'failed') {
