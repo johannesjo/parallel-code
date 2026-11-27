@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import { pathToFileURL } from 'url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { read, readText, createFromBuffer } = vi.hoisted(() => ({
@@ -11,6 +13,11 @@ vi.mock('electron', () => ({ clipboard: { read, readText }, nativeImage: { creat
 import { resolveClipboardPaste } from './clipboard-paste.js';
 
 const GNOME = 'electron application/osclipboard;format="x-special/gnome-copied-files"';
+
+// Absolute on the host OS: a drive-less file:///home/... URL has no path on Windows.
+const A_PNG = path.resolve('/home/u/a.png');
+const X_Y_TXT = path.resolve('/tmp/x y.txt');
+const fileUrl = (p: string) => pathToFileURL(p).href;
 
 /** One clipboard entry carrying the given MIME type → payload pairs. */
 function item(data: Record<string, BlobPart>) {
@@ -33,16 +40,16 @@ describe('resolveClipboardPaste', () => {
   it('prefers the GNOME copied-files payload over text/uri-list', async () => {
     read.mockResolvedValue([
       item({
-        [GNOME]: 'copy\nfile:///home/u/a.png\nfile:///home/u/b.png',
-        'text/uri-list': 'file:///home/u/other.png',
+        [GNOME]: `copy\n${fileUrl(A_PNG)}\n${fileUrl(path.resolve('/home/u/b.png'))}`,
+        'text/uri-list': fileUrl(path.resolve('/home/u/other.png')),
       }),
     ]);
-    expect(await resolveClipboardPaste()).toEqual({ kind: 'file', path: '/home/u/a.png' });
+    expect(await resolveClipboardPaste()).toEqual({ kind: 'file', path: A_PNG });
   });
 
   it('reads the first file from a CRLF uri-list, skipping comments', async () => {
-    read.mockResolvedValue([item({ 'text/uri-list': '# copied\r\nfile:///tmp/x%20y.txt\r\n' })]);
-    expect(await resolveClipboardPaste()).toEqual({ kind: 'file', path: '/tmp/x y.txt' });
+    read.mockResolvedValue([item({ 'text/uri-list': `# copied\r\n${fileUrl(X_Y_TXT)}\r\n` })]);
+    expect(await resolveClipboardPaste()).toEqual({ kind: 'file', path: X_Y_TXT });
   });
 
   it('saves a clipboard image as PNG and returns its path', async () => {
