@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
 import type { BranchPrDetectionResult, CommitInfo } from '../ipc/types';
+import { invoke } from '../lib/ipc';
 import { setStore } from '../store/core';
 import { createPullRequestForTask, linkPullRequestToTask } from '../store/github';
 import { showNotification } from '../store/notification';
@@ -90,6 +91,17 @@ describe('createPrInOneClick', () => {
     expect(pushTask).not.toHaveBeenCalled();
     expect(createPullRequestForTask).not.toHaveBeenCalled();
     expect(lastNotice()).toBe('Linked pull request #3');
+  });
+
+  // A task may track its base branch, whose PRs would otherwise pass for the task's.
+  it('names the task’s base branch when looking for an existing PR', async () => {
+    setStore('tasks', 't1', 'baseBranch', 'origin/develop');
+    await createPrInOneClick('t1');
+    expect(invoke).toHaveBeenCalledWith(IPC.DetectPrForBranch, {
+      worktreePath: '/wt',
+      branchName: 'task/widget',
+      baseBranch: 'origin/develop',
+    });
   });
 
   it('stops before pushing when gh is not logged in', async () => {
