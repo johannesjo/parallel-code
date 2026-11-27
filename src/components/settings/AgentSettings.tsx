@@ -6,6 +6,7 @@ import {
   setShareDockerAgentAuth,
   setMcpOrchestrationEnabled,
   setAllowCrossProjectReads,
+  setAllowCrossProjectTasks,
   setCoordinatorNotificationDelayMs,
   setMaxIndependentTasksPerCreator,
   setPreferUiMode,
@@ -57,6 +58,21 @@ export function AgentSettings() {
       setCrossProjectError(`Could not change cross-project reads: ${String(error)}`);
     } finally {
       setSavingCrossProject(false);
+    }
+  }
+
+  const [savingCrossProjectTasks, setSavingCrossProjectTasks] = createSignal(false);
+  const [crossProjectTasksError, setCrossProjectTasksError] = createSignal<string | null>(null);
+
+  async function changeCrossProjectTasks(enabled: boolean) {
+    setSavingCrossProjectTasks(true);
+    setCrossProjectTasksError(null);
+    try {
+      await setAllowCrossProjectTasks(enabled);
+    } catch (error) {
+      setCrossProjectTasksError(`Could not change cross-project tasks: ${String(error)}`);
+    } finally {
+      setSavingCrossProjectTasks(false);
     }
   }
   return (
@@ -121,6 +137,16 @@ export function AgentSettings() {
         />
         <span role="alert" style={{ 'font-size': '12px', color: theme.error, 'min-height': '1lh' }}>
           {crossProjectError()}
+        </span>
+        <SettingsCheckboxRow
+          label="Allow agents to create tasks in other projects"
+          checked={store.allowCrossProjectTasks}
+          disabled={!store.mcpOrchestrationEnabled || savingCrossProjectTasks()}
+          onChange={(enabled) => void changeCrossProjectTasks(enabled)}
+          description="Top-level agents can start a task in another project, for example to fix a bug they found in a library you also work on. Each one asks you first and shows its prompt. The task uses the asking agent, its sandbox and its permission settings, and you review it like any other. Needs agent orchestration"
+        />
+        <span role="alert" style={{ 'font-size': '12px', color: theme.error, 'min-height': '1lh' }}>
+          {crossProjectTasksError()}
         </span>
         <SettingsCard>
           <label

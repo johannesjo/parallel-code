@@ -304,7 +304,11 @@ export {
 } from './mcpStatus';
 export { refreshUsage, startUsagePolling, stopUsagePolling, USAGE_PROVIDERS } from './usage';
 
-export { setMcpOrchestrationEnabled, setAllowCrossProjectReads } from './delegation';
+export {
+  setMcpOrchestrationEnabled,
+  setAllowCrossProjectReads,
+  setAllowCrossProjectTasks,
+} from './delegation';
 export {
   spConnection,
   spBanner,

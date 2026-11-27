@@ -637,6 +637,7 @@ export async function saveState(): Promise<void> {
     darkThemeCustomId: store.darkThemeCustomId ?? undefined,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     allowCrossProjectReads: store.allowCrossProjectReads || undefined,
+    allowCrossProjectTasks: store.allowCrossProjectTasks || undefined,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled || undefined,
     documentFullWidth: store.documentFullWidth || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
@@ -854,6 +855,7 @@ interface LegacyPersistedState {
   darkThemeCustomId?: unknown;
   mcpOrchestrationEnabled?: unknown;
   allowCrossProjectReads?: unknown;
+  allowCrossProjectTasks?: unknown;
   documentWorkspacesEnabled?: unknown;
   taskContext?: unknown;
   documentFullWidth?: unknown;
@@ -985,6 +987,10 @@ export async function loadState(): Promise<void> {
     action: 'crossProjectReadSetting',
     enabled: raw.allowCrossProjectReads === true,
   }).catch((error: unknown) => console.warn('Could not restore cross-project reads:', error));
+  await delegationRequest({
+    action: 'crossProjectTaskSetting',
+    enabled: raw.allowCrossProjectTasks === true,
+  }).catch((error: unknown) => console.warn('Could not restore cross-project tasks:', error));
 
   // Restore acknowledged authority before store insertion can mount and spawn terminals.
   for (const project of projects) {
@@ -1229,6 +1235,7 @@ export async function loadState(): Promise<void> {
 
       s.mcpOrchestrationEnabled = raw.mcpOrchestrationEnabled !== false;
       s.allowCrossProjectReads = raw.allowCrossProjectReads === true;
+      s.allowCrossProjectTasks = raw.allowCrossProjectTasks === true;
       s.documentWorkspacesEnabled = raw.documentWorkspacesEnabled === true;
       s.documentFullWidth = raw.documentFullWidth === true;
 

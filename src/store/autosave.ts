@@ -68,6 +68,7 @@ function structuralSnapshot(): string {
     maxIndependentTasksPerCreator: store.maxIndependentTasksPerCreator,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     allowCrossProjectReads: store.allowCrossProjectReads,
+    allowCrossProjectTasks: store.allowCrossProjectTasks,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,
     featureHintsEnabled: store.featureHintsEnabled,
