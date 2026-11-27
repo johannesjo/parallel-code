@@ -51,6 +51,7 @@ beforeEach(() => {
   mocks.invoke.mockImplementation(async (_channel?: unknown, _args?: unknown) => ({
     threadId: 'exact-thread',
   }));
+  setStore('disableClaudeUiMode', false);
   setStore('tasks', {
     task: {
       id: 'task',
@@ -521,23 +522,46 @@ it('waits for a busy Claude terminal before handing its conversation over', asyn
   expect(store.tasks.task.mainAgentView).not.toBe('chat');
 });
 
-it.each(['dockerMode', 'coordinatorMode', 'coordinatedBy'] as const)(
-  'keeps the Claude switcher visible and explains the %s restriction',
-  (mode) => {
-    setStore('agents', 'agent', 'def', { id: 'claude-code', command: 'claude' });
-    if (mode === 'coordinatedBy') setStore('tasks', 'task', mode, 'coordinator');
+it.each([
+  ['dockerMode', /Docker/],
+  ['coordinatorMode', /coordinator/],
+  ['coordinatedBy', /coordinator/],
+  ['disableClaudeUiMode', /turned off for Claude Code in Settings/],
+] as const)(
+  'keeps the Claude switcher visible and explains the %s restriction in its tooltip only',
+  (mode, reason) => {
+    useClaudeCode();
+    if (mode === 'disableClaudeUiMode') setStore(mode, true);
+    else if (mode === 'coordinatedBy') setStore('tasks', 'task', mode, 'coordinator');
     else setStore('tasks', 'task', mode, true);
     mount();
     const chat = host.querySelector<HTMLButtonElement>('[aria-label="Show main agent chat"]');
     expect(chat).not.toBeNull();
     expect(chat?.getAttribute('aria-disabled')).toBe('true');
-    expect(chat?.title).toContain(mode === 'dockerMode' ? 'Docker' : 'coordinator');
+    expect(chat?.classList.contains('unavailable')).toBe(true);
+    expect(chat?.title).toMatch(reason);
     clickChat();
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe(chat?.title);
+    // The restriction holds until Settings change, or for good: an alert
+    // would stand under the header with nothing the user can do about it.
+    expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(store.tasks.task.mainAgentView).not.toBe('chat');
     expect(mocks.invoke).not.toHaveBeenCalled();
   },
 );
+
+it('drops a precondition alert once Chat is turned off in Settings', () => {
+  useClaudeCode();
+  setStore('tasks', 'task', 'agentSessionIds', { agent: claudeSession });
+  markAgentSpawned('agent');
+  mount();
+  clickChat();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Wait for Claude to finish');
+  const chat = host.querySelector<HTMLButtonElement>('[aria-label="Show main agent chat"]');
+  expect(chat?.classList.contains('unavailable')).toBe(false);
+  setStore('disableClaudeUiMode', true);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(chat?.classList.contains('unavailable')).toBe(true);
+});
 
 it('can return to Chat after the resumed terminal sends automatic replies and becomes idle', async () => {
   mount();

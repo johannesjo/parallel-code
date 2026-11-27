@@ -3730,6 +3730,10 @@ html:is(
 .agent-view-switch button[aria-disabled='true'] {
   opacity: 0.55;
 }
+/* Chat cannot open in this task at all: a click does nothing, the tooltip says why. */
+.agent-view-switch button.unavailable {
+  cursor: not-allowed;
+}
 
 /* Long agent names must compress (ellipsis) so a tab's close button stays
    inside the strip's view instead of scrolling out of reach (#339). The
