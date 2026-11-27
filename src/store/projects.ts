@@ -188,6 +188,8 @@ export function updateProject(
       | 'runCommands'
       | 'worktreeSetupScript'
       | 'worktreeTeardownScript'
+      | 'worktreeSuspendScript'
+      | 'worktreeResumeScript'
       | 'worktreeIncludes'
       | 'isGitRepo'
       | 'documentMainAgentId'
@@ -245,6 +247,12 @@ export function updateProject(
         s.projects[idx].worktreeTeardownScript = sanitizeWorktreeScript(
           updates.worktreeTeardownScript,
         );
+      if (Object.prototype.hasOwnProperty.call(updates, 'worktreeSuspendScript'))
+        s.projects[idx].worktreeSuspendScript = sanitizeWorktreeScript(
+          updates.worktreeSuspendScript,
+        );
+      if (Object.prototype.hasOwnProperty.call(updates, 'worktreeResumeScript'))
+        s.projects[idx].worktreeResumeScript = sanitizeWorktreeScript(updates.worktreeResumeScript);
       if (Object.prototype.hasOwnProperty.call(updates, 'worktreeIncludes'))
         s.projects[idx].worktreeIncludes = sanitizeWorktreeIncludes(updates.worktreeIncludes);
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;

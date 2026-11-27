@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reconcile } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { TaskTitleBar } from '../components/TaskTitleBar';
@@ -25,7 +25,7 @@ import {
   snoozeTaskUntilCi,
   startBackgroundTaskWatcher,
 } from './background-tasks';
-import type { Task } from './types';
+import type { Project, Task } from './types';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(), fireAndForget: vi.fn() }));
 vi.mock('../lib/log', async (original) => ({
@@ -635,6 +635,43 @@ it('stops agents for an unchecked snooze and resumes the saved session without t
   expect(store.activeTaskId).toBe(selectedTask);
   expect(store.activeAgentId).toBe(selectedAgent);
   expect(store.taskProjectFilter).toBe('other');
+});
+
+describe('with suspend and resume scripts', () => {
+  let previousProjects: Project[];
+  const lifecycleKinds = () =>
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(([c]) => c === IPC.RunWorktreeLifecycleScript)
+      .map(([, args]) => (args as { kind: string }).kind);
+  beforeEach(() => {
+    previousProjects = [...store.projects];
+    setStore('projects', [
+      {
+        id: 'project',
+        name: 'Repo',
+        path: '/repo',
+        color: '',
+        worktreeSuspendScript: 'docker compose stop',
+        worktreeResumeScript: 'docker compose start',
+      } as Project,
+    ]);
+  });
+  afterEach(() => setStore('projects', previousProjects));
+
+  it('suspends a task snoozed with its agents stopped and resumes it when it returns', async () => {
+    await snoozeTask('one', 1, false);
+    expect(lifecycleKinds()).toEqual(['suspend']);
+    vi.advanceTimersByTime(3_600_000);
+    expect(store.tasks.one.collapsed).toBe(false);
+    expect(lifecycleKinds()).toEqual(['suspend', 'resume']);
+  });
+
+  it('runs neither when the snoozed task keeps its agents running', async () => {
+    await snoozeTask('one', 1, true);
+    vi.advanceTimersByTime(3_600_000);
+    expect(lifecycleKinds()).toEqual([]);
+  });
 });
 
 it('allows early manual restoration of a stopped snooze and cancels its timer', async () => {

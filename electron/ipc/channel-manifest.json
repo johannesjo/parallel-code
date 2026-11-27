@@ -138,6 +138,7 @@
   "SetMinimaxApiKey": "set_minimax_api_key",
   "SetProjectAgentEnv": "set_project_agent_env",
   "SetProjectWorktreeSettings": "set_project_worktree_settings",
+  "RunWorktreeLifecycleScript": "run_worktree_lifecycle_script",
   "ListCodexModels": "list_codex_models",
   "CheckDockerAvailable": "check_docker_available",
   "CheckDockerImageExists": "check_docker_image_exists",

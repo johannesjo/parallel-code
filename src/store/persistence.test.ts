@@ -720,6 +720,61 @@ describe('completion report persistence', () => {
   );
 });
 
+describe('suspended worktree persistence', () => {
+  async function restore(suspended: unknown) {
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [
+          {
+            id: 'project-1',
+            name: 'Repo',
+            path: '/repo',
+            color: 'hsl(0, 70%, 75%)',
+            worktreeSuspendScript: 'docker compose stop',
+            worktreeResumeScript: '  ',
+          },
+        ],
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: ['task-2', 'task-3'],
+        tasks: {
+          'task-1': persistedTask(agentDef()),
+          'task-2': {
+            ...persistedTask(agentDef()),
+            id: 'task-2',
+            collapsed: true,
+            worktreeSuspended: suspended,
+          },
+          'task-3': { ...persistedTask(agentDef()), id: 'task-3', collapsed: true },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+    await loadState();
+  }
+
+  it('keeps which minimized tasks were suspended across a restart', async () => {
+    await restore(true);
+    expect(store.tasks['task-2'].worktreeSuspended).toBe(true);
+    expect(store.tasks['task-3'].worktreeSuspended).toBeUndefined();
+    expect(store.projects[0].worktreeSuspendScript).toBe('docker compose stop');
+    // A blank script is no script.
+    expect(store.projects[0].worktreeResumeScript).toBeUndefined();
+    await saveState();
+    const saved = JSON.parse(
+      mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState)?.[1].json,
+    );
+    expect(saved.tasks['task-2'].worktreeSuspended).toBe(true);
+    expect(saved.tasks['task-3']).not.toHaveProperty('worktreeSuspended');
+    expect(saved.projects[0].worktreeSuspendScript).toBe('docker compose stop');
+  });
+
+  it('ignores a mark that is not true', async () => {
+    await restore('yes');
+    expect(store.tasks['task-2'].worktreeSuspended).toBeUndefined();
+  });
+});
+
 describe('coordinator concurrency limit persistence', () => {
   function stateWithTasks(tasks: Record<string, unknown>): string {
     return JSON.stringify({
