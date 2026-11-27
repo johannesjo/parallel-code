@@ -135,6 +135,28 @@ describe('ResourcesPanel', () => {
     expect(panel()?.textContent).toContain('claude 21');
   });
 
+  it('lists the CPU of finished commands last, where the platform measures it', async () => {
+    mockInvoke.mockImplementation(async () => ({
+      ...snapshot,
+      groups: snapshot.groups.map((group) =>
+        group.kind === 'agent' ? { ...group, cpuPercent: 120, exitedCpuPercent: 40 } : group,
+      ),
+    }));
+    try {
+      const container = mount();
+      toggleButton(container).click();
+      await flush();
+      const rows = [...(panel()?.querySelectorAll('button[aria-expanded]') ?? [])];
+      (rows[0] as HTMLButtonElement).click();
+      (rows[1] as HTMLButtonElement).click();
+      // 40% of one core on 8 cores; the app group has no measurement, so no line.
+      expect(rows[0].parentElement?.lastElementChild?.textContent).toBe('finished commands5.0%');
+      expect(rows[1].parentElement?.textContent).not.toContain('finished commands');
+    } finally {
+      mockInvoke.mockImplementation(async () => snapshot);
+    }
+  });
+
   it('keeps an expanded row open across polls and slows down when closed', async () => {
     vi.useFakeTimers();
     const container = mount();

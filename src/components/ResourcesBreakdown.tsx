@@ -51,6 +51,21 @@ function GroupRow(props: {
             </div>
           )}
         </For>
+        {/* Last, and present on every sample, so the line does not jump as commands come and go. */}
+        <Show when={props.group.exitedCpuPercent !== undefined}>
+          <div
+            title="Commands that started and exited since the last sample: hooks, short shell and test runs"
+            style={{ ...rowStyle, 'padding-left': '24px', color: theme.fgMuted }}
+          >
+            <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+              finished commands
+            </span>
+            <span style={numberCell}>
+              {formatCpu(props.group.exitedCpuPercent ?? 0, props.cpuCount)}
+            </span>
+            <span style={numberCell} />
+          </div>
+        </Show>
       </Show>
     </div>
   );
