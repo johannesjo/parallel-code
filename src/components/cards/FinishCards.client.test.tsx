@@ -16,6 +16,12 @@ vi.mock('../../lib/load-task-diff', () => ({
   getTaskDiffBaseBranch: (_mode: string, base?: string) => base,
 }));
 vi.mock('../../store/projects', () => ({ getProjectPath: () => '/repo' }));
+const { mockAskCard, mockBlocker } = vi.hoisted(() => ({
+  mockAskCard: vi.fn(() => Promise.resolve()),
+  mockBlocker: vi.fn((): string | null => null),
+}));
+vi.mock('../../store/card-request', () => ({ requestAgentCard: mockAskCard }));
+vi.mock('../../store/pr-draft', () => ({ agentDraftBlocker: mockBlocker }));
 
 import { IPC } from '../../../electron/ipc/channels';
 import type { CardDefinition } from '../../lib/cards';
@@ -133,13 +139,53 @@ it('shows no Bottom line while that card is not marked for Finish', () => {
   }
 });
 
-it('shows no Bottom line before the agent filled it, so the merge options stay put', () => {
+function renderBottomLine(): { top: HTMLElement; dispose: () => void } {
   const top = document.createElement('div');
   document.body.append(top);
-  const disposeTop = render(() => <FinishBottomLine task={store.tasks.t1} />, top);
+  return { top, dispose: render(() => <FinishBottomLine task={store.tasks.t1} />, top) };
+}
+
+it('offers to ask the agent for the Bottom line while it is empty, instead of the card', async () => {
+  mockAskCard.mockClear();
+  const { top, dispose: disposeTop } = renderBottomLine();
   try {
     expect(top.querySelector('section.card')).toBeNull();
+    const ask = top.querySelector('button');
+    expect(ask?.textContent).toContain('Ask the agent for the Bottom line');
+    ask?.click();
+    await vi.waitFor(() => expect(mockAskCard).toHaveBeenCalledWith('t1', 'bottom-line'));
+    await vi.waitFor(() => expect(top.textContent).toContain('Asked'));
   } finally {
+    disposeTop();
+  }
+});
+
+it('swaps the ask row for the card once the agent fills it', async () => {
+  const { top, dispose: disposeTop } = renderBottomLine();
+  try {
+    expect(top.querySelector('section.card')).toBeNull();
+    setStore('tasks', 't1', 'cards', {
+      'bottom-line': { values: { verdict: { type: 'line', text: 'Ready to merge.' } }, at: 1 },
+    });
+    await vi.waitFor(() => expect(top.querySelector('section.card')).not.toBeNull());
+    expect(top.textContent).not.toContain('Ask the agent');
+  } finally {
+    disposeTop();
+  }
+});
+
+it('says why it cannot ask the agent yet, and does not send', () => {
+  mockAskCard.mockClear();
+  mockBlocker.mockReturnValue('Its session has no Parallel Code tools');
+  const { top, dispose: disposeTop } = renderBottomLine();
+  try {
+    const ask = top.querySelector('button');
+    expect(ask?.disabled).toBe(true);
+    expect(top.textContent).toContain('Its session has no Parallel Code tools');
+    ask?.click();
+    expect(mockAskCard).not.toHaveBeenCalled();
+  } finally {
+    mockBlocker.mockReturnValue(null);
     disposeTop();
   }
 });

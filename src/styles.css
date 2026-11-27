@@ -2673,6 +2673,17 @@ button {
   margin-bottom: 12px;
 }
 
+.finish-bottom-line-ask {
+  margin-bottom: 8px;
+}
+
+.finish-bottom-line-ask > p {
+  min-height: 1.45em;
+  margin: 4px 0 0;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
 .finish-followup {
   width: min(100%, 24rem);
   min-width: 0;
