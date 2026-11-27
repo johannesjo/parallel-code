@@ -89,6 +89,21 @@ describe('UsageStatusBar', () => {
     expect(popover()).toBeNull();
   });
 
+  it('lines the popover windows up as rows of one grid', () => {
+    // happy-dom does no layout. Check the structure that aligns the columns:
+    // each window is a subgrid row of the same grid, with bars of one width.
+    mount()
+      .querySelector<HTMLElement>('[role="status"]')
+      ?.dispatchEvent(new MouseEvent('mouseenter'));
+    const bars = [...(popover()?.querySelectorAll<HTMLElement>('[role="progressbar"]') ?? [])];
+    expect(bars).toHaveLength(2);
+    const [fiveHour, sevenDay] = bars.map((bar) => bar.parentElement);
+    expect(fiveHour?.parentElement).toBe(sevenDay?.parentElement);
+    expect(fiveHour?.style.gridTemplateColumns).toBe('subgrid');
+    expect(sevenDay?.style.gridTemplateColumns).toBe('subgrid');
+    expect(bars[0].style.width).toBe(bars[1].style.width);
+  });
+
   it('refreshes just the clicked provider', () => {
     const container = mount();
     container.querySelector<HTMLElement>('[role="status"]')?.click();
