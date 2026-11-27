@@ -198,6 +198,10 @@ export function setShowSidebarProgress(show: boolean): void {
   setStore('showSidebarProgress', show);
 }
 
+export function setShowUsageAsUsed(enabled: boolean): void {
+  setStore('showUsageAsUsed', enabled);
+}
+
 export function setSidebarNeedsInputFirst(enabled: boolean): void {
   setStore('sidebarNeedsInputFirst', enabled);
 }

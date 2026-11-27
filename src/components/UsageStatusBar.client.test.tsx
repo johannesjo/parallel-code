@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UsageState } from '../store/types';
 import { UsageStatusBar } from './UsageStatusBar';
 
-const { mockRefreshUsage, usage } = vi.hoisted(() => {
+const { mockRefreshUsage, usage, storeMock } = vi.hoisted(() => {
   const idle: UsageState = {
     fiveHour: null,
     sevenDay: null,
@@ -12,23 +12,25 @@ const { mockRefreshUsage, usage } = vi.hoisted(() => {
     error: null,
   };
   const inAnHour = Date.now() + 3_600_000;
+  const usageState = {
+    claude: {
+      fiveHour: { usedPercent: 40, resetsAt: inAnHour },
+      sevenDay: { usedPercent: 10, resetsAt: inAnHour },
+      fetchedAt: Date.now(),
+      status: 'ok',
+      error: null,
+    } satisfies UsageState,
+    codex: idle,
+  };
   return {
     mockRefreshUsage: vi.fn(),
-    usage: {
-      claude: {
-        fiveHour: { usedPercent: 40, resetsAt: inAnHour },
-        sevenDay: { usedPercent: 10, resetsAt: inAnHour },
-        fetchedAt: Date.now(),
-        status: 'ok',
-        error: null,
-      } satisfies UsageState,
-      codex: idle,
-    },
+    usage: usageState,
+    storeMock: { usage: usageState, showUsageAsUsed: false },
   };
 });
 
 vi.mock('../store/store', () => ({
-  store: { usage },
+  store: storeMock,
   refreshUsage: mockRefreshUsage,
   USAGE_PROVIDERS: ['claude', 'codex'],
 }));
@@ -42,6 +44,7 @@ afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
   document.body.replaceChildren();
   mockRefreshUsage.mockClear();
+  storeMock.showUsageAsUsed = false;
 });
 
 function mount(): HTMLElement {
@@ -69,6 +72,16 @@ describe('UsageStatusBar', () => {
     const meter = container.querySelector<HTMLElement>('[role="progressbar"]');
     expect(meter?.getAttribute('aria-valuenow')).toBe('60');
     expect(meter?.firstElementChild).toHaveProperty('style.width', '60%');
+  });
+
+  it('can fill the meter with what is used', () => {
+    storeMock.showUsageAsUsed = true;
+    const container = mount();
+    const meter = container.querySelector<HTMLElement>('[role="progressbar"]');
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('40% used');
+    expect(meter?.getAttribute('aria-label')).toBe('5h window used');
+    expect(meter?.getAttribute('aria-valuenow')).toBe('40');
+    expect(meter?.firstElementChild).toHaveProperty('style.width', '40%');
   });
 
   it('opens a popover with both windows and the refresh time on hover', () => {

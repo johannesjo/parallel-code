@@ -593,6 +593,7 @@ export async function saveState(): Promise<void> {
     reviewGuidance: store.reviewGuidance.trim() || undefined,
     showSidebarTips: store.showSidebarTips,
     showSidebarProgress: store.showSidebarProgress,
+    showUsageAsUsed: store.showUsageAsUsed || undefined,
     sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
     projectsCollapsed: store.projectsCollapsed,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
@@ -820,6 +821,7 @@ interface LegacyPersistedState {
   reviewGuidance?: unknown;
   showSidebarTips?: unknown;
   showSidebarProgress?: unknown;
+  showUsageAsUsed?: unknown;
   sidebarNeedsInputFirst?: unknown;
   projectsCollapsed?: unknown;
   desktopNotificationsEnabled?: unknown;
@@ -1151,6 +1153,7 @@ export async function loadState(): Promise<void> {
       s.showSidebarTips = typeof raw.showSidebarTips === 'boolean' ? raw.showSidebarTips : true;
       s.showSidebarProgress =
         typeof raw.showSidebarProgress === 'boolean' ? raw.showSidebarProgress : true;
+      s.showUsageAsUsed = raw.showUsageAsUsed === true;
       s.sidebarNeedsInputFirst =
         typeof raw.sidebarNeedsInputFirst === 'boolean' ? raw.sidebarNeedsInputFirst : true;
       s.projectsCollapsed =

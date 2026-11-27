@@ -53,6 +53,7 @@ function structuralSnapshot(): string {
     reviewGuidance: store.reviewGuidance,
     showSidebarTips: store.showSidebarTips,
     showSidebarProgress: store.showSidebarProgress,
+    showUsageAsUsed: store.showUsageAsUsed,
     sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
     projectsCollapsed: store.projectsCollapsed,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
