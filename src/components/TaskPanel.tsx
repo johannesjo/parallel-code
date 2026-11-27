@@ -667,30 +667,34 @@ export function TaskPanel(props: TaskPanelProps) {
   // <Show> branch), so when the user crosses the split threshold the DOM is
   // reparented instead of destroyed+recreated. That avoids the expensive
   // xterm.js teardown/reinit and scrollback replay on every layout flip.
+  // Suggested tasks sit under the terminal, next to the agent that proposed them.
   const aiTerminalEl = (
-    <div style={{ position: 'relative', height: '100%' }}>
-      <TaskAITerminal
-        onReview={
-          props.task.gitIsolation === 'none'
-            ? undefined
-            : (path) => {
-                batch(() => {
-                  setSelectedCommit(null);
-                  setStartTour(false);
-                  setDiffScrollTarget(path ?? '');
-                });
-              }
-        }
-        onOpenTour={openAgentTour}
-        onOpenInSidePanel={openInSidePanel}
-        changes={changesLink()}
-        task={props.task}
-        isActive={props.isActive}
-        selectedAgentId={selectedAgentId()}
-        onSelectAgent={setActiveAgent}
-        promptHandle={promptHandle}
-        onTranscriptMarksReady={handleTranscriptMarks}
-      />
+    <div style={{ height: '100%', display: 'flex', 'flex-direction': 'column' }}>
+      <div style={{ position: 'relative', flex: '1', 'min-height': '0' }}>
+        <TaskAITerminal
+          onReview={
+            props.task.gitIsolation === 'none'
+              ? undefined
+              : (path) => {
+                  batch(() => {
+                    setSelectedCommit(null);
+                    setStartTour(false);
+                    setDiffScrollTarget(path ?? '');
+                  });
+                }
+          }
+          onOpenTour={openAgentTour}
+          onOpenInSidePanel={openInSidePanel}
+          changes={changesLink()}
+          task={props.task}
+          isActive={props.isActive}
+          selectedAgentId={selectedAgentId()}
+          onSelectAgent={setActiveAgent}
+          promptHandle={promptHandle}
+          onTranscriptMarksReady={handleTranscriptMarks}
+        />
+      </div>
+      <TaskSuggestionCards task={props.task} />
     </div>
   );
   const shellSectionEl = (
@@ -1221,7 +1225,6 @@ export function TaskPanel(props: TaskPanelProps) {
           )
         }
       />
-      <TaskSuggestionCards task={props.task} />
       <TaskBranchAdoptionBanner task={props.task} />
       <TaskSuperProductivityBanner taskId={props.task.id} />
       <div style={{ flex: '1', 'min-height': '0' }}>

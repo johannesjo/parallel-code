@@ -4,10 +4,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 30vh;
+  /* Inside the terminal cell now, so a small tile keeps at least half for the terminal. */
+  max-height: min(30vh, 50%);
   overflow: auto;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   color: var(--fg);
   font-size: 12px;
   line-height: 1.45;
@@ -23,7 +24,7 @@
 @keyframes taskSuggestionEnter {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(4px);
   }
 }
 
