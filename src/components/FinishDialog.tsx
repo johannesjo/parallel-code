@@ -32,14 +32,14 @@ import { markFeatureHintSeen } from '../store/onboarding';
 import { showNotification } from '../store/notification';
 import { store } from '../store/core';
 import { canCaptureScreens, taskScreens } from '../store/task-screens';
-import { linkButtonStyle, sectionLabelStyle } from '../lib/theme';
+import { bannerStyle, linkButtonStyle, sectionLabelStyle, theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { isVerificationStale, summarizeVerificationRun } from '../lib/verification-run';
 import { isTourOutdated } from '../lib/finish-reports';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { parseGitHubUrl } from '../lib/github-url';
 import { refreshCodeFingerprint } from '../store/task-diff';
-import { GitMergeIcon, SyncIcon, UploadIcon } from './icons';
+import { AlertIcon, GitMergeIcon, SyncIcon, UploadIcon } from './icons';
 
 export type FinishAction = 'merge' | 'push' | 'create-pr';
 
@@ -507,11 +507,20 @@ export function FinishDialog(props: FinishDialogProps) {
                   props.onClose();
                 }}
               >
-                {/* Rare and leaves local commits behind, so it sits apart from the footer's Merge. */}
+                {/* Merging now would leave work out of the PR, so this warns rather than hints.
+                    Merge as is is rare and leaves local commits behind, so it sits apart from
+                    the footer's Merge. */}
                 <Show when={pushFirst()}>
-                  <p style={{ 'font-size': '13px', margin: '0 0 8px' }}>
-                    Or merge PR #{pr.number()} without your unpushed commits; the task stays open
-                    for them.{' '}
+                  <p
+                    style={{
+                      ...bannerStyle(theme.warning),
+                      'font-size': '13px',
+                      margin: '0 0 8px',
+                    }}
+                  >
+                    <AlertIcon size={13} style={{ 'vertical-align': '-2px' }} />{' '}
+                    <strong>PR #{pr.number()} is missing your latest commits.</strong> Push them
+                    before merging, or merge without them; the task stays open for them.{' '}
                     <button
                       type="button"
                       style={linkButtonStyle}
