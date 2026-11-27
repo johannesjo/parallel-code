@@ -1,5 +1,6 @@
-import { setStore, store } from './core';
+import { store } from './core';
 import { setTaskFocusedPanel } from './focused-panel';
+import { revealTaskPromptInput } from './prompt-input-visibility';
 import { setPrefillPrompt, setTaskPromptDraftActive } from './tasks';
 
 /**
@@ -11,7 +12,7 @@ export function stageTaskPrompt(taskId: string, text: string): void {
   if (!task) return;
   const draft = task.prefillPrompt ?? task.promptDraft ?? '';
   setTaskPromptDraftActive(taskId, true);
-  setStore('showPromptInput', true);
+  revealTaskPromptInput(taskId);
   setPrefillPrompt(taskId, [draft, text].filter(Boolean).join('\n\n'));
   queueMicrotask(() => {
     if (store.tasks[taskId]) setTaskFocusedPanel(taskId, 'prompt');

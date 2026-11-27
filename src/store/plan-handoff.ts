@@ -89,8 +89,9 @@ export async function implementPlanInFreshSession(taskId: string): Promise<strin
         t.promptedAgentIds = prompted?.length ? prompted : undefined;
         // Otherwise a later resume of this pane reopens the chat's Codex thread.
         t.codexChatHandoff = undefined;
-        // The prompt box is what sends the plan.
-        s.showPromptInput = true;
+        // The prompt box is what sends the plan, so it shows on this task
+        // until the plan is sent, whatever the "Show prompt input" setting.
+        t.promptInputRevealed = true;
       }),
     );
     restartAgent(agentId, false);

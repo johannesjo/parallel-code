@@ -870,6 +870,13 @@ interface LegacyPersistedState {
   autoStartRemoteAccess?: unknown;
 }
 
+/** An unsent draft stays visible even when the prompt box is turned off. */
+function revealingDraft<T extends { promptDraft?: string }>(
+  restored: T,
+): T & { promptInputRevealed?: true } {
+  return restored.promptDraft?.trim() ? { ...restored, promptInputRevealed: true } : restored;
+}
+
 export async function loadState(): Promise<void> {
   stateLoaded = false;
   const json = await invoke<string | null>(IPC.LoadAppState);
@@ -1353,12 +1360,14 @@ export async function loadState(): Promise<void> {
           snoozedUntilCi: pt.snoozedUntilCi === true ? true : undefined,
           prBabysit: restoredPrBabysit(pt.prBabysit),
           notes: pt.notes,
-          ...restoredQueuedPrompt({
-            initialPrompt: pt.initialPrompt,
-            promptDraft: pt.promptDraft,
-            planHandoff: restorePlanHandoff(pt.planHandoff),
-            firstPaneSessionId: restoredAgentSessionIds(pt, agentIds)?.[agentIds[0]],
-          }),
+          ...revealingDraft(
+            restoredQueuedPrompt({
+              initialPrompt: pt.initialPrompt,
+              promptDraft: pt.promptDraft,
+              planHandoff: restorePlanHandoff(pt.planHandoff),
+              firstPaneSessionId: restoredAgentSessionIds(pt, agentIds)?.[agentIds[0]],
+            }),
+          ),
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
           portBase: isPortBase(pt.portBase) ? pt.portBase : undefined,
           lastPrompt: pt.lastPrompt,
@@ -1515,12 +1524,14 @@ export async function loadState(): Promise<void> {
           shellAgentIds: [],
           notes: pt.notes,
           // Collapsed tasks have no pane, so a queued plan is never kept.
-          ...restoredQueuedPrompt({
-            initialPrompt: pt.initialPrompt,
-            promptDraft: pt.promptDraft,
-            planHandoff: restorePlanHandoff(pt.planHandoff),
-            firstPaneSessionId: undefined,
-          }),
+          ...revealingDraft(
+            restoredQueuedPrompt({
+              initialPrompt: pt.initialPrompt,
+              promptDraft: pt.promptDraft,
+              planHandoff: restorePlanHandoff(pt.planHandoff),
+              firstPaneSessionId: undefined,
+            }),
+          ),
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
           portBase: isPortBase(pt.portBase) ? pt.portBase : undefined,
           lastPrompt: pt.lastPrompt,

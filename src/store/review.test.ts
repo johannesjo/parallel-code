@@ -70,7 +70,8 @@ describe('stageRework', () => {
     expect(store.tasks.t1.prefillPrompt).toMatch(
       /^Please rework this task based on my review:\n\n- Address this risk: No real provider\.\n/,
     );
-    expect(store.showPromptInput).toBe(true);
+    expect(store.tasks.t1.promptInputRevealed).toBe(true);
+    expect(store.showPromptInput).toBe(false);
   });
 });
 
