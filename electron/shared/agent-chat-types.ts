@@ -91,6 +91,8 @@ export interface ChatCommand {
 }
 
 export interface AgentChatState {
+  /** Latest PR link in completed agent output, pending the task's branch ownership check. */
+  printedPrUrl?: string;
   model?: string;
   reasoningEffort?: string;
   models?: ChatModel[];

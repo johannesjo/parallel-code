@@ -86,6 +86,85 @@ function harness() {
 afterEach(() => vi.useRealTimers());
 
 describe('Codex chat app-server protocol', () => {
+  const prUrl = 'https://github.com/acme/app/pull/42';
+
+  it('restores a printed PR and waits for a complete reply before reporting a new one', async () => {
+    const h = harness();
+    const oldUrl = 'https://github.com/acme/app/pull/10';
+    await h.start('saved', [
+      {
+        items: [{ type: 'commandExecution', id: 'old', aggregatedOutput: oldUrl }],
+      },
+    ]);
+    expect(h.chat.state.printedPrUrl).toBe(oldUrl);
+
+    h.receive({
+      method: 'item/completed',
+      params: { item: { type: 'userMessage', id: 'u', content: [{ type: 'text', text: prUrl }] } },
+    });
+    h.receive({
+      method: 'item/completed',
+      params: { item: { type: 'mcpToolCall', id: 'm', arguments: { url: prUrl }, result: {} } },
+    });
+    h.receive({
+      method: 'item/agentMessage/delta',
+      params: { itemId: 'a', delta: prUrl.slice(0, -1) },
+    });
+    expect(h.chat.state.printedPrUrl).toBe(oldUrl);
+    h.receive({
+      method: 'item/completed',
+      params: { item: { type: 'agentMessage', id: 'a', text: `Opened [PR 42](${prUrl}).` } },
+    });
+    expect(h.chat.state.printedPrUrl).toBe(prUrl);
+    h.chat.stop();
+  });
+
+  it.each([
+    ['shell output', { type: 'commandExecution', source: 'userShell', aggregatedOutput: prUrl }],
+    ['function text', { type: 'functionCallOutput', output: prUrl }],
+    [
+      'function content',
+      { type: 'functionCallOutput', output: [{ type: 'input_text', text: prUrl }] },
+    ],
+    [
+      'dynamic tool content',
+      { type: 'dynamicToolCall', contentItems: [{ type: 'inputText', text: prUrl }] },
+    ],
+    ['MCP text', { type: 'mcpToolCall', result: { content: [{ type: 'text', text: prUrl }] } }],
+    [
+      'MCP resource link',
+      { type: 'mcpToolCall', result: { content: [{ type: 'resource_link', uri: prUrl }] } },
+    ],
+    [
+      'MCP structured result',
+      { type: 'mcpToolCall', result: { structuredContent: { html_url: prUrl } } },
+    ],
+  ] as const)('reports the PR from %s', async (_source, item) => {
+    const h = harness();
+    await h.start();
+    h.receive({ method: 'item/completed', params: { item: { id: 'result', ...item } } });
+    expect(h.chat.state.printedPrUrl).toBe(prUrl);
+    h.chat.stop();
+  });
+
+  it('uses streamed command output when Codex omits the final output', async () => {
+    const h = harness();
+    await h.start();
+    const command = { type: 'commandExecution', id: 'cmd', command: 'gh pr create' };
+    h.receive({ method: 'item/started', params: { item: command } });
+    h.receive({
+      method: 'item/commandExecution/outputDelta',
+      params: { itemId: 'cmd', delta: prUrl },
+    });
+    expect(h.chat.state.printedPrUrl).toBeUndefined();
+    h.receive({
+      method: 'item/completed',
+      params: { item: { ...command, aggregatedOutput: null } },
+    });
+    expect(h.chat.state.printedPrUrl).toBe(prUrl);
+    h.chat.stop();
+  });
+
   it('runs a user shell command in the thread and shows its output and exit status', async () => {
     const h = harness();
     await h.start();
@@ -136,7 +215,7 @@ describe('Codex chat app-server protocol', () => {
     });
     h.receive({
       method: 'item/commandExecution/outputDelta',
-      params: { itemId: 'cmd', delta: 'ready\n' },
+      params: { itemId: 'cmd', delta: prUrl },
     });
     h.receive({
       method: 'item/completed',
@@ -151,7 +230,8 @@ describe('Codex chat app-server protocol', () => {
         },
       },
     });
-    expect(h.chat.state.items[0].text).toBe('ready\n');
+    expect(h.chat.state.items[0].text).toBe(prUrl);
+    expect(h.chat.state.printedPrUrl).toBe(prUrl);
     expect(h.chat.state.items[0].activity?.status).toBe('interrupted');
     expect(h.chat.state.items[0].activity?.exitCode).toBeUndefined();
     h.reply({});

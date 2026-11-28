@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { lastPrintedPrUrl } from '../shared/printed-pr-url.js';
 import { readContextUsage } from '../shared/agent-chat-types.js';
 import { unifiedDiff, wholeFileDiff } from '../shared/chat-diffs.js';
 import { elicitationResult, readElicitation } from './codex-elicitation.js';
@@ -30,8 +31,7 @@ function changeDiff(value: unknown): ChatDiff | undefined {
   return unifiedDiff(path, text);
 }
 
-function chatItem(value: unknown, completed = true): ChatItem | undefined {
-  const item = record(value);
+function chatItem(item: RecordValue, completed: boolean): ChatItem | undefined {
   const id = string(item.id);
   if (!id) return;
   if (item.type === 'agentMessage') return { id, kind: 'assistant', text: string(item.text) };
@@ -133,6 +133,29 @@ function chatItem(value: unknown, completed = true): ChatItem | undefined {
   }
 }
 
+/** Read tool results without scanning their arguments, which may cite unrelated PRs. */
+function toolResultPrUrl(item: RecordValue): string | undefined {
+  let content: unknown;
+  if (item.type === 'functionCallOutput') content = item.output;
+  else if (item.type === 'dynamicToolCall') content = item.contentItems;
+  else if (item.type === 'mcpToolCall') {
+    const result = record(item.result);
+    const structured = record(result.structuredContent);
+    const url =
+      lastPrintedPrUrl(string(structured.html_url)) ?? lastPrintedPrUrl(string(structured.url));
+    if (url) return url;
+    content = result.content;
+  }
+  if (typeof content === 'string') return lastPrintedPrUrl(content);
+  if (Array.isArray(content)) {
+    for (let index = content.length - 1; index >= 0; index--) {
+      const part = record(content[index]);
+      const url = lastPrintedPrUrl(string(part.type === 'resource_link' ? part.uri : part.text));
+      if (url) return url;
+    }
+  }
+}
+
 /** One official Codex app-server process per chat. No credentials leave that process. */
 export class CodexChat {
   readonly state: AgentChatState = { status: 'starting', items: [], requests: [] };
@@ -226,7 +249,7 @@ export class CodexChat {
       for (const item of Array.isArray(record(turn).items)
         ? (record(turn).items as unknown[])
         : []) {
-        this.upsert(chatItem(item));
+        this.upsert(item);
       }
     }
     this.interruptActivities();
@@ -526,15 +549,24 @@ export class CodexChat {
     for (const observer of this.observers) observer(this.state);
   }
 
-  private upsert(item: ChatItem | undefined): void {
-    if (!item) return;
-    const index = this.state.items.findIndex((i) => i.id === item.id);
-    if (index === -1) this.state.items.push(item);
-    else {
+  private upsert(value: unknown, completed = true): void {
+    const raw = record(value);
+    const item = chatItem(raw, completed);
+    const index = item ? this.state.items.findIndex((i) => i.id === item.id) : -1;
+    const previous = this.state.items[index];
+    if (item) {
       // On Stop, Codex replaces the command's output with an abort notice.
       if (item.kind === 'shell' && item.activity?.status === 'interrupted')
-        item.text = this.state.items[index].text || item.text;
-      this.state.items[index] = item;
+        item.text = previous?.text || item.text;
+      if (previous) this.state.items[index] = item;
+      else this.state.items.push(item);
+    }
+    if (completed && raw.status !== 'inProgress') {
+      const url =
+        item?.kind === 'assistant' || item?.activity?.type === 'command'
+          ? lastPrintedPrUrl(item.text || previous?.text || '')
+          : toolResultPrUrl(raw);
+      if (url) this.state.printedPrUrl = url;
     }
   }
 
@@ -634,7 +666,7 @@ export class CodexChat {
       // transcript or make its working indicator start or stop.
       return;
     } else if (method === 'item/started' || method === 'item/completed') {
-      this.upsert(chatItem(params.item, method === 'item/completed'));
+      this.upsert(params.item, method === 'item/completed');
     } else if (
       method === 'item/agentMessage/delta' ||
       method === 'item/commandExecution/outputDelta'

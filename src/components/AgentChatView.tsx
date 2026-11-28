@@ -7,6 +7,7 @@ import {
   type ChatPermissionMode,
 } from '../../electron/shared/agent-chat-types';
 import { store, setStore } from '../store/core';
+import { noteAgentPrUrl } from '../store/printed-pr-links';
 import { agentChatProvider } from '../store/agent-chat';
 import { saveState } from '../store/persistence';
 import {
@@ -56,6 +57,7 @@ export function AgentChatView(props: {
   channel.onmessage = (next) => {
     if (disposed || !store.agents[props.agentId]) return;
     batch(() => {
+      if (next.printedPrUrl) noteAgentPrUrl(props.agentId, props.task.id, next.printedPrUrl);
       // A `!` command starts a conversation as surely as a message does.
       const firstPrompt = next.items.find((item) => item.kind === 'user' || item.kind === 'shell');
       if (

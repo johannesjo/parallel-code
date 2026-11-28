@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatView } from './AgentChatView';
 import type { ChatProps } from './chat/ChatView';
 import { store, setStore } from '../store/core';
+import { printedPrLink } from '../store/printed-pr-links';
 import { IPC } from '../../electron/ipc/channels';
 import type { AgentChatState } from '../../electron/shared/agent-chat-types';
 import type { Task } from '../store/types';
@@ -146,6 +147,17 @@ afterEach(() => {
 });
 
 describe('Codex chat view', () => {
+  it('passes a PR reported by Codex to the task’s PR checker once', () => {
+    dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
+    const url = 'https://github.com/acme/app/pull/42';
+    const next = { ...state(), printedPrUrl: url };
+    mocks.channel?.onmessage?.(next);
+    const link = printedPrLink();
+    expect(link).toEqual({ taskId: 'task-1', url });
+    mocks.channel?.onmessage?.(next);
+    expect(printedPrLink()).toBe(link);
+  });
+
   it('routes a Codex shell command to the desktop shell action', async () => {
     dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
     const chat = await tick();
