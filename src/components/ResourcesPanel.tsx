@@ -1,11 +1,14 @@
 import { Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { BRIEF_MODELS, type BriefModelId } from '../../electron/shared/task-name-model';
+import { store } from '../store/store';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import type { ResourceSnapshot } from '../ipc/types';
 import { ActivityIcon } from './icons';
+import { ResourceAnalysis, type ResourceAnalysisResult } from './ResourceAnalysis';
 import { ResourcesBreakdown } from './ResourcesBreakdown';
 import { cpuShare, formatBytes, formatCpu, snapshotTotals } from './resources-format';
 
@@ -78,6 +81,10 @@ function ResourcesButtonLabel(props: { snapshot: ResourceSnapshot | null }) {
  */
 export function ResourcesPanel() {
   const [open, setOpen] = createSignal(false);
+  const [lastAnalysis, setLastAnalysis] = createSignal<ResourceAnalysisResult>();
+  const [pickedModel, setPickedModel] = createSignal<BriefModelId>();
+  const model = () =>
+    pickedModel() ?? (BRIEF_MODELS[store.briefModel].provider === 'codex' ? 'luna' : 'haiku');
   const [bottom, setBottom] = createSignal(0);
   const [snapshot, setSnapshot] = createSignal<ResourceSnapshot | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -168,20 +175,29 @@ export function ResourcesPanel() {
               right: '8px',
               bottom: `${bottom()}px`,
               width: `${PANEL_WIDTH}px`,
+              'max-height': `calc(100vh - ${bottom()}px - 8px)`,
+              'overflow-y': 'auto',
               'max-width': 'calc(100vw - 16px)',
               'z-index': 'var(--z-modal)',
               background: theme.bgElevated,
               border: `1px solid ${theme.border}`,
-              'border-radius': 'var(--radius-sm)',
-              'box-shadow': '0 4px 16px rgba(0, 0, 0, 0.3)',
-              padding: '6px 4px',
-              'font-family': "'JetBrains Mono', monospace",
-              'font-size': sf(11),
+              'border-radius': 'var(--radius-md)',
+              'box-shadow': 'var(--shadow-pop)',
+              padding: '8px 6px 4px',
+              'font-family': 'var(--font-ui)',
+              'font-size': sf(12),
               color: theme.fgMuted,
               'white-space': 'nowrap',
             }}
           >
             <ResourcesBreakdown snapshot={snapshot()} error={error()} />
+            <ResourceAnalysis
+              snapshot={error() ? null : snapshot()}
+              model={model()}
+              onModelChange={setPickedModel}
+              result={lastAnalysis()}
+              onResult={setLastAnalysis}
+            />
           </div>
         </Portal>
       </Show>

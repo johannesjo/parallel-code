@@ -1,6 +1,7 @@
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResourceSnapshot } from '../ipc/types';
+import { startModelRequest } from '../lib/model-request';
 import { ResourcesPanel } from './ResourcesPanel';
 
 const { mockInvoke, snapshot } = vi.hoisted(() => {
@@ -30,12 +31,15 @@ const { mockInvoke, snapshot } = vi.hoisted(() => {
   return { mockInvoke: vi.fn(async () => snapshot), snapshot };
 });
 
+vi.mock('../lib/model-request', () => ({ startModelRequest: vi.fn() }));
 vi.mock('../lib/ipc', () => ({ invoke: mockInvoke }));
 vi.mock('../store/store', () => ({
   store: {
     tasks: { t1: { name: 'Fix login' } },
     agents: { a1: { def: { name: 'Claude Code' } } },
     terminals: {},
+    agentEnvFiles: {},
+    briefModel: 'sonnet',
   },
 }));
 
@@ -45,6 +49,7 @@ afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
   document.body.replaceChildren();
   mockInvoke.mockClear();
+  vi.mocked(startModelRequest).mockReset();
   vi.useRealTimers();
 });
 
@@ -133,6 +138,125 @@ describe('ResourcesPanel', () => {
     expect(panel()?.textContent).not.toContain('claude 21');
     (rows[0] as HTMLButtonElement).click();
     expect(panel()?.textContent).toContain('claude 21');
+  });
+
+  it('analyses the displayed sample on demand and keeps the reply across live polls', async () => {
+    vi.useFakeTimers();
+    const { promise, resolve } = Promise.withResolvers<string>();
+    vi.mocked(startModelRequest).mockReturnValue({ result: promise, cancel: vi.fn() });
+    const container = mount();
+    toggleButton(container).click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(startModelRequest).not.toHaveBeenCalled();
+    const button = panel()?.querySelector<HTMLButtonElement>('.resource-analysis-controls button');
+    button?.click();
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute('aria-busy')).toBe('true');
+    expect(button?.querySelector('.inline-spinner')).not.toBeNull();
+    button?.click();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(startModelRequest).toHaveBeenCalledTimes(1);
+    const [options] = vi.mocked(startModelRequest).mock.calls[0];
+    expect(options).toMatchObject({
+      purpose: 'resources',
+      settings: { provider: 'claude', model: 'haiku' },
+    });
+    expect(JSON.parse(options.prompt)).toMatchObject({
+      parallelCodeTotal: { cpu: '11%', memory: '1.5 GB' },
+      topProcesses: expect.arrayContaining([
+        { group: 'Fix login · Claude Code', pid: 21, name: 'claude', cpu: '10%', memory: '1.0 GB' },
+      ]),
+    });
+    resolve('Fix login uses the most CPU.');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(panel()?.querySelector('[role=status]')?.textContent).toContain(
+      'Fix login uses the most CPU.',
+    );
+    expect(button?.disabled).toBe(false);
+    expect(button?.querySelector('.inline-spinner')).toBeNull();
+  });
+
+  it('keeps the last answer and sample time through reopening and failed refreshes until replaced', async () => {
+    const refresh = Promise.withResolvers<string>();
+    vi.mocked(startModelRequest)
+      .mockReturnValueOnce({ result: Promise.resolve('First answer.'), cancel: vi.fn() })
+      .mockReturnValueOnce({ result: refresh.promise, cancel: vi.fn() })
+      .mockReturnValueOnce({ result: Promise.resolve('New answer.'), cancel: vi.fn() });
+    const toggle = toggleButton(mount());
+    const analyse = () =>
+      panel()?.querySelector<HTMLButtonElement>('.resource-analysis-controls button')?.click();
+    const result = () => panel()?.querySelector('[role=status]')?.textContent;
+    toggle.click();
+    await flush();
+    analyse();
+    await flush();
+    const first = result();
+    expect(first).toContain('First answer.');
+    toggle.click();
+    mockInvoke.mockResolvedValueOnce({ ...snapshot, sampledAt: 120_000 });
+    toggle.click();
+    await flush();
+    expect(result()).toBe(first);
+    analyse();
+    expect(result()).toBe(first);
+    refresh.reject(new Error('Provider offline'));
+    await flush();
+    expect(panel()?.querySelector('[role=alert]')?.textContent).toContain('Provider offline');
+    expect(result()).toBe(first);
+    analyse();
+    await flush();
+    expect(result()).toContain('New answer.');
+    expect(result()).toContain(new Date(120_000).toLocaleTimeString());
+    expect(result()).not.toContain('First answer.');
+    expect(panel()?.querySelector('[role=alert]')).toBeNull();
+  });
+
+  it('remembers the chosen analysis model when reopened and uses it on the next click', async () => {
+    vi.mocked(startModelRequest).mockReturnValue({
+      result: Promise.resolve('Done'),
+      cancel: vi.fn(),
+    });
+    const container = mount();
+    const toggle = toggleButton(container);
+    toggle.click();
+    await flush();
+    const selector = () => panel()?.querySelector('select');
+    const select = selector();
+    if (!select) throw new Error('Missing resource analysis model selector');
+    expect(select.value).toBe('haiku');
+    select.value = 'luna';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    toggle.click();
+    toggle.click();
+    await flush();
+    expect(selector()?.value).toBe('luna');
+    expect(startModelRequest).not.toHaveBeenCalled();
+    panel()?.querySelector<HTMLButtonElement>('.resource-analysis-controls button')?.click();
+    expect(vi.mocked(startModelRequest).mock.calls[0][0].settings).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-6-luna',
+      effort: 'low',
+    });
+  });
+
+  it('allows retry after a provider error and cancels an in-flight request on close', async () => {
+    const cancel = vi.fn();
+    vi.mocked(startModelRequest)
+      .mockImplementationOnce(() => ({
+        result: Promise.reject(new Error('Model unavailable')),
+        cancel,
+      }))
+      .mockImplementationOnce(() => ({ result: new Promise(() => {}), cancel }));
+    const container = mount();
+    toggleButton(container).click();
+    await flush();
+    const button = panel()?.querySelector<HTMLButtonElement>('.resource-analysis-controls button');
+    button?.click();
+    await flush();
+    expect(panel()?.querySelector('[role=alert]')?.textContent).toBe('Model unavailable');
+    button?.click();
+    toggleButton(container).click();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it('lists the CPU of finished commands last, where the platform measures it', async () => {

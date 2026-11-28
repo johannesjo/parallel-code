@@ -1666,7 +1666,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.requestId, 'requestId');
     assertString(args.prompt, 'prompt');
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
-    validatePath(args.cwd, 'cwd');
+    // Resource samples are app-wide and need no repository context.
+    const cwd = args.purpose === 'resources' ? path.dirname(process.execPath) : args.cwd;
+    validatePath(cwd, 'cwd');
     const provider = askCodeProvider(args.provider);
     // Only a model the provider offers may become a CLI argument.
     if (args.model !== undefined && !isAskCodeModel(provider, args.model))
@@ -1680,7 +1682,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
       prompt: args.prompt,
-      cwd: args.cwd,
+      cwd,
       provider,
       model: args.model,
       effort: args.effort,

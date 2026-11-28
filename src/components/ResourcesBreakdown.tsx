@@ -2,10 +2,17 @@ import { For, Show, createSignal } from 'solid-js';
 import { theme } from '../lib/theme';
 import { store } from '../store/store';
 import type { ResourceGroup, ResourceSnapshot } from '../ipc/types';
+import { ActivityIcon, TreeChevronIcon } from './icons';
 import { formatBytes, formatCpu, groupKey, groupLabel, snapshotTotals } from './resources-format';
 
-const numberCell = { width: '64px', 'text-align': 'right', 'flex-shrink': '0' } as const;
-const rowStyle = { display: 'flex', 'align-items': 'center', gap: '8px', padding: '3px 6px' };
+const numberCell = {
+  width: '60px',
+  'font-family': 'var(--font-mono)',
+  'font-variant-numeric': 'tabular-nums',
+  'text-align': 'right',
+  'flex-shrink': '0',
+} as const;
+const rowStyle = { display: 'flex', 'align-items': 'center', gap: '8px', padding: '4px 8px' };
 
 function GroupRow(props: {
   group: ResourceGroup;
@@ -19,12 +26,12 @@ function GroupRow(props: {
     <div>
       <button
         type="button"
+        class="resource-group-toggle"
         aria-expanded={open()}
         onClick={() => props.onToggle()}
         style={{
           ...rowStyle,
           width: '100%',
-          background: 'none',
           border: 'none',
           color: theme.fg,
           font: 'inherit',
@@ -32,8 +39,11 @@ function GroupRow(props: {
           'text-align': 'left',
         }}
       >
-        <span style={{ width: '10px', color: theme.fgSubtle }}>{open() ? '▾' : '▸'}</span>
-        <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+        <TreeChevronIcon size={10} />
+        <span
+          title={props.label}
+          style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
+        >
           {props.label}
         </span>
         <span style={numberCell}>{formatCpu(props.group.cpuPercent, props.cpuCount)}</span>
@@ -42,8 +52,11 @@ function GroupRow(props: {
       <Show when={open()}>
         <For each={props.group.processes}>
           {(proc) => (
-            <div style={{ ...rowStyle, 'padding-left': '24px', color: theme.fgMuted }}>
-              <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+            <div class="resource-process-row" style={rowStyle}>
+              <span
+                title={`${proc.name} · PID ${proc.pid}`}
+                style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
+              >
                 {proc.name} <span style={{ color: theme.fgSubtle }}>{proc.pid}</span>
               </span>
               <span style={numberCell}>{formatCpu(proc.cpuPercent, props.cpuCount)}</span>
@@ -55,7 +68,8 @@ function GroupRow(props: {
         <Show when={props.group.exitedCpuPercent !== undefined}>
           <div
             title="Commands that started and exited since the last sample: hooks, short shell and test runs"
-            style={{ ...rowStyle, 'padding-left': '24px', color: theme.fgMuted }}
+            class="resource-process-row"
+            style={rowStyle}
           >
             <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
               finished commands
@@ -87,45 +101,44 @@ export function ResourcesBreakdown(props: {
       return next;
     });
   return (
-    <>
-      <div
-        style={{
-          ...rowStyle,
-          'padding-left': '24px',
-          color: theme.fgSubtle,
-          'text-transform': 'uppercase',
-          'letter-spacing': '0.05em',
-          'font-weight': '600',
-        }}
-      >
-        <span style={{ flex: '1' }}>Resources</span>
+    <div class="resource-table">
+      <div class="resource-heading" style={rowStyle}>
+        <span>
+          <ActivityIcon size={14} />
+          Resources
+        </span>
         <span style={numberCell}>CPU</span>
         <span style={numberCell}>Memory</span>
       </div>
       <Show when={props.error}>
-        <div style={{ ...rowStyle, color: theme.warning }}>{props.error}</div>
+        <div
+          style={{
+            ...rowStyle,
+            color: theme.warning,
+            'white-space': 'normal',
+            'overflow-wrap': 'anywhere',
+          }}
+        >
+          {props.error}
+        </div>
       </Show>
       <Show when={props.snapshot} fallback={<div style={rowStyle}>Measuring…</div>}>
         {(snapshot) => (
           <>
-            <div style={{ overflow: 'auto', 'max-height': '50vh' }}>
-              <For each={groups()}>
-                {(group) => (
-                  <GroupRow
-                    group={group}
-                    label={groupLabel(group, store)}
-                    cpuCount={snapshot().cpuCount}
-                    open={expanded().has(groupKey(group))}
-                    onToggle={() => toggle(groupKey(group))}
-                  />
-                )}
-              </For>
-            </div>
-            <div
-              style={{ ...rowStyle, 'border-top': `1px solid ${theme.border}`, color: theme.fg }}
-            >
-              <span style={{ flex: '1', color: theme.fgSubtle }}>
-                Total · CPU of all {snapshot().cpuCount} cores
+            <For each={groups()}>
+              {(group) => (
+                <GroupRow
+                  group={group}
+                  label={groupLabel(group, store)}
+                  cpuCount={snapshot().cpuCount}
+                  open={expanded().has(groupKey(group))}
+                  onToggle={() => toggle(groupKey(group))}
+                />
+              )}
+            </For>
+            <div class="resource-total" style={rowStyle}>
+              <span style={{ flex: '1', 'min-width': '0', 'white-space': 'normal' }}>
+                Total <small>CPU across {snapshot().cpuCount} cores</small>
               </span>
               <span style={numberCell}>
                 {formatCpu(snapshotTotals(snapshot()).cpuPercent, snapshot().cpuCount)}
@@ -135,6 +148,6 @@ export function ResourcesBreakdown(props: {
           </>
         )}
       </Show>
-    </>
+    </div>
   );
 }

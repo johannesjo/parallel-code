@@ -137,7 +137,7 @@ describe('Claude code Q&A deadlines', () => {
       proc.emit('close', 1);
       expect(send).toHaveBeenCalledWith('channel:test', {
         type: 'error',
-        text: 'Could not send tour prompt: broken pipe',
+        text: 'Could not send model prompt: broken pipe',
       });
       expect(send.mock.calls.filter(([, message]) => message.type === 'done')).toHaveLength(1);
       expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
@@ -447,6 +447,7 @@ describe('isStructuredPurpose', () => {
     expect(isStructuredPurpose('review')).toBe(true);
     expect(isStructuredPurpose('card')).toBe(true);
     expect(isStructuredPurpose('card-layout')).toBe(true);
+    expect(isStructuredPurpose('resources')).toBe(true);
     expect(isStructuredPurpose('plan')).toBe(false);
     expect(isStructuredPurpose(undefined)).toBe(false);
   });

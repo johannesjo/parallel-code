@@ -183,7 +183,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
       // context there (status, recent commits) leads Haiku to answer a vague
       // prompt such as "what should we do next?" instead of naming it. A card
       // draft runs in whichever project comes first, so that repo stays out of it too.
-      args.purpose === 'task-name' || args.purpose === 'card-layout'
+      args.purpose === 'task-name' || args.purpose === 'card-layout' || args.purpose === 'resources'
         ? '--system-prompt'
         : '--append-system-prompt',
       askCodeSystemPrompt(args.purpose),
@@ -234,7 +234,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
     proc.stdin?.on('error', (err: Error) => {
       if (!session.complete()) return;
       session.cleanup();
-      send({ type: 'error', text: `Could not send tour prompt: ${err.message}` });
+      send({ type: 'error', text: `Could not send model prompt: ${err.message}` });
       send({ type: 'done', exitCode: 1 });
       proc.kill('SIGTERM');
     });

@@ -24,19 +24,26 @@ export interface ModelRequest {
  * (`purpose: 'checks'`) a suggested check setup, (`purpose: 'task-name'`) a
  * short task title, (`purpose: 'review'`) an independent rating of a task's work, (`purpose: 'pr-description'`) a
  * pull request title and description, (`purpose: 'card'`) a card's values, or
- * (`purpose: 'card-layout'`) a card drafted from a description.
+ * (`purpose: 'card-layout'`) a card drafted from a description, or
+ * (`purpose: 'resources'`) an explanation of one resource sample.
  * Resolves with the response text; rejects on provider failure, a runaway
  * response, or the client deadline.
  */
-export function startModelRequest(options: {
-  prompt: string;
-  cwd: string;
-  settings: Pick<CheckModelSettings, 'provider' | 'model' | 'effort'>;
-  agentEnvFiles: Record<string, string>;
-  /** Whose project env vars the call runs with. */
-  projectId: string | undefined;
-  purpose: 'checks' | 'task-name' | 'review' | 'pr-description' | 'card' | 'card-layout';
-}): ModelRequest {
+export function startModelRequest(
+  options: {
+    prompt: string;
+    settings: Pick<CheckModelSettings, 'provider' | 'model' | 'effort'>;
+    agentEnvFiles: Record<string, string>;
+    /** Whose project env vars the call runs with. */
+    projectId: string | undefined;
+  } & (
+    | { purpose: 'resources'; cwd?: never }
+    | {
+        purpose: 'checks' | 'task-name' | 'review' | 'pr-description' | 'card' | 'card-layout';
+        cwd: string;
+      }
+  ),
+): ModelRequest {
   const requestId = crypto.randomUUID();
   const channel = new Channel<AskMessage>();
   let active = true;

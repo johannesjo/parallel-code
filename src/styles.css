@@ -2772,6 +2772,144 @@ button {
   animation: fadeIn var(--motion-enter) var(--ease-out);
 }
 
+.resource-table {
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.resource-heading,
+.resource-total {
+  position: sticky;
+  z-index: 1;
+  background: var(--bg-elevated);
+}
+
+.resource-heading {
+  top: 0;
+  margin-bottom: 3px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.resource-heading > :first-child {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.resource-group-toggle {
+  border-radius: var(--radius-xs);
+  background: transparent;
+}
+
+.resource-group-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.resource-group-toggle svg {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.resource-group-toggle[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.resource-process-row {
+  margin-left: 13px;
+  border-left: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.resource-process-row > :first-child {
+  padding-left: 14px;
+}
+
+.resource-total {
+  bottom: 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.resource-total small,
+.resource-sample-time {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.resource-total small {
+  margin-left: 4px;
+}
+
+.resource-analysis {
+  margin-top: 4px;
+  padding: 4px 5px 2px;
+  border-top: 1px solid var(--border-subtle);
+  white-space: normal;
+}
+
+.resource-analysis-message {
+  margin: 6px 3px 3px;
+  color: var(--fg);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.resource-analysis-message[role='alert'] {
+  color: var(--warning);
+}
+
+.resource-sample-time {
+  margin-top: 3px;
+}
+
+.resource-analysis-controls {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.resource-analysis-controls :is(button, select) {
+  padding: 2px 3px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.resource-analysis-controls :is(button, select):hover:enabled {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.resource-analysis-controls button.btn-with-icon {
+  min-width: 9.5em;
+  justify-content: flex-start;
+}
+
+.resource-analysis-controls :disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.resource-analysis-controls option {
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+
 .review-control {
   padding: 4px 8px;
   border: 1px solid var(--border);
@@ -6594,7 +6732,8 @@ button.tour-save-state:not(:disabled):hover {
     transition: none;
   }
 
-  .feature-hint {
+  .feature-hint,
+  .resource-analysis-controls .inline-spinner {
     animation: none;
   }
 
