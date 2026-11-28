@@ -12,6 +12,7 @@ import {
   setShowPromptInput,
   setShowSidebarTips,
   setShowSidebarProgress,
+  setShowUsageAsUsed,
   setSidebarNeedsInputFirst,
   setFontSmoothing,
   setInactiveColumnOpacity,
@@ -149,6 +150,12 @@ export function AppearanceSettings(props: { fonts: string[] }) {
           checked={store.showSidebarProgress}
           onChange={setShowSidebarProgress}
           description="Show today’s local task and tracked PR merge count when nonzero"
+        />
+        <SettingsCheckboxRow
+          label="Show usage as used"
+          checked={store.showUsageAsUsed}
+          onChange={setShowUsageAsUsed}
+          description="Fill usage meters as a window is consumed instead of showing what remains"
         />
         <SettingsCheckboxRow
           label="Show tips section in sidebar"

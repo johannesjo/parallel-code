@@ -181,6 +181,7 @@ export {
   setReviewGuidance,
   setShowSidebarTips,
   setShowSidebarProgress,
+  setShowUsageAsUsed,
   setSidebarNeedsInputFirst,
   setArchivedChildrenShown,
   setProjectTasksCollapsed,

@@ -682,6 +682,7 @@ export interface PersistedState {
   reviewGuidance?: string;
   showSidebarTips?: boolean;
   showSidebarProgress?: boolean;
+  showUsageAsUsed?: boolean;
   sidebarNeedsInputFirst?: boolean;
   projectsCollapsed?: boolean;
   desktopNotificationsEnabled?: boolean;
@@ -851,6 +852,7 @@ export interface AppStore {
   reviewGuidance: string;
   showSidebarTips: boolean;
   showSidebarProgress: boolean;
+  showUsageAsUsed: boolean;
   /** Pin tasks that are waiting on an answer to the top of the sidebar task
    *  list, newest question first. */
   sidebarNeedsInputFirst: boolean;

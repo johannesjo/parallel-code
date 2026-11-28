@@ -86,6 +86,7 @@ export const [store, setStore] = createStore<AppStore>({
   reviewGuidance: '',
   showSidebarTips: true,
   showSidebarProgress: true,
+  showUsageAsUsed: false,
   sidebarNeedsInputFirst: true,
   taskProjectFilter: null,
   projectsCollapsed: false,

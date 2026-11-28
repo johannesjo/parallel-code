@@ -97,6 +97,7 @@ beforeEach(async () => {
   setStore('seenFeatureHints', []);
   setStore('autoStartRemoteAccess', false);
   setStore('terminalScreenReaderMode', false);
+  setStore('showUsageAsUsed', false);
   setStore('preferUiMode', false);
 });
 
@@ -1708,6 +1709,53 @@ describe('terminal screen reader mode persistence', () => {
 
     const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
     expect(saved.terminalScreenReaderMode).toBe(true);
+  });
+});
+
+describe('usage meter display persistence', () => {
+  it('defaults to showing what is left when absent from saved state', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload());
+
+    await loadState();
+
+    expect(store.showUsageAsUsed).toBe(false);
+  });
+
+  it('restores the enabled used-mode setting', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload({ showUsageAsUsed: true }));
+
+    await loadState();
+
+    expect(store.showUsageAsUsed).toBe(true);
+  });
+
+  it.each(['true', 1, null])('rejects a non-boolean persisted value (%s)', async (value) => {
+    setStore('showUsageAsUsed', true);
+    mockInvoke.mockResolvedValueOnce(basePayload({ showUsageAsUsed: value }));
+
+    await loadState();
+
+    expect(store.showUsageAsUsed).toBe(false);
+  });
+
+  it('omits the disabled default when saving', async () => {
+    setStore('showUsageAsUsed', false);
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.showUsageAsUsed).toBeUndefined();
+  });
+
+  it('persists the enabled setting', async () => {
+    setStore('showUsageAsUsed', true);
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.showUsageAsUsed).toBe(true);
   });
 });
 
