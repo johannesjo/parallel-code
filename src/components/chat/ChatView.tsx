@@ -6,7 +6,7 @@ import type {
 } from '../../../electron/shared/agent-chat-types';
 import { ChatScroll } from './ChatScroll';
 import { Composer, type ChatHistoryEntry } from './Composer';
-import { createComposer, type ComposerMemory } from './composer-state';
+import { createComposer, createComposerMemory } from './composer-state';
 import { enableCopyOnSelect } from './copy-on-select';
 import { FILE_LINK_PREFIX } from './chat-markdown';
 import { focusRequestCard, type RespondToRequest } from './RequestCard';
@@ -60,17 +60,23 @@ export interface ChatProps {
 }
 
 // Task objects are weak keys, so closing a task also releases its unsent image data.
-const composerMemories = new WeakMap<object, Map<string, ComposerMemory>>();
+const composerMemories = new WeakMap<
+  object,
+  Map<string, ReturnType<typeof createComposerMemory>>
+>();
 
 function memoryFor(scope: object, key: string) {
-  const memories = composerMemories.get(scope) ?? new Map<string, ComposerMemory>();
-  composerMemories.set(scope, memories);
-  return {
-    get saved() {
-      return memories.get(key);
-    },
-    save: (memory: ComposerMemory) => memories.set(key, memory),
-  };
+  let memories = composerMemories.get(scope);
+  if (!memories) {
+    memories = new Map();
+    composerMemories.set(scope, memories);
+  }
+  let memory = memories.get(key);
+  if (!memory) {
+    memory = createComposerMemory();
+    memories.set(key, memory);
+  }
+  return memory;
 }
 
 /** The file an agent-written link names, or undefined for web and in-page links,

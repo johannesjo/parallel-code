@@ -157,16 +157,43 @@ it('empties the composer at once and shows the message as sending until the agen
   expect(container.querySelectorAll('.chat-user-message')).toHaveLength(2);
 });
 
-it('puts a failed message back without overwriting what the user typed since', async () => {
-  let reject = (_error: Error) => {};
-  send.mockImplementationOnce(() => new Promise<void>((_, fail) => (reject = fail)));
+it.each(['text', 'image'])(
+  'keeps a rejected message separate from a new %s draft',
+  async (kind) => {
+    let reject = (_error: Error) => {};
+    send.mockImplementationOnce(() => new Promise<void>((_, fail) => (reject = fail)));
+    if (kind === 'text') await drop([screenshot()]);
+    await act(() => enter());
+    expect(composer().value).toBe('');
+    if (kind === 'text') await update({ draft: 'Something newer' });
+    else await drop([screenshot()]);
+    await act(() => reject(new Error('Agent disconnected')));
+    expect(container.querySelector('.chat-user-sending')).toBeNull();
+    expect(composer().value).toBe(kind === 'text' ? 'Something newer' : '');
+    expect(container.querySelectorAll('.chat-context-chips img')).toHaveLength(
+      kind === 'text' ? 0 : 1,
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Agent disconnected');
+    expect(container.querySelector('.chat-queue')?.textContent).toContain('Keep my draft');
+    await act(() => button('Retry queued message').click());
+    expect(send).toHaveBeenLastCalledWith(
+      'Keep my draft',
+      kind === 'text' ? [expect.objectContaining({ name: 'screen.png' })] : [],
+    );
+  },
+);
+
+it('keeps the submitted message visible and its conversation open until a fresh frame arrives', async () => {
+  await update({ onNewChat: vi.fn() });
   await act(() => enter());
-  expect(composer().value).toBe('');
-  await update({ draft: 'Something newer' });
-  await act(() => reject(new Error('Agent disconnected')));
+  await act(() => button('More actions').click());
+  const newChat = () => document.querySelector<HTMLButtonElement>('[role="menuitem"]');
+  expect(newChat()?.textContent).toBe('New chat');
+  expect(newChat()?.disabled).toBe(true);
+  expect(container.querySelector('.chat-user-sending')?.textContent).toContain('Keep my draft');
+  await update({ state: { ...props.state, startedAt: 1 } });
+  expect(newChat()?.disabled).toBe(false);
   expect(container.querySelector('.chat-user-sending')).toBeNull();
-  expect(composer().value).toBe('Something newer');
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Agent disconnected');
 });
 
 it('keeps an in-progress draft focused when a request arrives', async () => {
@@ -266,6 +293,49 @@ it('queues during execution, then sends once after the agent becomes ready', asy
   expect(send).toHaveBeenCalledTimes(1);
   expect(send).toHaveBeenCalledWith('Keep my draft', []);
   expect(container.querySelector('.chat-queue')).toBeNull();
+});
+
+it('queues follow-ups while the agent is still acknowledging the current message', async () => {
+  let accept = () => {};
+  send.mockImplementationOnce(() => new Promise<void>((resolve) => (accept = resolve)));
+  await act(() => enter());
+  await update({ draft: 'Follow-up', state: { ...props.state, status: 'working' } });
+  await drop([screenshot()]);
+  expect(container.querySelector('.chat-context-chips')?.textContent).toContain('screen.png');
+  expect(button('Queue message').disabled).toBe(false);
+  await act(() => enter());
+  expect(composer().value).toBe('');
+  expect(container.querySelector('.chat-queue')?.textContent).toContain('Follow-up');
+  await act(() => accept());
+  expect(send).toHaveBeenCalledTimes(1);
+  await update({ state: { ...props.state, status: 'ready' } });
+  expect(send.mock.calls).toEqual([
+    ['Keep my draft', []],
+    ['Follow-up', [expect.objectContaining({ name: 'screen.png' })]],
+  ]);
+});
+
+it('waits for the next turn when a send receipt arrives before its chat frame', async () => {
+  await update({ state: { ...props.state, status: 'working', startedAt: 1 } });
+  await act(() => enter());
+  await update({ draft: 'Second follow-up' });
+  await act(() => enter());
+  await update({ state: { ...props.state, status: 'ready', error: 'Previous turn failed' } });
+  await act(() => button('Retry queued message').click());
+  expect(button('Retry queued message').disabled).toBe(true);
+  expect(send.mock.calls).toEqual([['Keep my draft', []]]);
+  await update({ draft: 'Third follow-up' });
+  await act(() => button('Queue message').click());
+  expect(send).toHaveBeenCalledTimes(1);
+  // A throttled phone frame can skip the entire working interval of a short turn.
+  await update({ state: { ...props.state, startedAt: 2, error: undefined } });
+  expect(send.mock.calls).toEqual([
+    ['Keep my draft', []],
+    ['Second follow-up', []],
+  ]);
+  await update({ state: { ...props.state, startedAt: 3 } });
+  expect(send).toHaveBeenCalledTimes(3);
+  expect(send).toHaveBeenLastCalledWith('Third follow-up', []);
 });
 
 /** A mid-turn reader scrolled 100px into a log where the bottom is 700px down. */
@@ -807,7 +877,7 @@ it('completes Codex skills with dollar syntax from either trigger', async () => 
   expect(send).not.toHaveBeenCalled();
   await act(() => enter());
   expect(send).toHaveBeenLastCalledWith('$review', []);
-  await update({ draft: '' });
+  await update({ state: { ...props.state, startedAt: 1 } });
   await type('$review');
   await act(() => enter());
   expect(send).toHaveBeenCalledTimes(2);
@@ -820,8 +890,8 @@ it('sends a fully typed command and leaves a dismissed or unmatched slash alone'
   expect(suggestions()[0]).toEqual({ text: '/review <pr>Review the diff', selected: true });
   await act(() => enter());
   expect(send).toHaveBeenLastCalledWith('/review', []);
+  await update({ state: { ...props.state, startedAt: 1 } });
   // A name typed in other case is corrected rather than sent as the agent might not know it.
-  await update({ draft: '' });
   await type('/Compact');
   await act(() => enter());
   expect(props.draft).toBe('/compact ');
@@ -1017,6 +1087,20 @@ it('keeps queued work when the chat view is remounted and pauses delivery', asyn
   expect(container.querySelector('.chat-queue')?.textContent).toContain('Queue paused');
 });
 
+it('removes a delivered queue entry even if the chat reopens before its receipt', async () => {
+  let accept = () => {};
+  send.mockImplementationOnce(() => new Promise<void>((resolve) => (accept = resolve)));
+  await update({ state: { ...props.state, status: 'working' } });
+  await act(() => enter());
+  await update({ state: { ...props.state, status: 'ready' } });
+  dispose?.();
+  mount();
+  expect(button('Retry queued message').disabled).toBe(true);
+  await act(() => accept());
+  expect(container.querySelector('.chat-queue')).toBeNull();
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
 it('retains image context when delivery fails', async () => {
   await update();
   await drop([screenshot()]);
@@ -1203,11 +1287,14 @@ it('puts a message that failed after the view closed back for the next view', as
   );
   dispose?.();
   await act(() => fail(new Error('Disconnected')));
-  expect(props.draft).toBe('Keep my draft');
   mount();
   await settle();
-  expect(composer().value).toBe('Keep my draft');
-  expect(container.querySelector('.chat-context-chips')?.textContent).toContain('screen.png');
+  expect(composer().value).toBe('');
+  expect(container.querySelector('.chat-queue')?.textContent).toContain('Keep my draft');
+  await act(() => button('Retry queued message').click());
+  expect(send).toHaveBeenLastCalledWith('Keep my draft', [
+    expect.objectContaining({ name: 'screen.png' }),
+  ]);
 });
 
 it('keeps the chosen model selected when the model list grows in place', async () => {

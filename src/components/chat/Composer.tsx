@@ -68,7 +68,7 @@ function Queue(props: ComposerProps) {
             <button
               disabled={c.sending()}
               aria-label="Remove queued message"
-              onClick={() => c.dequeue(entry.id)}
+              onClick={() => c.dequeue(entry)}
             >
               ×
             </button>
@@ -78,7 +78,7 @@ function Queue(props: ComposerProps) {
       <Show when={paused()}>
         <button
           class="btn-with-icon"
-          disabled={c.sending() || props.disabled || props.state.status !== 'ready'}
+          disabled={c.willQueue() || props.disabled || props.state.status !== 'ready'}
           onClick={() => c.retryQueue()}
         >
           <SyncIcon size={12} />
@@ -95,7 +95,7 @@ export function Composer(props: ComposerProps) {
   const c = props.composer;
   const working = () => props.state.status === 'working';
   // Leaving the conversation mid-turn or mid-start would orphan the turn.
-  const switchBlocked = () => props.disabled || working() || props.state.status === 'starting';
+  const switchBlocked = () => props.disabled || c.willQueue() || props.state.status === 'starting';
   const moreItems = (): MoreMenuItem[] => [
     ...(props.onNewChat
       ? [{ label: 'New chat', disabled: switchBlocked(), run: () => props.onNewChat?.() }]
@@ -134,10 +134,10 @@ export function Composer(props: ComposerProps) {
   };
   const sendLabel = () =>
     c.shellMode()
-      ? working()
+      ? c.willQueue()
         ? 'Queue command'
         : 'Run command'
-      : working()
+      : c.willQueue()
         ? 'Queue message'
         : 'Send message';
   const sendTitle = () => {
@@ -303,7 +303,7 @@ export function Composer(props: ComposerProps) {
         <ChatContext
           files={c.files()}
           images={c.images()}
-          disabled={props.disabled || busy()}
+          disabled={props.disabled || c.readingImages() || c.stopping()}
           open={mention.open()}
           onFiles={c.setFiles}
           onRemoveImage={c.removeImage}
@@ -353,12 +353,7 @@ export function Composer(props: ComposerProps) {
             <Show when={!working() || hasContent()}>
               <button
                 class="chat-send"
-                disabled={
-                  busy() ||
-                  props.disabled ||
-                  !['ready', 'working'].includes(props.state.status) ||
-                  !hasContent()
-                }
+                disabled={!c.canSubmit() || !hasContent()}
                 aria-label={sendLabel()}
                 // In the tooltip, not a status row: entering shell mode must not move the layout.
                 title={sendTitle()}

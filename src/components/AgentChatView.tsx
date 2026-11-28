@@ -31,6 +31,9 @@ import type { ChangedFile } from '../ipc/types';
 import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
 import './AgentChatView.css';
 
+// Reopening a pane reattaches to its agent, including a first prompt still in flight.
+const initialPromptReceipts = new Map<string, Promise<void>>();
+
 export function AgentChatView(props: {
   task: Task;
   agentId: string;
@@ -52,7 +55,7 @@ export function AgentChatView(props: {
   let actions: ChatActions | undefined;
   let root: HTMLDivElement | undefined;
   let disposed = false;
-  const [connecting, setConnecting] = createSignal(false);
+  const [connecting, setConnecting] = createSignal<'starting' | 'sending-initial'>();
   const channel = new Channel<AgentChatState>();
   channel.onmessage = (next) => {
     if (disposed || !store.agents[props.agentId]) return;
@@ -104,7 +107,7 @@ export function AgentChatView(props: {
       )
     )
       return;
-    setConnecting(true);
+    setConnecting('starting');
     setError('');
     try {
       if (fresh) {
@@ -139,11 +142,19 @@ export function AgentChatView(props: {
       // Start the chat before sending so the backend has a session to receive it.
       const initialPrompt = !fresh ? props.task.initialPrompt : undefined;
       const draft = props.task.promptDraft?.trim();
-      if (initialPrompt && (!draft || draft === initialPrompt.trim())) {
+      const agentId = props.agentId;
+      let receipt = initialPromptReceipts.get(agentId);
+      if (initialPrompt && (receipt || !draft || draft === initialPrompt.trim())) {
+        setConnecting('sending-initial');
         try {
-          await sendPrompt(props.task.id, props.agentId, initialPrompt);
-          if (!disposed && props.task.promptDraft?.trim() === initialPrompt.trim())
-            setTaskPromptDraft(props.task.id, '');
+          if (!receipt) {
+            if (draft) setTaskPromptDraft(props.task.id, '');
+            receipt = sendPrompt(props.task.id, agentId, initialPrompt).finally(() => {
+              initialPromptReceipts.delete(agentId);
+            });
+            initialPromptReceipts.set(agentId, receipt);
+          }
+          await receipt;
         } catch (error) {
           // Keep the queue for a manual reconnect, and surface the text in an
           // empty composer so a failed first send can also be retried by hand.
@@ -155,7 +166,7 @@ export function AgentChatView(props: {
     } catch (error) {
       if (!disposed) setError(String(error));
     } finally {
-      setConnecting(false);
+      setConnecting(undefined);
     }
   }
   async function selectPermissionMode(mode: ChatPermissionMode) {
@@ -274,7 +285,6 @@ export function AgentChatView(props: {
     onSend: async (text, images) => {
       await sendPrompt(props.task.id, props.agentId, text, { images });
       if (props.task.initialPrompt) clearInitialPrompt(props.task.id);
-      if (props.task.promptDraft?.trim() === text) setTaskPromptDraft(props.task.id, '');
     },
     onStop: () => invoke(IPC.AgentChat, { action: 'interrupt', agentId: props.agentId }),
     onRespond: (request, decision, answers) =>
@@ -369,7 +379,11 @@ export function AgentChatView(props: {
               state={current()}
               memoryScope={props.task}
               draft={props.task.promptDraft ?? ''}
-              disabled={connecting() || isLandedTaskState(props.task.landingState)}
+              disabled={
+                connecting() === 'starting' ||
+                (connecting() === 'sending-initial' && current().status !== 'working') ||
+                isLandedTaskState(props.task.landingState)
+              }
               // Only a focused panel with something to answer may take the keyboard;
               // every tiled task keeps its chat mounted.
               active={current().requests.length > 0 && props.active}
@@ -381,7 +395,7 @@ export function AgentChatView(props: {
         <div role="alert" class="codex-chat-error">
           {error() || state()?.error || 'Disconnected.'}
           <Show when={error() || state()?.status === 'closed'}>
-            <button class="btn-with-icon" disabled={connecting()} onClick={() => void connect()}>
+            <button class="btn-with-icon" disabled={!!connecting()} onClick={() => void connect()}>
               <SyncIcon size={12} />
               Reconnect
             </button>

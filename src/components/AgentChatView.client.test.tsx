@@ -179,7 +179,9 @@ describe('Codex chat view', () => {
     );
     setStore('tasks', 'task-1', 'initialPrompt', 'Fix the tests');
     setStore('tasks', 'task-1', 'promptDraft', 'Fix the tests');
+    let accept = () => {};
     mocks.sendPrompt.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (accept = resolve));
       setStore('tasks', 'task-1', 'initialPrompt', undefined);
     });
 
@@ -199,11 +201,20 @@ describe('Codex chat view', () => {
         'Fix the tests',
       ),
     );
-    mocks.channel?.onmessage?.(state());
+    mocks.channel?.onmessage?.(state({ status: 'working' }));
+    expect(mocks.chatProps?.disabled).toBe(false);
+    expect(task().promptDraft).toBe('');
+    dispose();
+    mocks.invoke.mockResolvedValue(undefined);
+    dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
+    await vi.waitFor(() => expect(mocks.chatProps?.disabled).toBe(false));
+    expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+    mocks.chatProps?.onDraft('My follow-up');
+    accept();
+    await vi.waitFor(() => expect(task().initialPrompt).toBeUndefined());
     mocks.channel?.onmessage?.(state());
     expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
-    expect(task().initialPrompt).toBeUndefined();
-    expect(task().promptDraft).toBe('');
+    expect(task().promptDraft).toBe('My follow-up');
   });
 
   it('keeps a failed first prompt available for a manual retry', async () => {
@@ -606,16 +617,19 @@ describe('Codex chat view', () => {
     expect(task().promptDraftActive).toBe(false);
   });
 
-  it('keeps drafts on failure and clears only the accepted unchanged draft', async () => {
+  it('leaves the next draft intact when a send receipt arrives, even with identical text', async () => {
     dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
     await tick();
     const images = [{ name: 'shot.png', mediaType: 'image/png' as const, data: 'AAAA' }];
     mocks.sendPrompt.mockRejectedValueOnce(new Error('Disconnected'));
     await expect(mocks.chatProps?.onSend('Fix tests', images)).rejects.toThrow('Disconnected');
     expect(task().promptDraft).toBe('Fix tests');
-    await mocks.chatProps?.onSend('Fix tests', images);
+    mocks.chatProps?.onDraft('');
+    const receipt = mocks.chatProps?.onSend('Fix tests', images);
+    mocks.chatProps?.onDraft('Fix tests');
+    await receipt;
     expect(mocks.sendPrompt).toHaveBeenCalledWith('task-1', 'agent-1', 'Fix tests', { images });
-    expect(task().promptDraft).toBe('');
+    expect(task().promptDraft).toBe('Fix tests');
     setStore('tasks', 'task-1', 'promptDraft', 'Newer typing');
     await mocks.chatProps?.onSend('Older message', []);
     expect(task().promptDraft).toBe('Newer typing');

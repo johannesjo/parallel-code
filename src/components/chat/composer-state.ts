@@ -7,16 +7,36 @@ import {
 import { readChatImages } from './ChatContext';
 
 export interface QueuedMessage {
-  id: string;
   text: string;
   images: ChatImage[];
 }
 
-/** What the composer keeps across remounts of the same conversation. */
-export interface ComposerMemory {
-  images: ChatImage[];
-  files: string[];
-  queue: QueuedMessage[];
+/** The view can reopen while a send awaits its receipt. Both views use the
+ * same queue and attachments so completion always updates the live conversation. */
+export function createComposerMemory() {
+  const [images, setImages] = createSignal<ChatImage[]>([]);
+  const [files, setFiles] = createSignal<string[]>([]);
+  const [queue, setQueue] = createSignal<QueuedMessage[]>([]);
+  const [queuePaused, setQueuePaused] = createSignal(false);
+  const [sending, setSending] = createSignal(false);
+  const [sentFromTurn, setSentFromTurn] = createSignal<number | undefined | null>(null);
+  const [pending, setPending] = createSignal<PendingMessage>();
+  return {
+    images,
+    setImages,
+    files,
+    setFiles,
+    queue,
+    setQueue,
+    queuePaused,
+    setQueuePaused,
+    sending,
+    setSending,
+    sentFromTurn,
+    setSentFromTurn,
+    pending,
+    setPending,
+  };
 }
 
 /** A message on its way to the agent, shown until the agent's own copy arrives. */
@@ -55,35 +75,50 @@ export function shellCommand(text: string): string | undefined {
  */
 export function createComposer(
   props: ComposerInput,
-  memory: { saved?: ComposerMemory; save: (memory: ComposerMemory) => void },
+  memory: ReturnType<typeof createComposerMemory>,
 ) {
-  const saved = memory.saved;
-  const [images, setImages] = createSignal<ChatImage[]>(saved?.images ?? []);
-  const [files, setFiles] = createSignal<string[]>(saved?.files ?? []);
-  const [queue, setQueue] = createSignal<QueuedMessage[]>(saved?.queue ?? []);
-  // A queue restored after a remount waits for the user: the agent it was meant for is gone.
-  const [queuePaused, setQueuePaused] = createSignal(!!saved?.queue.length);
+  const {
+    images,
+    setImages,
+    files,
+    setFiles,
+    queue,
+    setQueue,
+    queuePaused,
+    setQueuePaused,
+    sending,
+    setSending,
+    sentFromTurn,
+    setSentFromTurn,
+    pending,
+    setPending,
+  } = memory;
+  // Reopening a conversation requires an explicit retry of anything still waiting.
+  if (queue().length) setQueuePaused(true);
   const [readingImages, setReadingImages] = createSignal(false);
-  const [sending, setSending] = createSignal(false);
   const [stopping, setStopping] = createSignal(false);
   const [error, setError] = createSignal('');
-  const [pending, setPending] = createSignal<PendingMessage>();
+  // A phone can acknowledge a send before publishing the next turn's frame.
+  // Remember which ready turn we used so another message waits for a fresh one.
+  const willQueue = () =>
+    props.state.status === 'working' ||
+    (props.state.status === 'ready' && (sending() || sentFromTurn() === props.state.startedAt));
   let disposed = false;
   onCleanup(() => (disposed = true));
-  createEffect(() => memory.save({ images: images(), files: files(), queue: queue() }));
 
-  const dequeue = (id: string) => setQueue((entries) => entries.filter((entry) => entry.id !== id));
+  const dequeue = (sent: QueuedMessage) =>
+    setQueue((entries) => entries.filter((entry) => entry !== sent));
 
   /** Delivers one message. A queued one leaves the queue in the same update that
    *  frees the composer, so the queue never sees it as still waiting. */
   async function transmit(
     text: string,
     attached: ChatImage[],
-    from: { queuedId?: string; shown?: PendingMessage } = {},
+    from: { queued?: QueuedMessage; shown?: PendingMessage } = {},
   ) {
-    if (sending() || stopping() || props.disabled || props.state.status !== 'ready') return false;
-    const queuedId = from.queuedId;
+    if (willQueue() || stopping() || props.disabled || props.state.status !== 'ready') return false;
     batch(() => {
+      setSentFromTurn(props.state.startedAt);
       setSending(true);
       setError('');
       if (from.shown) setPending(from.shown);
@@ -92,19 +127,18 @@ export function createComposer(
       const command = props.onShell && shellCommand(text);
       if (command) await props.onShell?.(command);
       else await props.onSend(text, attached);
-      if (!disposed)
-        batch(() => {
-          if (queuedId) dequeue(queuedId);
-          setSending(false);
-        });
+      batch(() => {
+        if (from.queued) dequeue(from.queued);
+        setSending(false);
+      });
       return true;
     } catch (err) {
-      if (!disposed)
-        batch(() => {
-          setError(String(err));
-          setQueuePaused(true);
-          setSending(false);
-        });
+      batch(() => {
+        if (!disposed) setError(String(err));
+        setQueuePaused(true);
+        setSentFromTurn(null);
+        setSending(false);
+      });
       return false;
     }
   }
@@ -126,23 +160,6 @@ export function createComposer(
     if (files() === referenced) setFiles([]);
   }
 
-  /** Puts a failed message back, unless the user has started on another one. */
-  function restore(draft: string, attached: ChatImage[], referenced: string[]) {
-    if (!props.draft) props.onDraft(draft);
-    if (disposed) {
-      // The view closed while the message was on its way; the draft lives in the
-      // task store and the attachments go where the next composer looks for them.
-      // shortcut: a composer already open again keeps its own attachments and does
-      // not see these — a shared store per conversation if that proves common.
-      const current = memory.saved;
-      if (!current?.images.length && !current?.files.length)
-        memory.save({ images: attached, files: referenced, queue: current?.queue ?? queue() });
-      return;
-    }
-    if (!images().length) setImages(attached);
-    if (!files().length) setFiles(referenced);
-  }
-
   const userCount = () => props.state.items.filter((item) => item.kind === 'user').length;
 
   /** What a draft sends: a shell command leaves the attachments for the next message. */
@@ -154,8 +171,15 @@ export function createComposer(
     return { shell, attached, referenced, message };
   }
 
+  // Queueing only changes local state, even while the current send awaits its receipt.
+  const canSubmit = () =>
+    !props.disabled &&
+    !readingImages() &&
+    !stopping() &&
+    (props.state.status === 'working' || props.state.status === 'ready');
+
   async function send(text = props.draft) {
-    if (readingImages() || sending() || stopping() || props.disabled) return;
+    if (!canSubmit()) return;
     const { shell, attached, referenced, message } = outgoing(text);
     if (shell ? !shellCommand(text) : !text.trim() && !attached.length && !referenced.length)
       return;
@@ -163,18 +187,14 @@ export function createComposer(
       setError(TOO_LONG);
       return;
     }
-    if (props.state.status === 'working') {
+    if (willQueue()) {
       // A pause holds the messages queued before it; a Stop or failed send from an
       // earlier turn must not hold back a queue the user starts afresh.
       if (!queue().length) setQueuePaused(false);
-      setQueue((entries) => [
-        ...entries,
-        { id: crypto.randomUUID(), text: message, images: attached },
-      ]);
+      setQueue((entries) => [...entries, { text: message, images: attached }]);
       clearSent(text, attached, referenced);
       return;
     }
-    if (props.state.status !== 'ready') return;
     // The agent confirms a message only once it starts answering, which can take
     // seconds; the composer empties now and the message shows as sending meanwhile.
     clearSent(text, attached, referenced);
@@ -183,7 +203,23 @@ export function createComposer(
     if (await transmit(message, attached, { shown })) return;
     batch(() => {
       setPending(undefined);
-      restore(text, attached, referenced);
+      // Keep the rejected text and its attachments together, even if the user
+      // has already started composing or queuing the next message.
+      if (
+        disposed ||
+        props.draft ||
+        images().length ||
+        files().length ||
+        readingImages() ||
+        queue().length
+      ) {
+        setQueuePaused(true);
+        setQueue((entries) => [{ text: message, images: attached }, ...entries]);
+      } else {
+        props.onDraft(text);
+        setImages(attached);
+        setFiles(referenced);
+      }
     });
   }
 
@@ -191,8 +227,7 @@ export function createComposer(
   // the turn is over in case the agent never echoes it.
   createEffect(() => {
     const sent = pending();
-    if (sent && !sending() && (userCount() > sent.after || props.state.status !== 'working'))
-      setPending(undefined);
+    if (sent && !sending() && (userCount() > sent.after || !willQueue())) setPending(undefined);
   });
   // A memo: the view scrolls to the latest message whenever this changes, and the
   // item count it reads changes on every streamed frame.
@@ -203,19 +238,22 @@ export function createComposer(
 
   // Send the next queued follow-up once the agent is idle and nothing needs the user.
   createEffect(() => {
+    if (props.state.status !== 'ready') {
+      setSentFromTurn(null);
+      return;
+    }
     const next = queue()[0];
     if (
       !next ||
-      props.state.status !== 'ready' ||
+      willQueue() ||
       props.state.requests.length ||
       props.state.error ||
       props.disabled ||
       queuePaused() ||
-      stopping() ||
-      sending()
+      stopping()
     )
       return;
-    void untrack(() => transmit(next.text, next.images, { queuedId: next.id }));
+    void untrack(() => transmit(next.text, next.images, { queued: next }));
   });
 
   // A reconnect replaces the agent process; queued work waits for an explicit retry.
@@ -228,7 +266,7 @@ export function createComposer(
   function retryQueue() {
     const next = queue()[0];
     setQueuePaused(false);
-    if (next) void transmit(next.text, next.images, { queuedId: next.id });
+    if (next) void transmit(next.text, next.images, { queued: next });
   }
 
   async function stop(interruptAndSend = false) {
@@ -248,10 +286,7 @@ export function createComposer(
       await props.onStop();
       if (disposed || !interruptAndSend) return;
       batch(() => {
-        setQueue((entries) => [
-          { id: crypto.randomUUID(), text: message, images: attached },
-          ...entries,
-        ]);
+        setQueue((entries) => [{ text: message, images: attached }, ...entries]);
         clearSent(draft, attached, referenced);
         setQueuePaused(false);
       });
@@ -263,7 +298,7 @@ export function createComposer(
   }
 
   async function addImages(selected: File[]) {
-    if (readingImages() || sending() || stopping() || props.disabled) return;
+    if (readingImages() || stopping() || props.disabled) return;
     setReadingImages(true);
     setError('');
     try {
@@ -278,7 +313,7 @@ export function createComposer(
 
   /** Images attach inline; other files are referenced by path, so they need one on disk. */
   function addDropped(dropped: File[]) {
-    if (sending() || stopping() || props.disabled) return;
+    if (stopping() || props.disabled) return;
     const isImage = (file: File) => file.type.startsWith('image/');
     const others = dropped
       .filter((file) => !isImage(file))
@@ -306,7 +341,7 @@ export function createComposer(
 
   function editQueued(entry: QueuedMessage) {
     if (!reuse(entry.text, entry.images)) return false;
-    dequeue(entry.id);
+    dequeue(entry);
     return true;
   }
 
@@ -327,6 +362,8 @@ export function createComposer(
     editQueued,
     readingImages,
     sending,
+    canSubmit,
+    willQueue,
     stopping,
     error,
     setError,

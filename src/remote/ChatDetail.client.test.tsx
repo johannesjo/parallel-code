@@ -64,6 +64,18 @@ const composer = () => {
   return input;
 };
 
+function typeDraft(text: string) {
+  const input = composer();
+  input.value = text;
+  input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+}
+
+function submitDraft() {
+  composer().dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -74,6 +86,7 @@ beforeEach(() => {
 afterEach(() => {
   dispose();
   container.remove();
+  vi.unstubAllGlobals();
 });
 
 it('shows the desktop conversation and follows its updates', async () => {
@@ -92,16 +105,33 @@ it('shows the desktop conversation and follows its updates', async () => {
 
 it('sends a reply to the desktop chat and clears the draft', async () => {
   await mount();
-  const input = composer();
-  input.value = 'Now update the docs';
-  input.dispatchEvent(new InputEvent('input', { data: 's', bubbles: true }));
-  await settle();
-  input.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
-  );
+  typeDraft('Now update the docs');
+  submitDraft();
   await settle();
   expect(sendChatAction).toHaveBeenCalledWith('a1', 'send', { text: 'Now update the docs' });
   expect(composer().value).toBe('');
+});
+
+it('keeps a late rejection in the queue and preserves the draft typed after returning', async () => {
+  let reject = (_error: Error) => {};
+  vi.mocked(sendChatAction).mockImplementationOnce(
+    () => new Promise<void>((_, fail) => (reject = fail)),
+  );
+  const session = { ...frame, threadId: 'reopened-thread' };
+  await mount('a1', session);
+  typeDraft('First message');
+  submitDraft();
+  dispose();
+  await mount('a1', session);
+  expect(container.querySelector('.chat-user-sending')?.textContent).toContain('First message');
+  typeDraft('Next draft');
+  reject(new Error('Connection interrupted'));
+  await settle();
+  expect(container.querySelector('.chat-queue')?.textContent).toContain('First message');
+  expect(composer().value).toBe('Next draft');
+  dispose();
+  await mount('a1', session);
+  expect(composer().value).toBe('Next draft');
 });
 
 it('keeps the composer disabled until the phone is paired', async () => {
@@ -132,16 +162,13 @@ it('keeps in-page links in agent output from changing the phone route', async ()
 });
 
 it('keeps a follow-up queued in one chat out of every other chat', async () => {
+  // Ordinary phone pairing links use HTTP, where crypto.randomUUID is unavailable.
+  vi.stubGlobal('crypto', {});
   // Both conversations are new, so neither has a thread id to tell them apart yet.
   const busy: AgentChatState = { status: 'working', items: [], requests: [] };
   await mount('a1', busy);
-  const input = composer();
-  input.value = 'Meant for the first task';
-  input.dispatchEvent(new InputEvent('input', { data: 'k', bubbles: true }));
-  await settle();
-  input.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
-  );
+  typeDraft('Meant for the first task');
+  submitDraft();
   await settle();
   expect(container.querySelector('[aria-label="Queued messages"]')).not.toBeNull();
   dispose();
