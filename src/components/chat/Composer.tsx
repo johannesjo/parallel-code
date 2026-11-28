@@ -140,6 +140,14 @@ export function Composer(props: ComposerProps) {
       : working()
         ? 'Queue message'
         : 'Send message';
+  const sendTitle = () => {
+    if (!c.shellMode()) return `${sendLabel()} (Enter)`;
+    const hint =
+      props.agentName === 'Claude'
+        ? 'Claude answers its output.'
+        : 'Uses your local shell permissions.';
+    return `${sendLabel()} in this worktree (Enter). ${hint}`;
+  };
   const stopLabel = () =>
     props.state.items.some((item) => item.kind === 'shell' && item.activity?.status === 'running')
       ? 'Stop command'
@@ -353,11 +361,7 @@ export function Composer(props: ComposerProps) {
                 }
                 aria-label={sendLabel()}
                 // In the tooltip, not a status row: entering shell mode must not move the layout.
-                title={
-                  c.shellMode()
-                    ? `${sendLabel()} in this worktree (Enter). ${props.agentName} answers its output.`
-                    : `${sendLabel()} (Enter)`
-                }
+                title={sendTitle()}
                 onClick={() => void c.send()}
               >
                 <ArrowUpAltIcon size={16} />

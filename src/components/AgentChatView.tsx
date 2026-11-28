@@ -325,7 +325,7 @@ export function AgentChatView(props: {
               permissionMode={current().permissionMode ?? props.task.chatPermissionMode}
               permissionsDisabled={props.task.skipPermissions}
               onPermissionMode={provider() === 'claude' ? selectPermissionMode : undefined}
-              onShell={provider() === 'claude' ? runShell : undefined}
+              onShell={runShell}
               agentName={agentName()}
               state={current()}
               memoryScope={props.task}

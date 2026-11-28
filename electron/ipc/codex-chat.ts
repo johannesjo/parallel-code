@@ -74,6 +74,10 @@ function chatItem(value: unknown, completed = true): ChatItem | undefined {
     status = 'failed';
   if (item.status === 'declined') status = 'declined';
   if (item.type === 'commandExecution') {
+    const userShell = item.source === 'userShell';
+    // Codex reports an aborted shell as a failed command with a synthetic exit code.
+    const aborted =
+      userShell && item.exitCode === -1 && item.aggregatedOutput === 'command aborted by user';
     const files = (Array.isArray(item.commandActions) ? item.commandActions : []).flatMap(
       (action) =>
         record(action).type === 'read' && typeof record(action).path === 'string'
@@ -82,15 +86,15 @@ function chatItem(value: unknown, completed = true): ChatItem | undefined {
     );
     return {
       id,
-      kind: 'tool',
+      kind: userShell ? 'shell' : 'tool',
       text: string(item.aggregatedOutput),
       activity: {
         type: 'command',
         command: string(item.command),
         ...(files.length ? { files } : {}),
         label: string(item.command) || 'Shell command',
-        status,
-        ...(typeof item.exitCode === 'number' ? { exitCode: item.exitCode } : {}),
+        status: aborted ? 'interrupted' : status,
+        ...(!aborted && typeof item.exitCode === 'number' ? { exitCode: item.exitCode } : {}),
       },
     };
   }
@@ -329,7 +333,29 @@ export class CodexChat {
     this.publish();
   }
 
-  async send(text: string, images: ChatImage[] = []): Promise<void> {
+  send(text: string, images: ChatImage[] = []): Promise<void> {
+    return this.startTurn('turn/start', {
+      ...(this.state.model ? { model: this.state.model } : {}),
+      ...(this.state.reasoningEffort ? { effort: this.state.reasoningEffort } : {}),
+      input: [
+        { type: 'text', text },
+        ...this.skillInput(text),
+        ...images.map((image) => ({
+          type: 'image',
+          url: `data:${image.mediaType};base64,${image.data}`,
+        })),
+      ],
+    });
+  }
+
+  runShell(command: string): Promise<void> {
+    return this.startTurn('thread/shellCommand', { command });
+  }
+
+  private async startTurn(
+    method: 'turn/start' | 'thread/shellCommand',
+    params: RecordValue,
+  ): Promise<void> {
     if (this.state.status !== 'ready')
       throw new Error('Wait for Codex to finish or stop the current response.');
     this.state.status = 'working';
@@ -340,29 +366,10 @@ export class CodexChat {
     this.state.error = undefined;
     this.publish();
     try {
-      const result = record(
-        await this.rpc('turn/start', {
-          threadId: this.state.threadId,
-          ...(this.state.model ? { model: this.state.model } : {}),
-          ...(this.state.reasoningEffort ? { effort: this.state.reasoningEffort } : {}),
-          input: [
-            { type: 'text', text },
-            ...this.skillInput(text),
-            ...images.map((image) => ({
-              type: 'image',
-              url: `data:${image.mediaType};base64,${image.data}`,
-            })),
-          ],
-        }),
-      );
-      if (this.state.status === 'working') {
-        this.turnId = string(record(result.turn).id);
-        if (this.interruptRequested)
-          void this.interrupt().catch((err: unknown) => {
-            this.state.error = err instanceof Error ? err.message : String(err);
-            this.publish();
-          });
-      }
+      const result = record(await this.rpc(method, { threadId: this.state.threadId, ...params }));
+      // Shell commands acknowledge with {} and deliver their turn ID in turn/started.
+      const id = string(record(result.turn).id);
+      if (id && this.state.status === 'working') this.trackTurn(id);
     } catch (err) {
       if (!this.stopped) this.state.status = 'ready';
       this.state.error = err instanceof Error ? err.message : String(err);
@@ -375,6 +382,15 @@ export class CodexChat {
     const name = /^\$(\S+)(?:\s|$)/.exec(text)?.[1];
     const path = name ? this.skills.get(name) : undefined;
     return name && path ? [{ type: 'skill', name, path }] : [];
+  }
+
+  private trackTurn(id: string): void {
+    this.turnId = id;
+    if (this.interruptRequested)
+      void this.interrupt().catch((err: unknown) => {
+        this.state.error = err instanceof Error ? err.message : String(err);
+        this.publish();
+      });
   }
 
   async interrupt(): Promise<void> {
@@ -514,7 +530,12 @@ export class CodexChat {
     if (!item) return;
     const index = this.state.items.findIndex((i) => i.id === item.id);
     if (index === -1) this.state.items.push(item);
-    else this.state.items[index] = item;
+    else {
+      // On Stop, Codex replaces the command's output with an abort notice.
+      if (item.kind === 'shell' && item.activity?.status === 'interrupted')
+        item.text = this.state.items[index].text || item.text;
+      this.state.items[index] = item;
+    }
   }
 
   private interruptActivities(): void {
@@ -663,8 +684,8 @@ export class CodexChat {
         };
       });
     } else if (method === 'turn/started') {
-      this.turnId = string(record(params.turn).id);
       this.state.status = 'working';
+      this.trackTurn(string(record(params.turn).id));
     } else if (method === 'turn/completed') {
       const completedId = string(record(params.turn).id);
       if (this.turnId && completedId && completedId !== this.turnId) return;

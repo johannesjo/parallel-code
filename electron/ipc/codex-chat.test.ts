@@ -86,6 +86,78 @@ function harness() {
 afterEach(() => vi.useRealTimers());
 
 describe('Codex chat app-server protocol', () => {
+  it('runs a user shell command in the thread and shows its output and exit status', async () => {
+    const h = harness();
+    await h.start();
+    const command = 'echo done; exit 3';
+    const sent = h.chat.runShell(command);
+    expect(h.messages[h.messages.length - 1]).toMatchObject({
+      method: 'thread/shellCommand',
+      params: { threadId: 'thread-1', command },
+    });
+    h.reply({});
+    await sent;
+    await expect(h.chat.send('follow-up')).rejects.toThrow('Wait for Codex');
+    const turn = { id: 'shell-turn' };
+    h.receive({ method: 'turn/started', params: { turn } });
+    const item = { id: 'cmd', type: 'commandExecution', source: 'userShell', command };
+    h.receive({ method: 'item/started', params: { item } });
+    h.receive({
+      method: 'item/commandExecution/outputDelta',
+      params: { itemId: 'cmd', delta: 'done' },
+    });
+    expect(h.chat.state.items[0]).toMatchObject({
+      kind: 'shell',
+      text: 'done',
+      activity: { command, status: 'running' },
+    });
+    h.receive({
+      method: 'item/completed',
+      params: { item: { ...item, aggregatedOutput: 'done', exitCode: 3 } },
+    });
+    h.receive({ method: 'turn/completed', params: { turn } });
+    expect(h.chat.state.status).toBe('ready');
+    expect(h.chat.state.items).toHaveLength(1);
+    expect(h.chat.state.items[0].activity).toMatchObject({ status: 'failed', exitCode: 3 });
+    h.chat.stop();
+  });
+
+  it('honors Stop between the shell acknowledgement and its turn/started event', async () => {
+    const h = harness();
+    await h.start();
+    const sent = h.chat.runShell('sleep 30');
+    h.reply({});
+    await sent;
+    await h.chat.interrupt();
+    h.receive({ method: 'turn/started', params: { turn: { id: 'shell-turn' } } });
+    expect(h.messages[h.messages.length - 1]).toMatchObject({
+      method: 'turn/interrupt',
+      params: { threadId: 'thread-1', turnId: 'shell-turn' },
+    });
+    h.receive({
+      method: 'item/commandExecution/outputDelta',
+      params: { itemId: 'cmd', delta: 'ready\n' },
+    });
+    h.receive({
+      method: 'item/completed',
+      params: {
+        item: {
+          id: 'cmd',
+          type: 'commandExecution',
+          source: 'userShell',
+          status: 'failed',
+          exitCode: -1,
+          aggregatedOutput: 'command aborted by user',
+        },
+      },
+    });
+    expect(h.chat.state.items[0].text).toBe('ready\n');
+    expect(h.chat.state.items[0].activity?.status).toBe('interrupted');
+    expect(h.chat.state.items[0].activity?.exitCode).toBeUndefined();
+    h.reply({});
+    h.chat.stop();
+  });
+
   it('discovers enabled skills, sends explicit skill inputs and refreshes changes', async () => {
     const h = harness();
     await h.start(

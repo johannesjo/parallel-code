@@ -145,6 +145,18 @@ afterEach(() => {
 });
 
 describe('Codex chat view', () => {
+  it('routes a Codex shell command to the desktop shell action', async () => {
+    dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
+    const chat = await tick();
+    await chat.onShell?.('pwd');
+    expect(mocks.invoke).toHaveBeenCalledWith(IPC.AgentChat, {
+      action: 'shell',
+      agentId: 'agent-1',
+      command: 'pwd',
+    });
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+  });
+
   it('sends a queued first prompt once the chat has started', async () => {
     let finishStart = () => {};
     mocks.invoke.mockImplementation((channel, args) =>
