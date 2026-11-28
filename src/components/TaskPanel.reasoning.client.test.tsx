@@ -121,7 +121,7 @@ vi.mock('../lib/ipc', () => ({
 }));
 vi.mock('./TaskAITerminal', () => ({
   TaskAITerminal: (props: {
-    onReview?: (path?: string) => void;
+    onReview?: (path?: string, line?: number) => void;
     onOpenInSidePanel?: (path: string) => void;
   }) => (
     <div class="test-terminal">
@@ -134,7 +134,7 @@ vi.mock('./TaskAITerminal', () => ({
       >
         Review
       </button>
-      <button class="test-chat-review-file" onClick={() => props.onReview?.('src/app.ts')}>
+      <button class="test-chat-review-file" onClick={() => props.onReview?.('src/app.ts', 20)}>
         Review file
       </button>
     </div>
@@ -534,6 +534,7 @@ it.each([undefined, 'landed_pending_review'] as const)(
     click('.test-chat-review-file');
     expect(diff().dataset.open).toBe('true');
     expect(diff().dataset.file).toBe('src/app.ts');
+    expect(diff().dataset.line).toBe('20');
     expect(diff().dataset.commit).toBe('all');
   },
 );

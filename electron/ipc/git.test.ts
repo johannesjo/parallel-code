@@ -1278,7 +1278,7 @@ describe('getUncommittedChangedFiles', () => {
     setupMock(
       calls,
       buildWorktreeMockHandler({
-        untrackedFiles: 'new-file.ts\n',
+        untrackedFiles: 'new-file.ts\0',
       }),
     );
     vi.mocked(fs.promises.stat).mockResolvedValueOnce({

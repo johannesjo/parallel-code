@@ -83,7 +83,7 @@ interface TaskAITerminalProps {
   onOpenInSidePanel?: (relativePath: string) => void;
   /** The task's changed files, which links open in the changes dialog. */
   changes?: ChangesLink;
-  onReview?: (path?: string) => void;
+  onReview?: (path?: string, line?: number) => void;
   /** Opens the tour the agent published through `tour_publish`. */
   onOpenTour?: () => void;
 }
@@ -310,6 +310,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
         }
       >
         <InfoBar
+          class="agent-info-bar"
           allowOverflow
           onDblClick={() => {
             const prompt = props.task.lastPrompt;
@@ -459,8 +460,19 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                 >
                   <For each={['chat', 'terminal'] as const}>
                     {(mode) => {
+                      const label = mode === 'chat' ? 'Chat' : 'Terminal';
                       const selected = () => currentView() === mode;
                       const blocked = () => !selected() && !!switchBlockedReason();
+                      const title = () => {
+                        if (switchingView()) return 'Switching conversation…';
+                        if (selected()) return `${label} (current view)`;
+                        if (blocked()) return switchBlockedReason();
+                        if (agentViewHandsOff(props.task, firstAgentId(), mode))
+                          return `Continue this conversation in ${label}`;
+                        return mode === 'chat'
+                          ? `Open a separate ${agentName()} chat in this worktree`
+                          : 'Open the terminal conversation';
+                      };
                       return (
                         <button
                           type="button"
@@ -470,25 +482,14 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                           // handoff, and `switchView` already guards re-entry.
                           aria-disabled={blocked() || switchingView()}
                           classList={{ unavailable: blocked() && !!chatUnavailable() }}
-                          title={
-                            // Without this the button announces itself disabled
-                            // mid-handoff while promising that it works.
-                            switchingView()
-                              ? 'Switching conversation…'
-                              : blocked()
-                                ? switchBlockedReason()
-                                : mode === 'chat'
-                                  ? terminalHandoff()
-                                    ? 'Continue this conversation in Chat'
-                                    : `Open a separate ${agentName()} chat in this worktree`
-                                  : 'Open the terminal conversation'
-                          }
+                          title={title()}
                           onClick={(event) => {
                             event.stopPropagation();
                             void switchView(mode);
                           }}
                         >
                           {mode === 'chat' ? <CommentIcon size={12} /> : <TerminalIcon size={12} />}
+                          <span>{label}</span>
                         </button>
                       );
                     }}
@@ -732,7 +733,7 @@ function AgentTerminalPane(props: {
   onSecondOpinion?: () => void;
   handoffRecipients: { id: string; label: string }[];
   task: Task;
-  onReview?: (path?: string) => void;
+  onReview?: (path?: string, line?: number) => void;
   onOpenTour?: () => void;
   agentId: string;
   canClose: boolean;

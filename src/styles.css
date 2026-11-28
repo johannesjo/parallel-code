@@ -3674,6 +3674,10 @@ html:is(
   display: none;
 }
 
+.agent-info-bar {
+  container: agent-info-bar / inline-size;
+}
+
 .agent-header-controls {
   display: flex;
   align-items: center;
@@ -3732,6 +3736,28 @@ html:is(
   background: var(--bg-selected);
   color: var(--fg);
   box-shadow: 0 0 0 1px var(--border);
+}
+.agent-view-switch button[aria-pressed='false'][aria-disabled='false']:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.agent-view-switch button > span {
+  display: none;
+}
+@container agent-info-bar (min-width: 390px) {
+  .agent-view-switch button {
+    width: auto;
+    padding: 0 5px;
+    gap: 4px;
+  }
+  .agent-view-switch button > span {
+    display: inline;
+  }
+}
+@container agent-info-bar (390px <= width < 550px) {
+  .agent-view-switch button > svg {
+    display: none;
+  }
 }
 .agent-view-switch button:focus-visible {
   outline: 2px solid var(--accent);

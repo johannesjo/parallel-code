@@ -165,6 +165,7 @@ it('shows both modes and hands off the exact terminal conversation before mounti
   );
   expect(chatButton?.getAttribute('aria-pressed')).toBe('false');
   expect(terminalButton?.getAttribute('aria-pressed')).toBe('true');
+  expect(terminalButton?.title).toBe('Terminal (current view)');
   clickChat();
   expect(store.tasks.task.mainAgentView).not.toBe('chat');
   await vi.waitFor(() => expect(store.tasks.task.mainAgentView).toBe('chat'));
@@ -177,6 +178,7 @@ it('shows both modes and hands off the exact terminal conversation before mounti
     expect.objectContaining({ action: 'start', threadId: 'exact-thread' }),
   );
   expect(chatButton?.getAttribute('aria-pressed')).toBe('true');
+  expect(chatButton?.title).toBe('Chat (current view)');
   expect(terminalButton?.getAttribute('aria-pressed')).toBe('false');
 });
 

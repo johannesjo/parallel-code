@@ -15,11 +15,30 @@ describe('chat markdown', () => {
     ]);
   });
 
+  it('recognizes absolute Windows citations with either separator', () => {
+    for (const path of ['C:/repo/src/App.ts#L12', 'C:\\repo\\src\\App.ts:12']) {
+      expect(hrefs(renderChatMarkdown(`[Source](${path})`))).toEqual([
+        `${FILE_LINK_PREFIX}${encodeURIComponent(path)}`,
+      ]);
+    }
+  });
+
   it('leaves web, mail and in-page links as written', () => {
     const html = renderChatMarkdown(
       '[docs](https://example.com/a) [mail](mailto:a@example.com) [top](#top)',
     );
     expect(hrefs(html)).toEqual(['https://example.com/a', 'mailto:a@example.com', '#top']);
+  });
+
+  it('shows the file destination on hover and keeps an explicit link title', () => {
+    const root = document.createElement('div');
+    root.innerHTML = renderChatMarkdown(
+      '[Total](src/checkout.ts#L2) and [Receipt](src/receipt.ts "Receipt calculation")',
+    );
+    expect([...root.querySelectorAll('a')].map((link) => link.title)).toEqual([
+      'src/checkout.ts#L2',
+      'Receipt calculation',
+    ]);
   });
 
   it('shows a script link as its text, never as a link', () => {

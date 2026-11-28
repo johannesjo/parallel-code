@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import type { AgentChatState } from '../../../electron/shared/agent-chat-types';
+import { ChevronRightIcon } from '../icons';
 
 const stepMarks = { completed: '✓', in_progress: '→', pending: '○' };
 
@@ -20,18 +21,30 @@ export function Progress(props: { state: AgentChatState }) {
       : undefined;
   const completed = () =>
     props.state.plan?.filter((step) => step.status === 'completed').length ?? 0;
+  const activeStep = () =>
+    working() ? props.state.plan?.find((step) => step.status === 'in_progress')?.step : undefined;
   return (
     <>
       <Show when={props.state.plan?.length}>
         <details class="chat-plan">
           <summary>
-            Plan · {completed()}/{props.state.plan?.length} complete
+            <ChevronRightIcon size={14} />
+            <span class="chat-plan-label" title={activeStep()}>
+              {activeStep() || 'Plan'}
+            </span>
+            <span class="chat-plan-count">
+              {' '}
+              · {completed()}/{props.state.plan?.length} complete
+            </span>
           </summary>
           <ol>
             <For each={props.state.plan}>
               {(step) => (
                 <li data-status={step.status}>
-                  <span>{stepMarks[step.status]}</span> {step.step}
+                  <span role="img" aria-label={step.status.replace('_', ' ')}>
+                    {stepMarks[step.status]}
+                  </span>
+                  {step.step}
                 </li>
               )}
             </For>

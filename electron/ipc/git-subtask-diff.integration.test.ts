@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -14,6 +21,7 @@ import {
   getFileDiff,
   getFileDiffFromBranch,
   getWorktreeStatus,
+  readDiffSource,
 } from './git.js';
 
 // Pass-through spy: tests count spawned git commands without changing them.
@@ -421,20 +429,17 @@ describe('subtask diffs after rebasing onto upstream', () => {
       if (hasChildCommit) commitFile(child, 'child.txt', 'child work\n');
       git(child, 'rebase', 'main');
       writeFileSync(join(child, 'base.txt'), 'dirty child work\n');
-      writeFileSync(join(child, 'untracked.txt'), 'new child work\n');
+      writeFileSync(join(child, 'café.ts'), 'new child work\n');
 
       const committedFiles = hasChildCommit ? ['child.txt'] : [];
       const files = await getChangedFiles(child, 'parent');
-      expect(files.map((file) => file.path)).toEqual([
-        ...committedFiles,
-        'base.txt',
-        'untracked.txt',
-      ]);
+      expect(files.map((file) => file.path)).toEqual([...committedFiles, 'base.txt', 'café.ts']);
       expect(files.filter((file) => file.committed).map((file) => file.path)).toEqual(
         committedFiles,
       );
       const diff = await getAllFileDiffs(child, 'parent');
       expect(diff).toContain('+dirty child work');
+      expect(diff).toContain('+++ b/café.ts');
       expect(diff).toContain('+new child work');
       expect(diff).not.toContain('upstream-');
       expect(diff).not.toContain('parent.txt');
@@ -645,4 +650,27 @@ describe('getBranchCommitMessages', () => {
       { message: 'b.txt', body: '' },
     ]);
   });
+});
+
+it.skipIf(process.platform === 'win32')(
+  'reads exact POSIX names for diff context and skips symbolic links',
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), 'diff-source-'));
+    directories.push(root);
+    mkdirSync(join(root, 'back'));
+    writeFileSync(join(root, 'back', 'slash.ts'), 'another file');
+    writeFileSync(join(root, 'back\\slash.ts'), 'cited file');
+    symlinkSync(join(root, 'back'), join(root, 'linked'));
+    expect(await readDiffSource(root, 'back\\slash.ts')).toBe('cited file');
+    expect(await readDiffSource(root, 'linked/slash.ts')).toBe('');
+  },
+);
+
+it('reads tracked project configuration and skips paths outside the worktree', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'diff-source-'));
+  directories.push(root);
+  mkdirSync(join(root, '.parallel'));
+  writeFileSync(join(root, '.parallel', 'config.ts'), 'project settings');
+  expect(await readDiffSource(root, '.parallel/config.ts')).toBe('project settings');
+  expect(await readDiffSource(root, '../other.ts')).toBe('');
 });

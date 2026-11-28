@@ -112,7 +112,7 @@ it('keeps the setting enabled and reports a rejected backend change', async () =
 it('toggles the global UI mode preference in Agents settings', () => {
   selectTab('Agents');
   const label = [...document.querySelectorAll('label')].find((element) =>
-    element.textContent?.includes('Always prefer UI mode'),
+    element.textContent?.includes('Start supported tasks in Chat'),
   );
   const checkbox = label?.querySelector('input');
   expect(checkbox).toBeDefined();

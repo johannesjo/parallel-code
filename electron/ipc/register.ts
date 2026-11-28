@@ -141,6 +141,7 @@ import {
   getCurrentBranch,
   getChangedFilesFromBranch,
   getAllFileDiffsFromBranch,
+  readDiffSource,
   getFileDiffFromBranch,
   getWorktreeStatus,
   listImportableWorktrees,
@@ -1132,6 +1133,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const projectRoot = projectRootArg(args);
     const branchName = branchNameArg(args);
     return getAllFileDiffsFromBranch(projectRoot, branchName, optionalBaseBranch(args));
+  });
+  ipcMain.handle(IPC.ReadDiffSource, (_e, args) => {
+    const worktreePath = worktreePathArg(args);
+    assertString(args.filePath, 'filePath');
+    return readDiffSource(worktreePath, args.filePath);
   });
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     const worktreePath = worktreePathArg(args);

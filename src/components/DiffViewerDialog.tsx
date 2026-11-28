@@ -10,6 +10,9 @@ import {
 import { Dialog } from './Dialog';
 import { errMessage } from '../lib/log';
 import { loadTaskDiff } from '../lib/load-task-diff';
+import { revealCitedContext } from '../lib/diff-context-gaps';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
 import { createDialogScroll } from '../lib/dialog-scroll';
 import {
   createDiffIdentity,
@@ -305,6 +308,17 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
       .then(async (rawDiff) => {
         if (!fetchGeneration.isCurrent(thisGen)) return;
         const newFiles = parseUnifiedDiff(rawDiff);
+        const cited =
+          scrollLine && scrollSide !== 'old' && !selection && !startTour
+            ? newFiles.find((file) => file.path === scrollTarget)
+            : undefined;
+        if (cited && scrollLine) {
+          await revealCitedContext(cited, scrollLine, () =>
+            invoke<string>(IPC.ReadDiffSource, { worktreePath, filePath: cited.path }).catch(
+              () => '',
+            ),
+          );
+        }
         const diffIdentity = await createDiffIdentity(reviewIdentity, rawDiff);
         if (!fetchGeneration.isCurrent(thisGen)) return;
         setParsedFiles(newFiles);

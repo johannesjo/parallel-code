@@ -80,10 +80,13 @@ async function isBinaryFile(filePath: string): Promise<boolean> {
 
 // --- Internal helpers ---
 
-function normalizeStatusPath(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  return trimmed.replace(/^"|"$/g, '').replace(/\\(.)/g, '$1');
+/** Keep control characters and literal quotes on a single Git patch header line. */
+function diffHeaderPath(filePath: string): string {
+  const escaped = filePath.replace(
+    /["\\\n\r\t]/g,
+    (char) => '\\' + char.charCodeAt(0).toString(8).padStart(3, '0'),
+  );
+  return escaped === filePath ? filePath : `"${escaped}"`;
 }
 
 /** Parse combined `git diff --raw --numstat -z` output into status and numstat maps. */
@@ -306,7 +309,7 @@ export async function getChangedFiles(
       cwd: worktreePath,
       maxBuffer: MAX_BUFFER,
     }).catch(() => ({ stdout: '' })),
-    exec('git', ['ls-files', '--others', '--exclude-standard'], {
+    exec('git', ['ls-files', '-z', '--others', '--exclude-standard'], {
       cwd: worktreePath,
       maxBuffer: MAX_BUFFER,
     }).catch(() => ({ stdout: '' })),
@@ -316,8 +319,7 @@ export async function getChangedFiles(
     parseDiffRawNumstat(uncommittedResult.stdout);
 
   const untrackedPaths = new Set<string>();
-  for (const line of untrackedResult.stdout.split('\n')) {
-    const p = normalizeStatusPath(line);
+  for (const p of untrackedResult.stdout.split('\0')) {
     if (p) untrackedPaths.add(p);
   }
 
@@ -352,7 +354,7 @@ async function buildUntrackedPseudoDiffs(worktreePath: string, pathPrefix = ''):
   const parts: string[] = [];
   let stdout = '';
   try {
-    const result = await exec('git', ['ls-files', '--others', '--exclude-standard'], {
+    const result = await exec('git', ['ls-files', '-z', '--others', '--exclude-standard'], {
       cwd: worktreePath,
       maxBuffer: MAX_BUFFER,
     });
@@ -361,27 +363,27 @@ async function buildUntrackedPseudoDiffs(worktreePath: string, pathPrefix = ''):
     return parts;
   }
 
-  for (const line of stdout.split('\n')) {
-    const filePath = normalizeStatusPath(line);
+  for (const filePath of stdout.split('\0')) {
     if (!filePath) continue;
     const fullPath = path.join(worktreePath, filePath);
-    const shownPath = pathPrefix + filePath;
+    const oldPath = diffHeaderPath('a/' + pathPrefix + filePath);
+    const newPath = diffHeaderPath('b/' + pathPrefix + filePath);
     try {
       const stat = await fs.promises.stat(fullPath);
       if (!stat.isFile() || stat.size >= MAX_BUFFER) continue;
       if (await isBinaryFile(fullPath)) {
         parts.push(
-          `diff --git a/${shownPath} b/${shownPath}\nnew file mode 100644\nBinary files /dev/null and b/${shownPath} differ\n`,
+          `diff --git ${oldPath} ${newPath}\nnew file mode 100644\nBinary files /dev/null and ${newPath} differ\n`,
         );
         continue;
       }
       const content = await fs.promises.readFile(fullPath, 'utf8');
       const lines = splitContentLines(content);
       const pseudoLines: string[] = [];
-      pseudoLines.push(`diff --git a/${shownPath} b/${shownPath}`);
+      pseudoLines.push(`diff --git ${oldPath} ${newPath}`);
       pseudoLines.push('new file mode 100644');
       pseudoLines.push('--- /dev/null');
-      pseudoLines.push(`+++ b/${shownPath}`);
+      pseudoLines.push(`+++ ${newPath}`);
       pseudoLines.push(`@@ -0,0 +1,${lines.length} @@`);
       for (const line of lines) {
         pseudoLines.push(`+${line}`);
@@ -400,7 +402,7 @@ async function getUntrackedChangedFiles(
 ): Promise<ChangedFile[]> {
   let stdout = '';
   try {
-    const result = await exec('git', ['ls-files', '--others', '--exclude-standard'], {
+    const result = await exec('git', ['ls-files', '-z', '--others', '--exclude-standard'], {
       cwd: worktreePath,
       maxBuffer: MAX_BUFFER,
     });
@@ -410,8 +412,7 @@ async function getUntrackedChangedFiles(
   }
 
   const files: ChangedFile[] = [];
-  for (const line of stdout.split('\n')) {
-    const p = normalizeStatusPath(line);
+  for (const p of stdout.split('\0')) {
     if (!p || seen.has(p)) continue;
     seen.add(p);
 
@@ -539,6 +540,26 @@ export async function getAllFileDiffsFromBranch(
   } catch {
     return '';
   }
+}
+
+/** Read optional context for a current diff using the exact path reported by Git. */
+export async function readDiffSource(worktreePath: string, filePath: string): Promise<string> {
+  const root = await fs.promises.realpath(worktreePath);
+  const target = path.resolve(root, filePath);
+  const relative = path.relative(root, target);
+  if (
+    !relative ||
+    path.isAbsolute(filePath) ||
+    path.isAbsolute(relative) ||
+    relative.split(path.sep).some((part) => part === '..' || part.toLowerCase() === '.git')
+  )
+    return '';
+
+  // A diff can name a symlink or a file replaced since the diff was collected.
+  if ((await fs.promises.realpath(target)) !== target) return '';
+  const stat = await fs.promises.stat(target);
+  if (!stat.isFile() || stat.size > MAX_BUFFER) return '';
+  return fs.promises.readFile(target, 'utf8');
 }
 
 export async function getFileDiff(

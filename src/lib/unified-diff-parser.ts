@@ -1,3 +1,5 @@
+import { unquoteGitPath } from '../../electron/shared/git-quoted-path';
+
 /** Structured representation of a single diff line. */
 export interface DiffLine {
   type: 'add' | 'remove' | 'context';
@@ -49,16 +51,21 @@ export function parseUnifiedDiff(raw: string): FileDiff[] {
 
 /** Extract file path from the `diff --git a/<path> b/<path>` header. */
 function extractPath(headerLine: string): string {
-  // "diff --git a/foo/bar b/foo/bar" -> "foo/bar"
-  const match = headerLine.match(/^diff --git a\/(.+?) b\/(.+)$/);
-  return match ? match[2] : '';
+  // A path on both sides can itself contain the apparent " b/" separator.
+  const samePath = /^diff --git a\/(.+) b\/\1$/.exec(headerLine);
+  if (samePath) return samePath[1];
+  // Git quotes each side independently. Spaces in an unquoted path are literal.
+  const match = /^diff --git (?:"a\/(?:[^"\\]|\\.)*"|a\/.+?) ("b\/(?:[^"\\]|\\.)*"|b\/.+)$/.exec(
+    headerLine,
+  );
+  return match ? unquoteGitPath(match[1]).slice(2) : '';
 }
 
 /** Parse a single file's diff block into a FileDiff. */
 function parseFileBlock(lines: string[]): FileDiff | null {
   if (lines.length === 0) return null;
 
-  const path = extractPath(lines[0]);
+  let path = extractPath(lines[0]);
   if (!path) return null;
 
   let status: 'M' | 'A' | 'D' = 'M';
@@ -67,6 +74,9 @@ function parseFileBlock(lines: string[]): FileDiff | null {
   // Scan metadata lines (everything before the first hunk header).
   for (const line of lines) {
     if (HUNK_HEADER_RE.test(line)) break;
+    if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
+      path = unquoteGitPath(line.slice(line.indexOf(' to ') + 4));
+    }
     if (line.startsWith('new file mode')) status = 'A';
     if (line.startsWith('deleted file mode')) status = 'D';
     if (line.includes('Binary files') && line.includes('differ')) binary = true;

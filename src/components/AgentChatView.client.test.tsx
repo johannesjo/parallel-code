@@ -100,6 +100,7 @@ async function tick(): Promise<ChatProps> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setStore('editorCommand', '');
   mocks.sendPrompt.mockReset();
   mocks.sendPrompt.mockResolvedValue(undefined);
   mocks.chatProps = undefined;
@@ -238,25 +239,89 @@ describe('Codex chat view', () => {
     expect(onOpenTour).toHaveBeenCalledOnce();
   });
 
-  it('opens the actual file for links containing line and column suffixes', async () => {
+  it('opens source citations at the cited line in the configured editor', async () => {
+    setStore('editorCommand', 'code');
     dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
     const chat = await tick();
     chat.onOpenFile?.('/worktree/src/app.ts:12:3');
     chat.onOpenFile?.('src/app.ts:12');
+    chat.onOpenFile?.('src/app.ts');
     chat.onOpenFile?.('README.md:12');
     chat.onOpenFile?.('./README.md:12');
     chat.onOpenFile?.('/worktree/docs/design.md:10:2');
     chat.onOpenFile?.('/home/me/Downloads/report.csv:4');
     expect(mocks.revealItemInDir.mock.calls).toEqual([['/home/me/Downloads/report.csv']]);
     expect(mocks.openFileInEditor.mock.calls).toEqual([
-      ['/worktree', 'src/app.ts'],
-      ['/worktree', 'src/app.ts'],
+      ['/worktree', 'src/app.ts', { line: 12, editorCommand: 'code' }],
+      ['/worktree', 'src/app.ts', { line: 12, editorCommand: 'code' }],
+      ['/worktree', 'src/app.ts', { line: undefined, editorCommand: 'code' }],
     ]);
     expect(mocks.openCanvasDocument.mock.calls).toEqual([
       ['task-1', 'README.md'],
       ['task-1', 'README.md'],
       ['task-1', 'docs/design.md'],
     ]);
+  });
+
+  it('opens a changed source file at its cited line in the diff without a configured editor', async () => {
+    const review = vi.fn();
+    mocks.invoke.mockImplementation(async (channel) =>
+      channel === IPC.GetChangedFiles ? [{ path: 'src/app.ts', status: 'M' }] : undefined,
+    );
+    dispose = render(
+      () => <AgentChatView task={task()} agentId="agent-1" active onReview={review} />,
+      container,
+    );
+    const chat = await tick();
+    await chat.onOpenFile?.('/worktree/src/app.ts:8:2');
+    expect(review).toHaveBeenCalledWith('src/app.ts', 8);
+    expect(mocks.openFileInEditor).not.toHaveBeenCalled();
+    await chat.onOpenFile?.('src/other.ts:5');
+    expect(mocks.openFileInEditor).toHaveBeenCalledWith('/worktree', 'src/other.ts', {
+      line: 5,
+      editorCommand: '',
+    });
+  });
+
+  it('opens a case-mismatched Windows citation with Git’s spelling and prefers an exact match', async () => {
+    setStore('tasks', 'task-1', 'worktreePath', 'C:\\Repo');
+    const review = vi.fn();
+    mocks.invoke.mockImplementation(async (channel) =>
+      channel === IPC.GetChangedFiles
+        ? [
+            { path: 'src/App.ts', status: 'M' },
+            { path: 'src/other.ts', status: 'M' },
+            { path: 'src/Other.ts', status: 'M' },
+          ]
+        : undefined,
+    );
+    dispose = render(
+      () => <AgentChatView task={task()} agentId="agent-1" active onReview={review} />,
+      container,
+    );
+    const chat = await tick();
+    await chat.onOpenFile?.('c:/repo/SRC/app.ts:12');
+    await chat.onOpenFile?.('src/Other.ts:21');
+    expect(review.mock.calls).toEqual([
+      ['src/App.ts', 12],
+      ['src/Other.ts', 21],
+    ]);
+  });
+
+  it('routes Windows drive paths against the worktree using either separator', async () => {
+    setStore('editorCommand', 'code');
+    setStore('tasks', 'task-1', 'worktreePath', 'C:\\Repo');
+    dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
+    const chat = await tick();
+    chat.onOpenFile?.('c:/Repo/src/App.ts:12');
+    chat.onOpenFile?.('C:\\Repo\\src\\App.ts:12:3');
+    chat.onOpenFile?.('C:\\Repo2\\outside.md:9');
+    expect(mocks.openFileInEditor.mock.calls).toEqual([
+      ['C:\\Repo', 'src/App.ts', { line: 12, editorCommand: 'code' }],
+      ['C:\\Repo', 'src/App.ts', { line: 12, editorCommand: 'code' }],
+    ]);
+    expect(mocks.revealItemInDir).toHaveBeenCalledWith('C:/Repo2/outside.md');
+    expect(mocks.openCanvasDocument).not.toHaveBeenCalled();
   });
 
   it('focuses a linked document after the enclosing pane handles the click', async () => {

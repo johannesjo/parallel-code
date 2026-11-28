@@ -12,6 +12,15 @@ describe('editorGotoArgs', () => {
     expect(editorGotoArgs('subl', '/w/a.ts', 7)).toEqual(['/w/a.ts:7']);
   });
 
+  it('opens a cited line with a configured Windows editor executable', () => {
+    const command = validateEditorCommand('C:\\Program Files\\Microsoft VS Code\\Code.exe');
+    expect(command).toBe('C:/Program Files/Microsoft VS Code/Code.exe');
+    expect(editorGotoArgs(command, 'C:\\repo\\src\\app.ts', 12)).toEqual([
+      '--goto',
+      'C:\\repo\\src\\app.ts:12',
+    ]);
+  });
+
   it('returns null for editors whose line syntax is unknown', () => {
     expect(editorGotoArgs('vim', '/w/a.ts', 7)).toBeNull();
   });

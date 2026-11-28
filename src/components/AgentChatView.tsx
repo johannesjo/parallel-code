@@ -21,10 +21,13 @@ import { registerFocusFn, unregisterFocusFn, setTaskFocusedPanel } from '../stor
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
 import { openFileInEditor, revealItemInDir } from '../lib/shell';
+import { terminalLinkFilePath, terminalLinkLine } from '../lib/terminalLinks';
 import { openCanvasDocument } from '../store/canvas';
 import { isMarkdownPath } from '../lib/canvas-tabs';
 import { ChatView, type ChatActions, type ChatProps } from './chat/ChatView';
 import { SyncIcon } from './icons';
+import type { ChangedFile } from '../ipc/types';
+import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
 import './AgentChatView.css';
 
 export function AgentChatView(props: {
@@ -33,7 +36,7 @@ export function AgentChatView(props: {
   /** Every tiled task keeps its chat mounted, so only the focused pane may take focus. */
   active: boolean;
   onReady?: (focus: () => void) => void;
-  onReview?: (path?: string) => void;
+  onReview?: (path?: string, line?: number) => void;
   onOpenTour?: () => void;
 }) {
   const provider = () => agentChatProvider(props.agentId);
@@ -172,10 +175,20 @@ export function AgentChatView(props: {
   async function runShell(command: string) {
     await invoke(IPC.AgentChat, { action: 'shell', agentId: props.agentId, command });
   }
-  const relativePath = (path: string) =>
-    path.startsWith(`${props.task.worktreePath}/`)
-      ? path.slice(props.task.worktreePath.length + 1)
-      : path;
+  const windowsWorktree = () => /^(?:[a-z]:[\\/]|\\\\)/i.test(props.task.worktreePath);
+  function relativePath(path: string): string {
+    const root = props.task.worktreePath;
+    if (windowsWorktree()) {
+      const normalized = path.replaceAll('\\', '/');
+      const prefix = root.replaceAll('\\', '/').replace(/\/$/, '') + '/';
+      return normalized.toLowerCase().startsWith(prefix.toLowerCase())
+        ? normalized.slice(prefix.length)
+        : normalized;
+    }
+    const prefix = root.endsWith('/') ? root : root + '/';
+    return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  }
+  let fileOpenRequest = 0;
   function reviewFile(path?: string) {
     props.onReview?.(path ? relativePath(path) : undefined);
   }
@@ -198,14 +211,13 @@ export function AgentChatView(props: {
       const path = window.electron.getPathForFile?.(file) ?? '';
       return path ? relativePath(path) : undefined;
     },
-    onOpenFile: (path) => {
-      // The shell opens files, so remove agent citation locations before routing.
-      const relative = relativePath(path.replace(/:\d+(?::\d+)?$/, '')).replace(/^\.\//, '');
-      if (
-        isMarkdownPath(relative) &&
-        !relative.startsWith('/') &&
-        !relative.split('/').includes('..')
-      ) {
+    onOpenFile: async (path) => {
+      const request = ++fileOpenRequest;
+      const relative = relativePath(terminalLinkFilePath(path)).replace(/^\.\//, '');
+      const line = terminalLinkLine(path);
+      const editorCommand = store.editorCommand.trim();
+      const absolute = /^(?:\/|[a-z]:[\\/])/i.test(relative);
+      if (isMarkdownPath(relative) && !absolute && !relative.split('/').includes('..')) {
         const taskId = props.task.id;
         openCanvasDocument(taskId, relative);
         // The enclosing agent pane selects itself as this click bubbles. Reveal
@@ -216,12 +228,37 @@ export function AgentChatView(props: {
       }
       // Outside the worktree (a dropped download, say) the editor channel refuses the
       // path, and opening it with its default app would run whatever an agent cites.
-      else if (relative.startsWith('/'))
-        void revealItemInDir(relative).catch((error) => setError(String(error)));
-      else
-        void openFileInEditor(props.task.worktreePath, relative).catch((error) =>
-          setError(String(error)),
+      else if (absolute) {
+        await revealItemInDir(relative).catch((error) => setError(String(error)));
+      } else {
+        if (
+          line &&
+          !editorCommand &&
+          props.onReview &&
+          !isLandedTaskState(props.task.landingState)
+        ) {
+          // A citation refers to the worktree even while the changes panel shows an older commit.
+          const files = await invoke<ChangedFile[]>(IPC.GetChangedFiles, {
+            worktreePath: props.task.worktreePath,
+            baseBranch: getTaskDiffBaseBranch(props.task.gitIsolation, props.task.baseBranch),
+          }).catch(() => []);
+          if (disposed || request !== fileOpenRequest) return;
+          const current = files.filter((file) => file.status !== 'D');
+          let match = current.find((file) => file.path === relative);
+          if (!match && windowsWorktree()) {
+            const folded = relative.toLowerCase();
+            const candidates = current.filter((file) => file.path.toLowerCase() === folded);
+            if (candidates.length === 1) match = candidates[0];
+          }
+          if (match) {
+            props.onReview(match.path, line);
+            return;
+          }
+        }
+        await openFileInEditor(props.task.worktreePath, relative, { line, editorCommand }).catch(
+          (error) => setError(String(error)),
         );
+      }
     },
     onSelectModel: (model, reasoningEffort) =>
       invoke(IPC.AgentChat, {

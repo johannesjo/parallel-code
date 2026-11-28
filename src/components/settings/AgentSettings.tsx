@@ -63,16 +63,16 @@ export function AgentSettings() {
     <>
       <SettingsSection title="New task defaults">
         <SettingsCheckboxRow
-          label="Always prefer UI mode"
+          label="Start supported tasks in Chat"
           checked={store.preferUiMode}
           onChange={setPreferUiMode}
-          description="Start new Claude and Codex tasks in Chat when supported. You can still switch each task to Terminal. Existing tasks keep their current view."
+          description="Applies to new Claude Code and Codex tasks. Switch views in the task header."
         />
         <SettingsCheckboxRow
-          label="Turn off UI mode for Claude Code"
+          label="Turn off Chat for Claude Code"
           checked={store.disableClaudeUiMode}
           onChange={setDisableClaudeUiMode}
-          description="Run Claude Code in the terminal only. Tasks can no longer switch to Chat, and tasks saved in Chat reopen in the terminal on the same conversation. A chat open now keeps running until you switch it to Terminal."
+          description="Claude conversations reopen in Terminal. An active Chat continues until you switch views."
         />
         <SettingsCheckboxRow
           label="Dangerously skip all confirms by default"

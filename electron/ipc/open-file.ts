@@ -21,7 +21,8 @@ export function validateEditorCommand(editorCommand: unknown): string {
   if (typeof editorCommand !== 'string' || !editorCommand.trim()) {
     throw new Error('editorCommand must be a non-empty string');
   }
-  const cmd = editorCommand.trim();
+  const trimmed = editorCommand.trim();
+  const cmd = /^[a-z]:[\\/]/i.test(trimmed) ? trimmed.replace(/\\/g, '/') : trimmed;
   if (/[;&|`$(){}[\]<>\\'"*?!#~]/.test(cmd)) {
     throw new Error('editorCommand must not contain shell metacharacters');
   }
@@ -37,7 +38,9 @@ export function editorGotoArgs(
   absolutePath: string,
   line: number,
 ): string[] | null {
-  const build = GOTO_ARGS[path.basename(editorCommand)];
+  const executable = path.basename(editorCommand);
+  const name = /\.exe$/i.test(executable) ? executable.slice(0, -4).toLowerCase() : executable;
+  const build = GOTO_ARGS[name];
   return build ? build(`${absolutePath}:${line}`) : null;
 }
 

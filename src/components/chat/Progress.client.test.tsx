@@ -28,6 +28,26 @@ it('announces what the agent is doing without re-announcing the ticking clock', 
   expect(container.querySelector('time')?.textContent).toBe('1:05');
 });
 
+it('shows the current step in the folded plan only while the turn is working', () => {
+  const [state, setState] = createStore<AgentChatState>({
+    status: 'working',
+    items: [],
+    requests: [],
+    plan: [
+      { step: 'Inspect checkout', status: 'completed' },
+      { step: 'Run checkout tests', status: 'in_progress' },
+    ],
+  });
+  dispose = render(() => <Progress state={state} />, document.body);
+  const summary = document.querySelector('.chat-plan summary');
+  expect(summary?.textContent).toBe('Run checkout tests · 1/2 complete');
+  expect(summary?.closest('details')?.open).toBe(false);
+  setState('status', 'ready');
+  expect(summary?.textContent).toBe('Plan · 1/2 complete');
+  setState('plan', 1, 'status', 'completed');
+  expect(summary?.textContent).toBe('Plan · 2/2 complete');
+});
+
 it('keeps a status row across working, waiting, completed and disconnected turns', () => {
   const container = document.createElement('div');
   document.body.append(container);

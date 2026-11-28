@@ -13,6 +13,22 @@ describe('parseUnifiedDiff', () => {
     expect(parseUnifiedDiff('   \n  \n')).toEqual([]);
   });
 
+  it.each([
+    ['a/src b/inner.ts b/src b/inner.ts', 'src b/inner.ts'],
+    [String.raw`"a/caf\303\251/file.ts" "b/caf\303\251/file.ts"`, 'café/file.ts'],
+    [String.raw`a/plain.ts "b/\346\227\245\346\234\254.ts"`, '日本.ts'],
+    [String.raw`"a/old\tname.ts" b/new name.ts`, 'new name.ts'],
+    [String.raw`a/plain.ts "b/word\"with\\escapes.ts"`, 'word"with\\escapes.ts'],
+  ])('reads the destination from Git path pair %s', (pair, path) => {
+    expect(parseUnifiedDiff(`diff --git ${pair}\n@@ -1 +1 @@\n-old\n+new\n`)[0]?.path).toBe(path);
+  });
+
+  it('uses Git rename metadata for paths with an ambiguous header separator', () => {
+    const diff =
+      'diff --git a/src b/old.ts b/new b/new.ts\nrename from src b/old.ts\nrename to new b/new.ts';
+    expect(parseUnifiedDiff(diff)[0]?.path).toBe('new b/new.ts');
+  });
+
   // -------------------------------------------------------------------------
   // Modified file detection (status 'M')
   // -------------------------------------------------------------------------

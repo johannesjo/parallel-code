@@ -482,13 +482,22 @@ it('routes markdown file links with locations without intercepting external link
         {
           id: 'links',
           kind: 'assistant',
-          text: '[Source](/worktree/src/app.ts:12:3) [Readme](README.md:12) [Relative](src/app.ts:4) [Space](docs/design%20notes.md:9) [Web](https://example.com:123) [Email](mailto:dev@example.com) [Unsafe](javascript:alert%281%29) `README.md:12`',
+          text: '[Source](/worktree/src/app.ts:12:3) [Readme](README.md:12) [Relative](src/app.ts:4) [Space](docs/design%20notes.md:9) [Lines](src/app.ts#L14-L17) [Section](docs/guide.md#setup) [Web](https://example.com:123) [Email](mailto:dev@example.com) [Unsafe](javascript:alert%281%29) `README.md:12`',
         },
       ],
     },
   });
   const links = Array.from(container.querySelectorAll('a'));
-  for (const label of ['Source', 'Readme', 'Relative', 'Space', 'Web', 'Email']) {
+  for (const label of [
+    'Source',
+    'Readme',
+    'Relative',
+    'Space',
+    'Lines',
+    'Section',
+    'Web',
+    'Email',
+  ]) {
     const link = links.find((link) => link.textContent === label);
     expect(link, label).toBeDefined();
     await act(() =>
@@ -500,6 +509,8 @@ it('routes markdown file links with locations without intercepting external link
     ['README.md:12'],
     ['src/app.ts:4'],
     ['docs/design notes.md:9'],
+    ['src/app.ts:14'],
+    ['docs/guide.md'],
   ]);
   expect(links.some((link) => link.getAttribute('href')?.startsWith('javascript:'))).toBe(false);
   expect(container.querySelector('code')?.textContent).toBe('README.md:12');

@@ -675,11 +675,10 @@ export function TaskPanel(props: TaskPanelProps) {
           onReview={
             props.task.gitIsolation === 'none'
               ? undefined
-              : (path) => {
+              : (path, line) => {
                   batch(() => {
                     setSelectedCommit(null);
-                    setStartTour(false);
-                    setDiffScrollTarget(path ?? '');
+                    openChangedFile(path ?? '', line);
                   });
                 }
           }

@@ -16,7 +16,9 @@ function isLocalPath(url: string): boolean {
     !!url &&
     !url.startsWith('#') &&
     !url.startsWith('//') &&
-    (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^[^/:]+\.[^/:]+:\d+(?::\d+)?$/.test(url))
+    (/^[a-z]:[\\/](?![\\/])/i.test(url) ||
+      !/^[a-z][a-z0-9+.-]*:/i.test(url) ||
+      /^[^/:]+\.[^/:]+:\d+(?::\d+)?$/.test(url))
   );
 }
 
@@ -40,9 +42,9 @@ const chatRenderer: RendererObject = {
     // is shown as its text: no link beats trusting the sanitizer with `javascript:`.
     if (!isLocalPath(token.href))
       return SAFE_LINK.test(token.href) ? false : this.parser.parseInline(token.tokens);
-    const title = token.title ? ` title="${escapeAttr(token.title)}"` : '';
+    const title = escapeAttr(token.title || token.href);
     const href = `${FILE_LINK_PREFIX}${encodeURIComponent(token.href)}`;
-    return `<a href="${escapeAttr(href)}"${title}>${this.parser.parseInline(token.tokens)}</a>`;
+    return `<a href="${escapeAttr(href)}" title="${title}">${this.parser.parseInline(token.tokens)}</a>`;
   },
   image(token: Tokens.Image) {
     // An image loads as soon as it renders, so a remote one would send whatever its

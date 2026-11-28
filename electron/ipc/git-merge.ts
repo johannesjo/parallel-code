@@ -2,6 +2,7 @@
 // project's Kanban board and other local changes set aside around it), pushing,
 // and rebasing or merging the base branch into the task.
 
+import { unquoteGitPath } from '../shared/git-quoted-path.js';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -203,45 +204,12 @@ export async function setAsideKanbanEdits(
   };
 }
 
-const PATH_ESCAPES: Record<string, number> = {
-  a: 7,
-  b: 8,
-  t: 9,
-  n: 10,
-  v: 11,
-  f: 12,
-  r: 13,
-  '"': 34,
-  '\\': 92,
-};
-
-/** Undoes git's C-style quoting of a path: `"my notes.txt"`, `"caf\303\251.txt"`. */
-function unquotePath(quoted: string): string {
-  if (!quoted.startsWith('"') || !quoted.endsWith('"')) return quoted;
-  const chars = [...quoted.slice(1, -1)];
-  const bytes: number[] = [];
-  for (let i = 0; i < chars.length; i++) {
-    const char = chars[i] ?? '';
-    if (char !== '\\') {
-      bytes.push(...Buffer.from(char));
-      continue;
-    }
-    const next = chars[++i] ?? '';
-    if (/[0-7]/.test(next)) {
-      // Octal escapes are single bytes of a UTF-8 sequence.
-      bytes.push(parseInt(chars.slice(i, i + 3).join(''), 8));
-      i += 2;
-    } else bytes.push(PATH_ESCAPES[next] ?? next.charCodeAt(0));
-  }
-  return Buffer.from(bytes).toString('utf8');
-}
-
 /**
  * Paths named by `git status --porcelain` lines; a rename names both sides.
  * shortcut: a path containing ` -> ` splits wrongly — parse `-z` output if that matters.
  */
 function statusPaths(lines: string[]): string[] {
-  return lines.flatMap((line) => line.slice(3).split(' -> ').map(unquotePath));
+  return lines.flatMap((line) => line.slice(3).split(' -> ').map(unquoteGitPath));
 }
 
 /**

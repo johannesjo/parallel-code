@@ -83,7 +83,9 @@ function linkedFile(href: string): string | undefined {
   )
     return undefined;
   const target = fileLink ? decodeURIComponent(href.slice(FILE_LINK_PREFIX.length)) : href;
-  return decodeURIComponent(target.split('#')[0]);
+  const [path, fragment] = target.split('#');
+  const line = fragment && /^L(\d+)(?:-L\d+)?$/.exec(fragment)?.[1];
+  return decodeURIComponent(path) + (line ? `:${line}` : '');
 }
 
 function Conversation(props: { chat: ChatProps; threadId: string }) {
