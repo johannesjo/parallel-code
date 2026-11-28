@@ -30,8 +30,8 @@ describe('createCodexTurnWatch', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('ends a working turn as failed once the screen shows the empty input box twice', () => {
-    const { watch, failed } = setup([FAILED]);
+  it.each(['›', '>'])('reports a visible error above the %s composer after two checks', (glyph) => {
+    const { watch, failed } = setup([FAILED.replace(/›/g, glyph)]);
     watch.note(working);
     vi.advanceTimersByTime(1_000);
     expect(failed).toEqual([]);
@@ -53,6 +53,31 @@ describe('createCodexTurnWatch', () => {
     const { watch, failed } = setup([RUNNING]);
     watch.note(working);
     vi.advanceTimersByTime(10_000);
+    expect(failed).toEqual([]);
+  });
+
+  it.each([
+    '› go\n\n■ Local provider error\n> HTTP/1.1 502 Bad Gateway\n \n \n› Ask Codex to do anything',
+    '› Explain esc to interrupt\n\n■ Local provider error\n\n› Ask Codex to do anything\n \n  gpt-5.4 default · ~ · Explain esc to interrupt',
+  ])('recognizes a provider failure despite quoted terminal text: %s', (screen) => {
+    const { watch, failed } = setup([screen]);
+    watch.note(working);
+    vi.advanceTimersByTime(2_000);
+    expect(failed).toHaveLength(1);
+  });
+
+  it.each([
+    '› go\n\n• Reading the files\n\n› Ask Codex to do anything',
+    '■ Previous error\n\n› try again\n\n› Ask Codex to do anything',
+    '› go\n\n■ Previous error\n\n• Reading the files\n\n› Ask Codex to do anything',
+    '› go\n\n■ Previous error\n\n◦ Reconnecting (6s • esc to interrupt)\n\n› Ask Codex to do anything',
+    '› go\n\n■ Previous error\n\n› Ask Codex to do anything\n\n› 1. Yes\n  2. No',
+  ])('keeps working across tool calls with a visible composer: %s', (screen) => {
+    const { watch, failed } = setup([screen]);
+    for (const event of ['UserPromptSubmit', 'PreToolUse', 'PostToolUse']) {
+      watch.note({ ...working, event });
+      vi.advanceTimersByTime(10_000);
+    }
     expect(failed).toEqual([]);
   });
 

@@ -17,11 +17,20 @@ interface CodexTurnWatchOptions {
   now?: () => number;
 }
 
+function showsFailedTurn(screen: string): boolean {
+  // Codex separates entries with blank rows. A quoted line within an error
+  // can start with '>', and the footer can repeat arbitrary prompt text.
+  const blocks = screen.split(/\n(?:[ \t]*\n)+/).reverse();
+  const latest = blocks.findIndex((block) => /^(?:[ \t]*[›>]|[■•◦] )/m.test(block));
+  if (latest < 0 || !blocks[latest + 1]?.startsWith('■ ')) return false;
+  const composer = blocks[latest];
+  return /^[ \t]*[›>]/.test(composer) && getAgentPromptReadiness(composer).ready;
+}
+
 /**
  * Codex runs no hook when a turn fails (a model error, a usage limit), so its
- * last word would be "working" for good. A running turn keeps a "Working" row
- * above the input box, with or without animations; the empty input box without
- * that row, seen on two checks in a row, means the turn ended unreported.
+ * last word would be "working" for good. The composer also appears during
+ * work, so require an explicit error on two consecutive checks.
  */
 export function createCodexTurnWatch(options: CodexTurnWatchOptions): CodexTurnWatch {
   const timers = new Map<string, ReturnType<typeof setInterval>>();
@@ -31,13 +40,12 @@ export function createCodexTurnWatch(options: CodexTurnWatchOptions): CodexTurnW
   };
   const watch = (event: AgentHookEventPayload): void => {
     const { agentId, taskId, launchId } = event;
-    let readyBefore = false;
+    let failedBefore = false;
     const check = (): void => {
       const screen = options.screenText(event);
-      const ready = screen !== null && getAgentPromptReadiness(screen).ready;
-      if (screen !== null && !(ready && readyBefore)) {
-        // One sighting can be the frame between a prompt and its "Working" row.
-        readyBefore = ready;
+      const failed = screen !== null && showsFailedTurn(screen);
+      if (screen !== null && !(failed && failedBefore)) {
+        failedBefore = failed;
         return;
       }
       forget(agentId);
