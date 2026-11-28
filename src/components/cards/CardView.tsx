@@ -121,9 +121,12 @@ export function CardView(props: CardViewProps) {
   const state = () => cardTaskState(props.task, props.now);
   const reading = () => readCard(props.card, state(), store.briefModel);
   const confidence = () => props.card.builtIn === 'confidence';
-  // Plan's own labels (Goal, Steps) already head it; a "Plan" title above them only repeats.
-  // With one slot shown, its label hides (`showsSlotLabel`), so the name stays as the heading.
   const plan = () => props.card.source.kind === 'app' && props.card.source.fact === 'plan';
+  const slots = () =>
+    shownSlots(props.card).filter(
+      (slot) => !plan() || slot.id !== 'steps' || valueFor(slot, state().cards?.[props.card.id]),
+    );
+  // Keep Goal as the heading even while the configured Steps slot has no value.
   const unnamed = () => confidence() || (plan() && shownSlots(props.card).length > 1);
   return (
     <section
@@ -162,7 +165,7 @@ export function CardView(props: CardViewProps) {
             <p class="card-empty">Ask the agent to rate its confidence, or review at Finish.</p>
           }
         >
-          <For each={shownSlots(props.card)}>
+          <For each={slots()}>
             {(slot) => (
               <CardSlot
                 slot={slot}

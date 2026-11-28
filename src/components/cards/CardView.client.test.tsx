@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { appFactCard } from '../../lib/app-facts';
 import { legacyRatingValues } from '../../lib/confidence-card';
 import { confidenceCard, type CardDefinition } from '../../lib/cards';
+import { setStore, store } from '../../store/core';
 import type { Task } from '../../store/types';
 import { CardView } from './CardView';
 
@@ -45,34 +46,35 @@ describe('CardView top line', () => {
 });
 
 describe('CardView for the Plan card', () => {
-  it('goes unnamed: its Goal and Steps labels already say what it is', () => {
+  it('shows Steps only while the plan has steps', ({ onTestFinished }) => {
+    const card = appFactCard('plan', true);
+    const task = {
+      id: 't1',
+      agentIds: [],
+      shellAgentIds: [],
+      initialPrompt: 'Ship the fix',
+    } as unknown as Task;
+    const previous = { tasks: store.tasks, cardDefinitions: store.cardDefinitions };
+    setStore({ tasks: { t1: task }, cardDefinitions: [card] });
+    onTestFinished(() => setStore(previous));
     dispose = render(
-      () => (
-        <CardView
-          card={appFactCard('plan', true)}
-          task={{ id: 't1', agentIds: [], goal: 'Ship the fix' } as unknown as Task}
-          now={60_000}
-        />
-      ),
+      () => <CardView card={card} task={store.tasks.t1} now={60_000} />,
       document.body,
     );
+    const labels = () =>
+      [...document.querySelectorAll('.slot-label')].map((label) => label.textContent);
     expect(document.body.querySelector('.card-name')).toBeNull();
-    const labels = [...document.body.querySelectorAll('.slot-label')].map((l) => l.textContent);
-    expect(labels).toEqual(['Goal', 'Steps']);
-  });
-
-  it('puts its age on the Goal label line instead of a row of its own', () => {
-    dispose = render(
-      () => (
-        <CardView
-          card={appFactCard('plan', true)}
-          task={{ id: 't1', agentIds: [], goal: 'Ship the fix' } as unknown as Task}
-          now={60_000}
-        />
-      ),
-      document.body,
-    );
-    expect(document.body.querySelector('.card')?.classList.contains('card-unnamed')).toBe(true);
+    expect(document.body.querySelector('.card-unnamed')).not.toBeNull();
+    expect(document.body.textContent).toContain('Ship the fix');
+    expect(labels()).toEqual(['Goal']);
+    setStore('tasks', 't1', 'agentPlan', {
+      steps: [{ step: 'Run tests', status: 'pending' }],
+      updatedAt: 1,
+    });
+    expect(labels()).toEqual(['Goal', 'Steps']);
+    expect(document.body.textContent).toContain('Run tests');
+    setStore('tasks', 't1', 'agentPlan', 'steps', []);
+    expect(labels()).toEqual(['Goal']);
   });
 
   it('keeps its name when only one slot shows, as that slot then has no label', () => {
