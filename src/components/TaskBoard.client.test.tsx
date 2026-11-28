@@ -8,6 +8,7 @@ import {
   checksFromUpdate,
   forgetTaskPrsDetected,
   markTaskPrsDetected,
+  markPrimaryPrClosed,
   removePrChecks,
   setPrChecks,
 } from '../store/pr-checks-state';
@@ -209,6 +210,64 @@ it('moves a pull request by what it waits for', () => {
   removePrChecks('pr');
 });
 
+it.each(['prUrl', 'githubUrl'] as const)(
+  'opens Finish when the worktree differs from its otherwise ready %s',
+  (link) => {
+    setStore('tasks', 'pr', { prUrl: undefined, [link]: 'https://github.com/o/r/pull/42' });
+    const green = checksFromUpdate({
+      overall: 'success',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+      headRefName: 'pr',
+      headSha: 'aaa',
+    });
+    setPrChecks('pr', { ...green });
+    setStore('taskGitStatus', 'pr', {
+      current_branch: 'pr',
+      base_branch: 'main',
+      has_committed_changes: true,
+      has_uncommitted_changes: false,
+      head_sha: 'aaa',
+      refreshedAt: Date.now(),
+    });
+    expect(cardNames('Ready to merge')).toContain('Add dark mode');
+
+    setStore('taskGitStatus', 'pr', { head_sha: 'bbb', stale: true });
+    expect(cardNames('Ready to merge')).toContain('Add dark mode');
+    setStore('taskGitStatus', 'pr', 'stale', false);
+    setPrChecks('pr', { ...green, headRefName: 'other-branch' });
+    expect(cardNames('Needs you')).not.toContain('Add dark mode');
+    expect(host.querySelector('[data-board-card="pr"]')?.textContent).not.toContain('Open Finish');
+    setPrChecks('pr', { ...green });
+    setStore('taskGitStatus', 'pr', 'current_branch', null);
+    expect(cardNames('Needs you')).not.toContain('Add dark mode');
+    setStore('taskGitStatus', 'pr', 'current_branch', 'pr');
+    const card = lane('Needs you')?.querySelector('[data-board-card="pr"]');
+    expect(card?.querySelector('.task-board-status-text')?.textContent).toBe(
+      'Local branch differs from PR',
+    );
+    expect(card?.querySelector<HTMLElement>('.status-glyph')?.title).not.toContain(
+      'Ready to merge',
+    );
+    const finish = [...(card?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent?.trim() === 'Open Finish',
+    );
+    expect(finish).toBeDefined();
+    finish?.click();
+    expect(store.pendingAction).toEqual({ type: 'finish', taskId: 'pr' });
+    setStore('pendingAction', null);
+
+    setPrChecks('pr', { ...green, headSha: 'bbb', overall: 'pending' });
+    expect(cardNames('In pull request')).toContain('Add dark mode');
+    setPrChecks('pr', { ...green, headSha: 'bbb' });
+    expect(cardNames('Ready to merge')).toContain('Add dark mode');
+    markPrimaryPrClosed('pr', 'https://github.com/o/r/pull/42');
+    removePrChecks('pr');
+    expect(cardNames('Stopped')).toContain('Add dark mode');
+    markPrimaryPrClosed('pr', undefined);
+  },
+);
+
 it('says Babysit is stuck on a conflict it could not resolve', () => {
   setPrChecks('pr', checksFromUpdate({ overall: 'failure', mergeable: 'CONFLICTING', failing: 1 }));
   setStore('tasks', 'pr', 'prBabysit', { attempts: 1, stalled: true });
@@ -360,7 +419,7 @@ it('groups subtasks under their coordinator, naming it once in other lanes', () 
   setStore(
     'tasks',
     'c2',
-    task('c2', 'Toggle', { coordinatedBy: 'pr', prUrl: 'https://x/pull/43' }),
+    task('c2', 'Toggle', { coordinatedBy: 'pr', prUrl: 'https://github.com/o/r/pull/43' }),
   );
   setStore('taskOrder', ['c1', 'review', 'pr', 'idle', 'c2']);
   expect(cardNames('Stopped')).toEqual(['Theme tokens', 'Update docs']);

@@ -236,7 +236,7 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
         issueUrl={props.task.githubUrl}
       />
       <Show when={taskLeadPr(props.task)}>
-        {(pr) => <TaskPr taskId={props.task.id} watchId={pr().watchId} />}
+        {(pr) => <TaskPr taskId={props.task.id} watchId={pr().watchId} onFinish={openFinish} />}
       </Show>
       <Show when={props.lane === 'snoozed' && setAsideLabel(props.task)}>
         {(label) => (

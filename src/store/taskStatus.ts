@@ -27,7 +27,8 @@ import {
   noteAgentPromptSent,
   type AgentHookStatus,
 } from './agentHookStatus';
-import { getPrChecks, isPrReadyToMerge } from './pr-checks-state';
+import { getPrChecks, prBoardStatus, type PrBoardStatusKind } from './pr-checks-state';
+import { isLandedTaskState } from './landing';
 import { taskLeadWatchId } from './task-prs';
 import {
   AGENT_UPDATE_MENU_PATTERN,
@@ -1202,13 +1203,45 @@ function isTaskReady(taskId: string): boolean {
   );
 }
 
+/** Only the task's own open PR can be compared with its worktree in Finish. */
+export function worktreeDiffersFromPr(taskId: string): boolean {
+  const task = store.tasks[taskId];
+  if (
+    task?.gitIsolation !== 'worktree' ||
+    task.closingStatus ||
+    isLandedTaskState(task.landingState)
+  )
+    return false;
+  const pr = getPrChecks(taskId);
+  const git = store.taskGitStatus[taskId];
+  return Boolean(
+    pr?.headSha &&
+    pr.headRefName === task.branchName &&
+    !pr.merged &&
+    git?.current_branch === task.branchName &&
+    git.head_sha &&
+    git.head_sha !== pr.headSha &&
+    isTaskGitStatusFresh(taskId),
+  );
+}
+
+/** The PR status shown on task cards, accounting for the task's local commits. */
+export function taskPrBoardStatus(
+  taskId: string,
+  watchId: string,
+): { kind: PrBoardStatusKind; label: string; headMismatch?: boolean } | null {
+  const status = prBoardStatus(getPrChecks(watchId));
+  if (status?.kind === 'ready' && watchId === taskId && worktreeDiffersFromPr(taskId))
+    return { kind: 'blocked', label: 'Local branch differs from PR', headMismatch: true };
+  return status;
+}
+
 /** `ready` only knows nothing failed, so name what the PR checks actually say:
  *  pending CI is not ready to merge, green CI only once GitHub would take the
  *  merge, and without a PR there is nothing to vouch for. */
 export function getReadyLabel(taskId: string): string {
-  const checks = getPrChecks(taskLeadWatchId(taskId));
-  if (isPrReadyToMerge(checks)) return 'Ready to merge';
-  if (checks?.overall === 'pending') return 'CI running';
+  const status = taskPrBoardStatus(taskId, taskLeadWatchId(taskId));
+  if (status?.kind === 'ready' || status?.kind === 'running') return status.label;
   return 'Ready';
 }
 

@@ -111,7 +111,7 @@ function nextExtraPrs(taskId: string, primaryUrl: string | null, result: BranchP
 }
 
 /** Without a reported head the store keeps the last one it saw, since writes shallow-merge. */
-function mergedChecks(checkedAt: string, headSha?: unknown): PrChecksState {
+function mergedChecks(checkedAt: string, headSha?: unknown, headRefName?: unknown): PrChecksState {
   return {
     overall: 'none',
     merged: true,
@@ -121,6 +121,7 @@ function mergedChecks(checkedAt: string, headSha?: unknown): PrChecksState {
     checks: [],
     checkedAt,
     ...(typeof headSha === 'string' && headSha && { headSha }),
+    ...(typeof headRefName === 'string' && headRefName && { headRefName }),
   };
 }
 
@@ -354,6 +355,7 @@ export function startPrChecksSubscription(): () => void {
         mergedChecks(
           typeof msg.checkedAt === 'string' ? msg.checkedAt : new Date().toISOString(),
           msg.headSha,
+          msg.headRefName,
         ),
       );
       return;

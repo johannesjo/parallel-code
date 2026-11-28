@@ -872,6 +872,10 @@ html[data-look^='islands-'] .task-board {
   font-weight: 500;
   color: var(--warning);
 }
+.task-board-ask.pr-head-mismatch {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
 .state-error .task-board-ask-label,
 .close-failed .task-board-ask-label {
   color: var(--error);

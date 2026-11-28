@@ -267,6 +267,7 @@ export interface PrChecksUpdatePayload {
   checks: PrCheckRun[];
   /** PR head commit the checks belong to. Absent before the first fetch. */
   headSha?: string;
+  headRefName?: string;
   checkedAt: string;
   /** True when the main process has stopped watching this task (PR merged or
    *  closed). The renderer should drop its bookkeeping so a later restart of

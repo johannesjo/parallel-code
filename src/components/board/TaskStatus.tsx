@@ -1,9 +1,9 @@
-import { Match, Show, Switch, batch } from 'solid-js';
+import { Match, Show, Switch, batch, createMemo } from 'solid-js';
 import { IPC } from '../../../electron/ipc/channels';
 import { invoke } from '../../lib/ipc';
 import { parseGitHubIssueUrl } from '../../lib/kanban';
 import { withViewTransition } from '../../lib/viewTransition';
-import { getPrChecks, prBoardStatus, type PrBoardStatusKind } from '../../store/pr-checks-state';
+import { getPrChecks, type PrBoardStatusKind } from '../../store/pr-checks-state';
 import { store } from '../../store/core';
 import { toggleNewTaskPanel } from '../../store/navigation';
 import {
@@ -12,7 +12,7 @@ import {
   toggleBoardSidePanelSide,
 } from '../../store/project-pages';
 import { setOpenDraftAside } from '../../store/task-creation';
-import { getTaskAttentionState, getTaskDotStatus } from '../../store/taskStatus';
+import { getTaskAttentionState, getTaskDotStatus, taskPrBoardStatus } from '../../store/taskStatus';
 import type { Task } from '../../store/types';
 import { hasOpenTaskPr, isPrBabysitStuck } from '../../store/pr-babysit';
 import { BabysitButton } from '../BabysitButton';
@@ -88,11 +88,18 @@ function prTone(kind: PrBoardStatusKind | undefined, conflicting: boolean): stri
 /**
  * The state of the task's PR as one label, toned by urgency, with Babysit; the
  * link sits in the task's line. `watchId` names the PR it describes, see
- * `taskLeadPr`. `onMerge` adds a Merge button once the task's own PR is ready.
+ * `taskLeadPr`. Finish resolves a head mismatch or confirms a merge.
  */
-export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () => void }) {
+export function TaskPr(props: {
+  taskId: string;
+  watchId: string;
+  onFinish?: () => void;
+  offerMerge?: boolean;
+}) {
   const checks = () => getPrChecks(props.watchId);
-  const status = () => prBoardStatus(checks());
+  const status = createMemo(() => taskPrBoardStatus(props.taskId, props.watchId));
+  const ownPrReady = () => props.watchId === props.taskId && status()?.kind === 'ready';
+  const differs = () => status()?.headMismatch;
   const kind = () => status()?.kind;
   // A stalled Babysit is why a failing PR, CI or conflict, is back in Needs you, so say so.
   const label = () => {
@@ -102,7 +109,7 @@ export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () =>
       : text;
   };
   return (
-    <div class="task-board-ask">
+    <div class="task-board-ask" classList={{ 'pr-head-mismatch': differs() }}>
       <span
         class={`task-board-status ${prTone(kind(), checks()?.mergeable === 'CONFLICTING')}`}
         title={label()}
@@ -134,16 +141,22 @@ export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () =>
           <BabysitButton taskId={props.taskId} class="task-board-chip" />
         </Show>
         {/* Finish merges the task's own PR only. */}
-        <Show when={kind() === 'ready' && props.watchId === props.taskId && props.onMerge}>
-          {(merge) => (
+        <Show when={((ownPrReady() && props.offerMerge) || differs()) && props.onFinish}>
+          {(finish) => (
             <button
               type="button"
               class="task-board-chip"
-              title="CI passed — open Finish to merge"
-              onClick={() => merge()()}
+              title={
+                differs()
+                  ? 'CI passed on a different commit from the local branch'
+                  : 'CI passed — open Finish to merge'
+              }
+              onClick={() => finish()()}
             >
-              <GitMergeIcon size={11} />
-              Merge
+              <Show when={!differs()}>
+                <GitMergeIcon size={11} />
+              </Show>
+              {differs() ? 'Open Finish' : 'Merge'}
             </button>
           )}
         </Show>

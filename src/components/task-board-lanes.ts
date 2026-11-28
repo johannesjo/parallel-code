@@ -2,14 +2,14 @@ import { isHiddenAgentTaskId } from '../documents/task-id';
 import { store } from '../store/core';
 import { isTaskBackgrounded } from '../store/background-tasks';
 import { isPrBabysat } from '../store/pr-babysit';
-import { getTaskExtraPrs, pullRequestsLane } from '../store/pr-checks-state';
+import { getPrChecks, getTaskExtraPrs, pullRequestsLane } from '../store/pr-checks-state';
 import { awaitsOpenPr, taskPrsChecks } from '../store/task-prs';
 import { isTaskReadyToMergeLocally } from '../store/local-merge';
 import { getProject } from '../store/projects';
 import { sortByProjectGroup } from '../store/sidebar-order';
 import { matchesTaskProjectFilter } from '../store/task-project-filter';
 import { taskWrapUp } from '../store/task-wrap-up';
-import { getTaskOpenQuestion } from '../store/taskStatus';
+import { getTaskOpenQuestion, worktreeDiffersFromPr } from '../store/taskStatus';
 import type { Task } from '../store/types';
 import { cardTaskState, finishCheckLabel, type CardTaskState } from './board/task-state';
 import { holdWorking } from './task-board-hold';
@@ -73,13 +73,17 @@ export function boardLaneOf(task: Task): BoardLaneId {
   if (task.collapsed) return 'snoozed';
   if (state === 'active' || checking) return 'working';
   // Additional PRs count too, e.g. one in a nested repository with none in the task's own.
-  if (task.prUrl || getTaskExtraPrs(task.id).length > 0) {
+  const checks = taskPrsChecks(task);
+  // A source link alone may point to the PR this task reviews on a separate branch.
+  const sourceIsTaskBranch = getPrChecks(task.id)?.headRefName === task.branchName;
+  if (checks.length && (task.prUrl || sourceIsTaskBranch || getTaskExtraPrs(task.id).length)) {
     const wrap = taskWrapUp(task);
     if (wrap.done) return 'done';
     // Merged with something left over: nothing waits on GitHub any more, only on
     // you. Until git status says what is left, the task stays where it was.
     if (wrap.merged && wrap.looseEnds.length > 0) return 'stopped';
-    return pullRequestsLane(taskPrsChecks(task), babysat);
+    const lane = pullRequestsLane(checks, babysat);
+    return lane === 'ready' && worktreeDiffersFromPr(task.id) ? 'needs' : lane;
   }
   // Finished work the app's review and checks vouch for can merge without a
   // look; a new commit takes it back out, since the review no longer covers it.

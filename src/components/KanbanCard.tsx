@@ -129,7 +129,8 @@ function TaskRow(props: { task: Task }) {
           <TaskPr
             taskId={props.task.id}
             watchId={pr().watchId}
-            onMerge={canFinish() ? merge : undefined}
+            onFinish={canFinish() ? merge : undefined}
+            offerMerge
           />
         )}
       </Show>

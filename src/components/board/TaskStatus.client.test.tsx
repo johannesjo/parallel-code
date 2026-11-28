@@ -47,12 +47,17 @@ it('shows a green, mergeable PR as ready to merge, then as merged', () => {
 it("offers Merge only for the task's own PR, which Finish merges", () => {
   const merge = () => undefined;
   setPrChecks('t', green());
-  dispose = render(() => <TaskPr taskId="t" watchId="t" onMerge={merge} />, document.body);
+  dispose = render(
+    () => <TaskPr taskId="t" watchId="t" onFinish={merge} offerMerge />,
+    document.body,
+  );
   expect(document.querySelector('[title="CI passed — open Finish to merge"]')).not.toBeNull();
   dispose();
   setPrChecks('t|https://github.com/o/lib/pull/3', green());
   dispose = render(
-    () => <TaskPr taskId="t" watchId="t|https://github.com/o/lib/pull/3" onMerge={merge} />,
+    () => (
+      <TaskPr taskId="t" watchId="t|https://github.com/o/lib/pull/3" onFinish={merge} offerMerge />
+    ),
     document.body,
   );
   expect(status()?.textContent).toBe('Ready to merge');

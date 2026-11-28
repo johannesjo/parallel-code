@@ -189,6 +189,28 @@ it('publishes the PR check status, and drops it once the PR merges or has no che
   setPrChecks('task', { ...green, mergeStateStatus: 'CLEAN' });
   expect(lastCi()).toBe('success');
 
+  setStore('taskGitStatus', 'task', {
+    current_branch: 'task/test',
+    base_branch: 'main',
+    has_committed_changes: true,
+    has_uncommitted_changes: false,
+    head_sha: 'local',
+    refreshedAt: Date.now(),
+  });
+  setPrChecks('task', {
+    ...green,
+    mergeStateStatus: 'CLEAN',
+    headRefName: 'task/test',
+    headSha: 'remote',
+  });
+  expect(lastCi()).toBeUndefined();
+  expect(vi.mocked(fireAndForget).mock.lastCall?.[1]).toMatchObject({
+    contexts: {
+      task: { lane: 'needs', pr: { kind: 'blocked', label: 'Local branch differs from PR' } },
+    },
+  });
+  setStore('taskGitStatus', reconcile({}));
+
   // The phone reads success as "Ready to merge", which a branch behind its base is not.
   setPrChecks('task', { ...green, mergeStateStatus: 'BEHIND' });
   expect(lastCi()).toBeUndefined();

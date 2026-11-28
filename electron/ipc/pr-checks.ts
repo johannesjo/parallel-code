@@ -65,6 +65,7 @@ interface TaskEntry {
   failing: number;
   checks: PrCheckRun[];
   headRefOid: string | null;
+  headRefName?: string;
   hasFetched: boolean;
   lastRefreshedAt: number;
   /** SHA at which we last fired a settled notification. null if never notified. */
@@ -406,6 +407,8 @@ async function refreshOne(watchId: string): Promise<void> {
   // meanwhile; a replacement polls on its own or on the next tick.
   if (tasks.get(watchId) !== entry || entry.pollSeq !== seq) return;
 
+  const branchChanged = entry.headRefName !== status.headRefName;
+  entry.headRefName = status.headRefName;
   if (status.state === 'MERGED' || status.state === 'CLOSED') {
     // Emit one final `cleared` update so the renderer drops its watcher
     // bookkeeping and can restart if the same PR later reopens or the
@@ -463,6 +466,7 @@ async function refreshOne(watchId: string): Promise<void> {
     // Review metadata is PR-wide, so it can advance while old-head CI data
     // remains suppressed during the post-push grace period.
     if (
+      branchChanged ||
       entry.isDraft !== status.isDraft ||
       entry.reviewDecision !== status.reviewDecision ||
       entry.mergeable !== status.mergeable ||
@@ -478,6 +482,7 @@ async function refreshOne(watchId: string): Promise<void> {
   }
   const nothingChanged =
     !firstRefresh &&
+    !branchChanged &&
     entry.overall === overall &&
     entry.isDraft === status.isDraft &&
     entry.reviewDecision === status.reviewDecision &&
@@ -557,6 +562,7 @@ function sendUpdate(
     failing: entry.failing,
     checks: entry.checks,
     headSha: entry.headRefOid ?? undefined,
+    headRefName: entry.headRefName,
     checkedAt: new Date(entry.lastRefreshedAt).toISOString(),
     cleared: opts?.cleared ?? false,
     merged: opts?.merged ?? false,
@@ -742,6 +748,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
   state: string;
   mergedAt?: string;
   headRefOid: string;
+  headRefName?: string;
   isDraft: boolean;
   reviewDecision: PrReviewDecision | null;
   mergeable: PrMergeable;
@@ -755,7 +762,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
       'view',
       prUrl,
       '--json',
-      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup',
+      'state,mergedAt,headRefOid,headRefName,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup',
     ],
     { timeout: GH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
   );
@@ -792,6 +799,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
     state: asString(r['state']) ?? 'UNKNOWN',
     mergedAt: asString(r['mergedAt']),
     headRefOid: asString(r['headRefOid']) ?? '',
+    headRefName: asString(r['headRefName']),
     isDraft: r['isDraft'] === true,
     reviewDecision: parseReviewDecision(r['reviewDecision']),
     mergeable: parseMergeable(r['mergeable']),

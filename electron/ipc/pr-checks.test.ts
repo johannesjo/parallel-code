@@ -200,6 +200,7 @@ describe('fetchPrStatus', () => {
     const payload = {
       state: 'OPEN',
       headRefOid: 'abc123',
+      headRefName: 'feature',
       isDraft: true,
       reviewDecision: 'CHANGES_REQUESTED',
       mergeable: 'CONFLICTING',
@@ -219,10 +220,11 @@ describe('fetchPrStatus', () => {
     expect(calls[0][0]).toBe('pr');
     expect(calls[0][1]).toBe('view');
     expect(calls[0]).toContain(
-      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup',
+      'state,mergedAt,headRefOid,headRefName,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup',
     );
     expect(out.state).toBe('OPEN');
     expect(out.headRefOid).toBe('abc123');
+    expect(out.headRefName).toBe('feature');
     expect(out.isDraft).toBe(true);
     expect(out.reviewDecision).toBe('CHANGES_REQUESTED');
     expect(out.mergeable).toBe('CONFLICTING');

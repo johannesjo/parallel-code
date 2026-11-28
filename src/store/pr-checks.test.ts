@@ -153,12 +153,17 @@ describe('startPrChecksSubscription updates', () => {
       merged: true,
       prUrl: 'https://github.com/acme/app/pull/12',
       mergedAt: new Date().toISOString(),
+      headRefName: 'task/feature',
     };
     updateHandler?.(merge);
     updateHandler?.(merge);
     expect(getMergedTasksTodayCount()).toBe(1);
     expect(mockSaveState).toHaveBeenCalledTimes(1);
-    expect(getPrChecks('task-1')).toMatchObject({ overall: 'none', merged: true });
+    expect(getPrChecks('task-1')).toMatchObject({
+      overall: 'none',
+      merged: true,
+      headRefName: 'task/feature',
+    });
     // The board compares the merged head with the worktree's HEAD.
     updateHandler?.({ ...merge, headSha: 'merged-sha' });
     expect(getPrChecks('task-1')?.headSha).toBe('merged-sha');

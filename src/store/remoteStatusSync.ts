@@ -14,11 +14,12 @@ import {
   getTaskAttentionState,
   getTaskOpenQuestion,
   getAgentOutputTail,
+  taskPrBoardStatus,
   stripAnsi,
 } from './taskStatus';
 import { taskUsesAgentChat } from './agent-chat';
 import { isAgentSuspended } from './agent-suspend';
-import { getPrChecks, isPrReadyToMerge, prBoardStatus } from './pr-checks-state';
+import { getPrChecks } from './pr-checks-state';
 import { hasOpenTaskPr } from './pr-babysit';
 import { taskLeadPr, taskLinkedPrUrl } from './task-prs';
 import { fireAndForget } from '../lib/ipc';
@@ -74,7 +75,8 @@ function remoteCiStatus(task: Task): RemoteCiStatus | undefined {
   const lead = taskLeadPr(task);
   const checks = lead && getPrChecks(lead.watchId);
   if (!checks || checks.merged || checks.overall === 'none') return undefined;
-  if (checks.overall === 'success' && !isPrReadyToMerge(checks)) return undefined;
+  if (checks.overall === 'success' && taskPrBoardStatus(task.id, lead.watchId)?.kind !== 'ready')
+    return undefined;
   return checks.overall;
 }
 
@@ -83,7 +85,7 @@ function remotePr(task: Task): RemoteTaskPr | undefined {
   const url = taskLinkedPrUrl(task);
   if (!url) return undefined;
   const lead = taskLeadPr(task);
-  const status = lead && prBoardStatus(getPrChecks(lead.watchId));
+  const status = lead && taskPrBoardStatus(task.id, lead.watchId);
   return {
     url,
     ...(status && { label: status.label, kind: status.kind }),
