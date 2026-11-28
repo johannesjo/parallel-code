@@ -35,7 +35,8 @@ function expectRule(block: string, selectors: string[], declaration: RegExp): vo
 
 describe('main stylesheet reduced-motion styles', () => {
   it('pairs each main-app selector group with its reduced-motion override', () => {
-    const { block, end } = reducedMotionBlock();
+    const { block: rawBlock, end } = reducedMotionBlock();
+    const block = rawBlock.replace(/\/\*[\s\S]*?\*\//g, '');
 
     expectRule(block, ['.projects-collapser'], /transition:\s*none\s*;/);
     expectRule(
@@ -65,7 +66,9 @@ describe('main stylesheet reduced-motion styles', () => {
       ['.askcode-loading-pulse', '.keybinding-key'],
       /animation:\s*none\s*!important\s*;/,
     );
-    expect(block).not.toContain('.inline-spinner');
+    expectRule(block, ['.resource-analysis-controls .inline-spinner'], /animation:\s*none\s*;/);
+    // Other inline spinners still indicate work in progress.
+    expect(block).not.toMatch(/[{},]\s*\.inline-spinner\s*[,{]/);
     expect(block).not.toContain('keybinding-recording-pulse');
     expect(
       css.slice(end + 1).trim(),
