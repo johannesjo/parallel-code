@@ -34,6 +34,16 @@ describe('cleanupPanelEntries', () => {
     expect(s.panelUserSize).toEqual({ 'task:other:ai-terminal': 123 });
   });
 
+  it('drops task:${id}:collapsed:* section-collapse keys from panelUserSize', () => {
+    const s = makeSlice({
+      'task:abc:collapsed:notes': 1,
+      'task:abc:collapsed:shell-section': 1,
+      'task:other:collapsed:notes': 1,
+    });
+    cleanupPanelEntries(s, 'abc');
+    expect(s.panelUserSize).toEqual({ 'task:other:collapsed:notes': 1 });
+  });
+
   it('drops tiling:${id} keys from panelUserSize', () => {
     const s = makeSlice({
       'tiling:abc': 520,
