@@ -212,6 +212,32 @@ describe('registerAllHandlers wiring', () => {
   });
 });
 
+it('only sends coverage data when the renderer needs a new snapshot', async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coverage-poll-'));
+  try {
+    const reportPath = 'lcov.info';
+    const file = path.join(repoRoot, reportPath);
+    fs.writeFileSync(file, 'SF:a.ts\nDA:1,1');
+    register();
+    const handler = handlers.get(IPC.GetCoverageSummary);
+    const poll = (knownRevision?: string) =>
+      handler?.(undefined, { repoRoot, reportPath, knownRevision });
+    const first = (await poll()) as { revision: string };
+    expect(first.revision).toEqual(expect.any(String));
+    expect(await poll(first.revision)).toBe('unchanged');
+
+    fs.writeFileSync(file, 'SF:a.ts\nDA:1,0\nDA:2,0');
+    expect(await poll(first.revision)).toMatchObject({
+      revision: expect.not.stringMatching(first.revision),
+      totals: { lines: { covered: 0, total: 2 } },
+    });
+    fs.unlinkSync(file);
+    expect(await poll(first.revision)).toBeNull();
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
 describe('DialogOpen', () => {
   it('reopens in the folder last picked from, ignoring cancels', async () => {
     register();

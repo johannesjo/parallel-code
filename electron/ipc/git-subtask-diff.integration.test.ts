@@ -14,6 +14,7 @@ import {
   getAllFileDiffs,
   getAllFileDiffsFromBranch,
   getBranchCommitMessages,
+  getBranchLog,
   getBranchCommits,
   getChangedFiles,
   getChangedFilesFromBranch,
@@ -23,6 +24,7 @@ import {
   getWorktreeStatus,
   readDiffSource,
 } from './git.js';
+import { detectDiffBase, detectMainBranch, invalidateDiffBaseCache } from './git-diff-base.js';
 
 // Pass-through spy: tests count spawned git commands without changing them.
 const gitSpawns = vi.hoisted(() => [] as string[][]);
@@ -257,6 +259,58 @@ describe('subtask diffs after rebasing onto upstream', () => {
       (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
     ).toEqual(['child.txt']);
     expect((await getWorktreeStatus(child, 'parent')).has_committed_changes).toBe(true);
+  });
+
+  it('shares a cold diff-base lookup across concurrent Finish reads', async () => {
+    const { child } = fixture();
+    const head = commitFile(child, 'child.txt', 'child work\n');
+    gitSpawns.length = 0;
+    const [log, commits, status] = await Promise.all([
+      getBranchLog(child, 'parent'),
+      getBranchCommitMessages(child, 'parent'),
+      getWorktreeStatus(child, 'parent', true),
+    ]);
+    expect(log).toContain('child.txt');
+    expect(commits.map((commit) => commit.hash)).toEqual([head]);
+    expect(status.has_commits_ahead).toBe(true);
+    expect(gitSpawns.filter(([command]) => command === 'reflog')).toHaveLength(1);
+  });
+
+  it('shares pending lookups even after the completed-result TTL has elapsed', async () => {
+    const { child } = fixture();
+    const head = git(child, 'rev-parse', 'HEAD');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      gitSpawns.length = 0;
+      const branch = detectMainBranch(child);
+      const base = detectDiffBase(child, head, 'parent');
+      vi.setSystemTime(Date.now() + 65_000);
+      const [firstBranch, secondBranch, firstBase, secondBase] = await Promise.all([
+        branch,
+        detectMainBranch(child),
+        base,
+        detectDiffBase(child, head, 'parent'),
+      ]);
+      expect(firstBranch).toBe(secondBranch);
+      expect(firstBase).toEqual(secondBase);
+      expect(gitSpawns.filter(([command]) => command === 'reflog')).toHaveLength(1);
+      expect(
+        gitSpawns.filter((args) => args.join(' ') === 'symbolic-ref refs/remotes/origin/HEAD'),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps an invalidated in-flight read out of the cache', async () => {
+    const { child } = fixture();
+    const head = commitFile(child, 'child.txt', 'child work\n');
+    gitSpawns.length = 0;
+    const pending = detectDiffBase(child, head, 'parent');
+    invalidateDiffBaseCache();
+    const first = await pending;
+    expect(await detectDiffBase(child, head, 'parent')).toEqual(first);
+    expect(gitSpawns.filter(([command]) => command === 'reflog')).toHaveLength(2);
   });
 
   it('does not rescan an unchanged reflog after the diff base cache expires', async () => {

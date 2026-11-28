@@ -1274,12 +1274,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.GetNestedRepos, (_e, args) => {
     return findNestedRepos(worktreePathArg(args));
   });
-  ipcMain.handle(IPC.GetCoverageSummary, (_e, args) => {
+  ipcMain.handle(IPC.GetCoverageSummary, async (_e, args) => {
     validatePath(args.repoRoot, 'repoRoot');
     assertOptionalString(args.reportPath, 'reportPath');
     const reportPath = args.reportPath?.trim() || undefined;
     if (reportPath) validateRelativePath(reportPath, 'reportPath');
-    return readCoverageSummary(args.repoRoot, reportPath);
+    assertOptionalString(args.knownRevision, 'knownRevision');
+    const summary = await readCoverageSummary(args.repoRoot, reportPath);
+    return summary?.revision && summary.revision === args.knownRevision ? 'unchanged' : summary;
   });
   ipcMain.handle(IPC.ListSessions, (_e, args) => {
     validatePath(args.cwd, 'cwd');

@@ -103,16 +103,18 @@ function parseEntry(filePath: string, entry: unknown): CoverageFileSummary | nul
   };
 }
 
-function normalizeCoveragePath(repoRoot: string, key: string): string | null {
+function normalizeCoveragePath(
+  repoRoot: string,
+  key: string,
+  exists: (filePath: string) => boolean,
+): string | null {
   const normalizedKey = normalizeSlashes(stripSourcePathPrefix(key)).replace(/^\.\/+/, '');
   const relative = path.isAbsolute(normalizedKey)
     ? normalizeSlashes(path.relative(repoRoot, normalizedKey))
     : normalizedKey;
   const normalized = path.posix.normalize(relative).replace(/^\/+/, '');
-  if (normalized && normalized !== '.' && !normalized.startsWith('../')) {
-    const directPath = path.join(repoRoot, normalized);
-    if (fs.existsSync(directPath)) return normalized;
-  }
+  const direct =
+    normalized && normalized !== '.' && !normalized.startsWith('../') ? normalized : null;
 
   const segments = normalizedKey.replace(/^\/+/, '').split('/').filter(Boolean);
   for (const repoName of repoIdentityCandidates(repoRoot)) {
@@ -121,21 +123,16 @@ function normalizeCoveragePath(repoRoot: string, key: string): string | null {
     const repoRelative = path.posix
       .normalize(segments.slice(repoNameIndex + 1).join('/'))
       .replace(/^\/+/, '');
-    if (
-      repoRelative &&
-      !repoRelative.startsWith('../') &&
-      fs.existsSync(path.join(repoRoot, repoRelative))
-    ) {
-      return repoRelative;
-    }
+    if (!repoRelative || repoRelative.startsWith('../') || repoRelative === direct) continue;
+    // Existence only matters when a different checkout-relative path could win.
+    if (direct && exists(path.join(repoRoot, direct))) return direct;
+    if (exists(path.join(repoRoot, repoRelative))) return repoRelative;
   }
-
-  if (!normalized || normalized === '.' || normalized.startsWith('../')) return null;
-  return normalized;
+  return direct;
 }
 
 function parseJsonSummary(
-  repoRoot: string,
+  normalizePath: (key: string) => string | null,
   reportPath: string,
   raw: string,
   stat: fs.Stats,
@@ -149,7 +146,7 @@ function parseJsonSummary(
   const files: Record<string, CoverageFileSummary> = {};
   for (const [key, value] of Object.entries(rawSummary)) {
     if (key === 'total') continue;
-    const normalizedPath = normalizeCoveragePath(repoRoot, key);
+    const normalizedPath = normalizePath(key);
     if (!normalizedPath) continue;
     const entry = parseEntry(normalizedPath, value);
     if (!entry) continue;
@@ -182,7 +179,7 @@ function emptyLcovCounts(): LcovFileCounts {
 }
 
 function parseLcov(
-  repoRoot: string,
+  normalizePath: (key: string) => string | null,
   reportPath: string,
   raw: string,
   stat: fs.Stats,
@@ -192,7 +189,7 @@ function parseLcov(
 
   for (const line of raw.split(/\r?\n/)) {
     if (line.startsWith('SF:')) {
-      currentPath = normalizeCoveragePath(repoRoot, line.slice(3).trim());
+      currentPath = normalizePath(line.slice(3).trim());
       if (currentPath && !perFile.has(currentPath)) perFile.set(currentPath, emptyLcovCounts());
       continue;
     }
@@ -319,33 +316,71 @@ async function resolveReportCandidates(
   return candidates;
 }
 
+interface CachedReport {
+  repoRoot: string;
+  stat: fs.Stats;
+  sourceChecks: Map<string, boolean>;
+  summary: CoverageSummary;
+}
+
+// A task can poll its own coverage and its base checkout's. Bound retained reports
+// when the user moves between projects.
+const reportCache = new Map<string, CachedReport>();
+const MAX_CACHED_REPORTS = 8;
+
+function matchesReport(entry: CachedReport, repoRoot: string, stat: fs.Stats): boolean {
+  const previous = entry.stat;
+  if (
+    entry.repoRoot !== repoRoot ||
+    previous.size !== stat.size ||
+    previous.mtimeMs !== stat.mtimeMs ||
+    previous.ctimeMs !== stat.ctimeMs ||
+    previous.ino !== stat.ino ||
+    previous.dev !== stat.dev
+  )
+    return false;
+  // Paths recorded in a different checkout may start or stop resolving locally
+  // even when the report itself is unchanged.
+  for (const [filePath, existed] of entry.sourceChecks) {
+    if (fs.existsSync(filePath) !== existed) return false;
+  }
+  return true;
+}
+
 export async function readCoverageSummary(
   repoRoot: string,
   configuredPath?: string,
 ): Promise<CoverageSummary | null> {
   for (const reportPath of await resolveReportCandidates(repoRoot, configuredPath)) {
-    let raw: string;
-    let stat: fs.Stats;
     try {
-      [raw, stat] = await Promise.all([
-        fs.promises.readFile(reportPath, 'utf8'),
-        fs.promises.stat(reportPath),
-      ]);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw err;
-    }
+      const stat = await fs.promises.stat(reportPath);
+      const cached = reportCache.get(reportPath);
+      if (cached && matchesReport(cached, repoRoot, stat)) return cached.summary;
 
-    const trimmed = raw.trimStart();
-    try {
-      if (trimmed.startsWith('{')) {
-        const parsed = parseJsonSummary(repoRoot, reportPath, raw, stat);
-        if (parsed) return parsed;
-        continue;
+      const raw = await fs.promises.readFile(reportPath, 'utf8');
+      const sourceChecks = new Map<string, boolean>();
+      const exists = (filePath: string) => {
+        const existed = fs.existsSync(filePath);
+        sourceChecks.set(filePath, existed);
+        return existed;
+      };
+      const normalizePath = (key: string) => normalizeCoveragePath(repoRoot, key, exists);
+      let summary: CoverageSummary | null = null;
+      if (raw.trimStart().startsWith('{')) {
+        summary = parseJsonSummary(normalizePath, reportPath, raw, stat);
+      } else if (/(^|\n)(TN:|SF:)/.test(raw)) {
+        summary = parseLcov(normalizePath, reportPath, raw, stat);
       }
-      if (/(^|\n)(TN:|SF:)/.test(raw)) return parseLcov(repoRoot, reportPath, raw, stat);
+      if (!summary) continue;
+      if (reportCache.size >= MAX_CACHED_REPORTS && !reportCache.has(reportPath)) {
+        const oldest = reportCache.keys().next();
+        if (!oldest.done) reportCache.delete(oldest.value);
+      }
+      summary.revision = crypto.randomUUID();
+      reportCache.set(reportPath, { repoRoot, stat, sourceChecks, summary });
+      return summary;
     } catch (err) {
-      if (err instanceof SyntaxError) continue;
+      if (err instanceof SyntaxError || (err as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw err;
     }
   }

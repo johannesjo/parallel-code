@@ -65,6 +65,8 @@ export interface CoverageFileSummary {
 }
 
 export interface CoverageSummary {
+  /** Identifies a parsed report, including its checkout-relative source paths, for polling. */
+  revision?: string;
   format: 'istanbul-summary' | 'lcov';
   generatedAt: string;
   reportPath: string;

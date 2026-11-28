@@ -11,8 +11,8 @@ import { exec, MAX_BUFFER } from './git-exec.js';
 
 // --- TTL Caches ---
 
-interface CacheEntry {
-  value: string;
+interface CacheEntry<T> {
+  value: Promise<T>;
   expiresAt: number;
 }
 
@@ -21,13 +21,8 @@ interface PickedMergeBase {
   ref: string;
 }
 
-interface DiffBaseCacheEntry {
-  value: PickedMergeBase;
-  expiresAt: number;
-}
-
-const mainBranchCache = new Map<string, CacheEntry>();
-const diffBaseCache = new Map<string, DiffBaseCacheEntry>();
+const mainBranchCache = new Map<string, CacheEntry<string>>();
+const diffBaseCache = new Map<string, CacheEntry<PickedMergeBase | null>>();
 const MAIN_BRANCH_TTL = 60_000; // 60s
 const DIFF_BASE_TTL = 30_000; // 30s
 
@@ -52,17 +47,32 @@ function cacheKey(p: string): string {
   return p.replace(/\/+$/, '');
 }
 
-export async function detectMainBranch(repoRoot: string): Promise<string> {
-  const key = cacheKey(repoRoot);
-  const cached = mainBranchCache.get(key);
-  if (cached) {
-    if (cached.expiresAt > Date.now()) return cached.value;
-    mainBranchCache.delete(key);
-  }
+async function cachedLookup<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  ttl: number,
+  lookup: () => Promise<T>,
+): Promise<T> {
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const result = await detectMainBranchUncached(repoRoot);
-  mainBranchCache.set(key, { value: result, expiresAt: Date.now() + MAIN_BRANCH_TTL });
-  return result;
+  // Concurrent readers share the pending lookup. Only a successful result ages.
+  const entry = { value: lookup(), expiresAt: Infinity };
+  cache.set(key, entry);
+  try {
+    const result = await entry.value;
+    if (result !== null) entry.expiresAt = Date.now() + ttl;
+    return result;
+  } finally {
+    // Retry failed or unresolved lookups without deleting a newer read after invalidation.
+    if (entry.expiresAt === Infinity && cache.get(key) === entry) cache.delete(key);
+  }
+}
+
+export function detectMainBranch(repoRoot: string): Promise<string> {
+  return cachedLookup(mainBranchCache, cacheKey(repoRoot), MAIN_BRANCH_TTL, () =>
+    detectMainBranchUncached(repoRoot),
+  );
 }
 
 /** Read the branch name that refs/remotes/origin/HEAD points to, or null. */
@@ -599,22 +609,30 @@ export async function detectDiffBase(
   // though HEAD just moved forward.
   const requestedHead = head ?? 'HEAD';
   const headRef = requestedHead === 'HEAD' ? await pinHead(repoRoot) : requestedHead;
-  const key = `${cacheKey(repoRoot)}:${branch}:${headRef}`;
-  const cached = diffBaseCache.get(key);
-  if (cached) {
-    if (cached.expiresAt > Date.now()) return cached.value;
-    diffBaseCache.delete(key);
-  }
+  // Explicit bases enable additional history checks, even for the main branch.
+  const key = JSON.stringify([cacheKey(repoRoot), branch, !!baseBranch, headRef]);
+  const base = await cachedLookup(diffBaseCache, key, DIFF_BASE_TTL, () =>
+    computeDiffBase(repoRoot, branch, requestedHead, headRef, !!baseBranch),
+  );
+  return base ?? { sha: headRef, ref: headRef };
+}
 
+async function computeDiffBase(
+  repoRoot: string,
+  branch: string,
+  requestedHead: string,
+  headRef: string,
+  explicitBase: boolean,
+): Promise<PickedMergeBase | null> {
   let compareBranch = branch;
   let picked = await pickMergeBase(repoRoot, branch, headRef);
-  if (!picked && baseBranch) {
+  if (!picked && explicitBase) {
     // The parent branch is gone, usually deleted after landing upstream, so
     // its inherited work can only be recognized on the main branch now.
     compareBranch = await detectMainBranch(repoRoot);
     if (compareBranch !== branch) picked = await pickMergeBase(repoRoot, compareBranch, headRef);
   }
-  if (!picked) return { sha: headRef, ref: headRef };
+  if (!picked) return null;
 
   let refined = await refineDiffBaseWithCherryPick(repoRoot, picked, headRef);
   const headReflog = await readBranchReflog(repoRoot, requestedHead);
@@ -625,7 +643,7 @@ export async function detectDiffBase(
     base: refined.sha,
   });
   if (forkPoint) refined = { sha: forkPoint, ref: forkPoint };
-  if (baseBranch) {
+  if (explicitBase) {
     const beforeRebases = refined.sha;
     const main = await resolveMainBranchRefs(repoRoot);
     // A child may rebase or fast-forward away from its parent. Use that
@@ -685,7 +703,6 @@ export async function detectDiffBase(
     });
     if (folded) refined = { sha: folded, ref: folded };
   }
-  diffBaseCache.set(key, { value: refined, expiresAt: Date.now() + DIFF_BASE_TTL });
   return refined;
 }
 

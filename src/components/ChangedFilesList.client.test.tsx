@@ -407,6 +407,54 @@ describe('ChangedFilesList coverage inventory fallbacks', () => {
 });
 
 describe('ChangedFilesList polling', () => {
+  it('keeps unchanged coverage, refreshes a same-timestamp replacement and clears a missing report', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const first = { ...coverageSummary('/task', 60), revision: 'first' };
+      const second = { ...coverageSummary('/task', 90), revision: 'second' };
+      let report: typeof first | null = first;
+      const revisions: unknown[] = [];
+      vi.mocked(invoke).mockImplementation(((channel: string, args?: Record<string, unknown>) => {
+        if (channel === IPC.GetCoverageSummary) {
+          revisions.push(args?.knownRevision);
+          return Promise.resolve(
+            report && report.revision === args?.knownRevision ? 'unchanged' : report,
+          );
+        }
+        return Promise.resolve([]);
+      }) as typeof invoke);
+      const container = document.createElement('div');
+      document.body.append(container);
+      const observed: Array<number | null> = [];
+      disposers.push(
+        render(
+          () => (
+            <ChangedFilesList
+              worktreePath="/task"
+              isActive
+              onCoverageComparisonChange={(value) =>
+                observed.push(value?.aggregate.task.pct ?? null)
+              }
+            />
+          ),
+          container,
+        ),
+      );
+      await waitFor(() => observed.at(-1) === 60);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(observed.at(-1)).toBe(60);
+      report = second;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(observed.at(-1)).toBe(90);
+      report = null;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(observed.at(-1)).toBeNull();
+      expect(revisions).toEqual([undefined, 'first', 'first', 'second']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('skips polls while the window is hidden and resumes once it is shown', async () => {
     let emitVisibility: ((visible: unknown) => void) | undefined;
     vi.stubGlobal('electron', {

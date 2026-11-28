@@ -1,4 +1,13 @@
-import { createSignal, createMemo, createEffect, onCleanup, batch, Index, Show } from 'solid-js';
+import {
+  createSignal,
+  createMemo,
+  createEffect,
+  onCleanup,
+  batch,
+  untrack,
+  Index,
+  Show,
+} from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { isWindowVisible } from '../lib/windowVisibility';
 import { IPC } from '../../electron/ipc/channels';
@@ -100,15 +109,17 @@ function sameChangedFiles(left: ChangedFile[] | null, right: ChangedFile[] | nul
   });
 }
 
-function sameCoverageSummary(left: CoverageSummary | null, right: CoverageSummary | null): boolean {
-  return (
-    left === right ||
-    (left !== null &&
-      right !== null &&
-      left.format === right.format &&
-      left.reportPath === right.reportPath &&
-      left.generatedAt === right.generatedAt)
-  );
+async function pollCoverage(
+  repoRoot: string,
+  reportPath: string | undefined,
+  previous: CoverageSummary | null,
+): Promise<CoverageSummary | null> {
+  const result = await invoke<CoverageSummary | null | 'unchanged'>(IPC.GetCoverageSummary, {
+    repoRoot,
+    reportPath,
+    knownRevision: previous?.revision,
+  }).catch(() => null);
+  return result === 'unchanged' ? previous : result;
 }
 
 export function coverageFooterLabel(
@@ -948,16 +959,14 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       return;
     }
     if (!props.isActive) return;
+    const reportPath = props.coverageReportPath;
     let cancelled = false;
     let inFlight = false;
     async function refresh() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const taskResult = await invoke<CoverageSummary | null>(IPC.GetCoverageSummary, {
-          repoRoot,
-          reportPath: props.coverageReportPath,
-        }).catch(() => null);
+        const taskResult = await pollCoverage(repoRoot, reportPath, untrack(coverage));
         let baseResult: CoverageSummary | null = null;
         let baseHeadResult: string | null = null;
         let taskHeadResult: string | null = null;
@@ -977,20 +986,13 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
             : null;
           if (baseWorktree) {
             baseHeadResult = baseWorktree.headCommittedAt;
-            baseResult = await invoke<CoverageSummary | null>(IPC.GetCoverageSummary, {
-              repoRoot: baseWorktree.path,
-              reportPath: props.coverageReportPath,
-            }).catch(() => null);
+            baseResult = await pollCoverage(baseWorktree.path, reportPath, untrack(baseCoverage));
           }
         }
         if (!cancelled) {
           batch(() => {
-            setCoverage((current) =>
-              sameCoverageSummary(current, taskResult) ? current : taskResult,
-            );
-            setBaseCoverage((current) =>
-              sameCoverageSummary(current, baseResult) ? current : baseResult,
-            );
+            setCoverage(taskResult);
+            setBaseCoverage(baseResult);
             setBaseHeadAt(baseHeadResult);
             setTaskHeadAt(taskHeadResult);
             setBaseBranchName(resolvedBaseBranch ?? undefined);

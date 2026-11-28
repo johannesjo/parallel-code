@@ -26,6 +26,11 @@ describe('readCoverageSummary', () => {
     vi.clearAllMocks();
   });
 
+  function reportStat(timestamp: string, size = 100): fs.Stats {
+    const mtime = new Date(timestamp);
+    return { mtime, mtimeMs: mtime.getTime(), ctimeMs: mtime.getTime(), size } as fs.Stats;
+  }
+
   function mockNoNestedCoverageDir() {
     const err = new Error('missing') as NodeJS.ErrnoException;
     err.code = 'ENOENT';
@@ -72,9 +77,7 @@ describe('readCoverageSummary', () => {
         },
       }),
     );
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-22T15:00:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-22T15:00:00.000Z'));
 
     const summary = await readCoverageSummary('/repo');
 
@@ -108,9 +111,7 @@ describe('readCoverageSummary', () => {
         'end_of_record',
       ].join('\n');
     });
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-22T15:05:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-22T15:05:00.000Z'));
 
     const summary = await readCoverageSummary('/repo');
 
@@ -167,9 +168,7 @@ describe('readCoverageSummary', () => {
       err.code = 'ENOENT';
       throw err;
     });
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-23T10:00:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-23T10:00:00.000Z'));
 
     const summary = await readCoverageSummary('/repo');
 
@@ -191,9 +190,7 @@ describe('readCoverageSummary', () => {
         '\n',
       );
     });
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-23T10:05:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-23T10:05:00.000Z'));
 
     const summary = await readCoverageSummary('/home/me/repo/.worktrees/task/w1');
 
@@ -213,9 +210,7 @@ describe('readCoverageSummary', () => {
         '\n',
       );
     });
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-23T10:10:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-23T10:10:00.000Z'));
 
     const summary = await readCoverageSummary('/repo');
 
@@ -239,9 +234,7 @@ describe('readCoverageSummary', () => {
         'end_of_record',
       ].join('\n');
     });
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-23T10:12:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-23T10:12:00.000Z'));
 
     const summary = await readCoverageSummary('/repo');
 
@@ -287,9 +280,7 @@ describe('readCoverageSummary', () => {
       err.code = 'ENOENT';
       throw err;
     });
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-23T10:15:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-23T10:15:00.000Z'));
 
     const summary = await readCoverageSummary('/repo');
 
@@ -309,9 +300,7 @@ describe('readCoverageSummary', () => {
         },
       }),
     );
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-22T15:10:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-22T15:10:00.000Z'));
 
     const summary = await readCoverageSummary('/repo', 'artifacts/custom-coverage.json');
 
@@ -323,18 +312,70 @@ describe('readCoverageSummary', () => {
     mockFileExists();
     const err = new Error('missing') as NodeJS.ErrnoException;
     err.code = 'ENOENT';
-    vi.mocked(fs.promises.readFile).mockRejectedValue(err);
+    vi.mocked(fs.promises.stat).mockRejectedValue(err);
 
     await expect(readCoverageSummary('/repo')).resolves.toBeNull();
+  });
+
+  it('reuses an unchanged report and reads a replacement with the same timestamp', async () => {
+    mockNoNestedCoverageDir();
+    mockFileExists();
+    const read = vi.mocked(fs.promises.readFile);
+    const stat = vi.mocked(fs.promises.stat);
+    const timestamp = '2026-04-23T15:00:00.000Z';
+    stat.mockResolvedValue(reportStat(timestamp, 30));
+    read.mockResolvedValue('SF:src/file.ts\nDA:1,0\nend_of_record');
+    const first = await readCoverageSummary('/cache-test');
+    expect(first?.totals.lines.covered).toBe(0);
+    expect(await readCoverageSummary('/cache-test')).toEqual(first);
+    expect(read).toHaveBeenCalledTimes(1);
+
+    stat.mockResolvedValue(reportStat(timestamp, 40));
+    read.mockResolvedValue('SF:src/file.ts\nDA:1,1\nDA:2,1\nend_of_record');
+    expect((await readCoverageSummary('/cache-test'))?.totals.lines.covered).toBe(2);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('switches from cached LCOV to a newly created preferred report and back on deletion', async () => {
+    mockNoNestedCoverageDir();
+    mockFileExists();
+    const root = '/report-priority';
+    const missing = Object.assign(new Error('missing'), { code: 'ENOENT' });
+    const stat = reportStat('2026-04-23T15:00:00.000Z');
+    let hasPreferred = false;
+    vi.mocked(fs.promises.stat).mockImplementation(async (filePath) => {
+      if (String(filePath).endsWith('.json') && !hasPreferred) throw missing;
+      return stat;
+    });
+    const metric = { total: 2, covered: 1, skipped: 0, pct: 50 };
+    const total = { lines: metric, statements: metric, functions: metric, branches: metric };
+    vi.mocked(fs.promises.readFile).mockImplementation(async (filePath) =>
+      String(filePath).endsWith('.json') ? JSON.stringify({ total }) : 'SF:a.ts\nDA:1,1',
+    );
+
+    expect((await readCoverageSummary(root))?.format).toBe('lcov');
+    hasPreferred = true;
+    expect((await readCoverageSummary(root))?.format).toBe('istanbul-summary');
+    hasPreferred = false;
+    expect((await readCoverageSummary(root))?.format).toBe('lcov');
+    expect(fs.promises.readFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechecks cross-checkout path mappings while the report stays unchanged', async () => {
+    const root = '/home/me/repo/.worktrees/other';
+    mockFileExists();
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-23T15:00:00.000Z'));
+    vi.mocked(fs.promises.readFile).mockResolvedValue('SF:/elsewhere/repo/src/a.ts\nDA:1,1');
+    expect((await readCoverageSummary(root, 'lcov.info'))?.files).toEqual({});
+    mockFileExists(root + '/src/a.ts');
+    expect((await readCoverageSummary(root, 'lcov.info'))?.files['src/a.ts']).toBeDefined();
   });
 
   it('returns null for malformed coverage payloads', async () => {
     mockNoNestedCoverageDir();
     mockFileExists();
     vi.mocked(fs.promises.readFile).mockResolvedValue(JSON.stringify({ nope: true }));
-    vi.mocked(fs.promises.stat).mockResolvedValue({
-      mtime: new Date('2026-04-22T15:00:00.000Z'),
-    } as fs.Stats);
+    vi.mocked(fs.promises.stat).mockResolvedValue(reportStat('2026-04-22T15:01:00.000Z'));
 
     await expect(readCoverageSummary('/repo')).resolves.toBeNull();
   });
