@@ -33,6 +33,16 @@ describe('ask-code model guards', () => {
     expect(isAskCodeModel('codex', '-- rm -rf /')).toBe(false);
   });
 
+  it('defaults new MiniMax selections to Flash while accepting saved API model ids', () => {
+    expect(defaultAskCodeModel('minimax')).toBe('MiniMax-M3.1-Flash');
+    for (const model of ['MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.7', 'custom/model-v1']) {
+      expect(isAskCodeModel('minimax', model)).toBe(true);
+    }
+    expect(isAskCodeModel('minimax', '')).toBe(false);
+    expect(isAskCodeModel('minimax', 'model\n')).toBe(false);
+    expect(isAskCodeModel('minimax', null)).toBe(false);
+  });
+
   it('leaves the Codex model to the CLI until one is picked', () => {
     expect(defaultAskCodeModel('codex')).toBe('');
     expect(defaultAskCodeModel('claude')).toBe('sonnet');

@@ -29,7 +29,7 @@ afterEach(() => {
 /** The Codex rows arrive from the backend, so the first open resolves a promise. */
 async function openMenu(trigger: HTMLButtonElement): Promise<void> {
   trigger.click();
-  await vi.waitFor(() => expect(items()).toHaveLength(4 + CODEX_MODELS.length + 1));
+  await vi.waitFor(() => expect(items()).toHaveLength(4 + CODEX_MODELS.length + 2));
 }
 
 function mount(): HTMLButtonElement {
@@ -61,7 +61,8 @@ describe('TourModelMenu', () => {
       'haiku',
       'GPT-5.6-Luna',
       'GPT-5.5',
-      'MiniMax-M2.7',
+      'MiniMax-M3.1-Flash',
+      'MiniMax-M3',
     ]);
     expect(
       items()
@@ -82,13 +83,13 @@ describe('TourModelMenu', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('switches provider when MiniMax is picked, without choosing a model', async () => {
+  it('sets the provider and model together when M3 is picked', async () => {
     const trigger = mount();
     await openMenu(trigger);
     items()[items().length - 1].click();
 
     expect(setAskCodeProvider).toHaveBeenCalledExactlyOnceWith('minimax');
-    expect(setAskCodeModel).not.toHaveBeenCalled();
+    expect(setAskCodeModel).toHaveBeenCalledExactlyOnceWith('MiniMax-M3');
     expect(items()).toHaveLength(0);
   });
 
