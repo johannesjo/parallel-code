@@ -106,6 +106,8 @@ vi.mock('../store/store', () => {
     isTaskPromptInputShown: (task?: { promptInputRevealed?: boolean }) =>
       store.showPromptInput || task?.promptInputRevealed === true,
     showCanvasContext: vi.fn(),
+    isTaskSectionCollapsed: () => false,
+    setTaskSectionCollapsed: vi.fn(),
   };
 });
 vi.mock('../lib/theme', () => ({ theme: {} }));

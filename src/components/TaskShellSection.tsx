@@ -18,6 +18,8 @@ import {
   isPanelFocusedPrefix,
   getTaskShellLayout,
   setTaskShellAutoLayout,
+  isTaskSectionCollapsed,
+  setTaskSectionCollapsed,
 } from '../store/store';
 import { stageTaskPrompt } from '../store/staged-prompt';
 import { TerminalView } from './TerminalView';
@@ -25,7 +27,7 @@ import { fileLinkMenu, type ChangesLink } from './file-link-menu';
 import { findBareFile } from '../lib/find-bare-file';
 import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { editAsDocument } from '../documents/store';
-import { CloseIcon, SendIcon, TerminalSmallIcon } from './icons';
+import { ChevronDownAltIcon, CloseIcon, SendIcon, TerminalSmallIcon } from './icons';
 import { terminalOutputPrompt } from '../lib/terminal-output-prompt';
 import { AddCommandBookmark } from './AddCommandBookmark';
 import { theme } from '../lib/theme';
@@ -66,9 +68,16 @@ interface TaskShellSectionProps {
 
 /** Smallest height the shell section can show without clipping its open
  *  terminals; its cell must never be sized below this. Focus mode's floor is
- *  `max(200px, 33vh)`, so 200 is the part a pixel floor can promise. */
+ *  `max(200px, 33vh)`, so 200 is the part a pixel floor can promise. A
+ *  user-collapsed section shows the 35px toolbar alone, like the empty state. */
 export function shellSectionMinHeight(task: Task): number {
-  if (task.shellAgentIds.length === 0 || store.taskSplitMode[task.id]) return 35;
+  if (
+    task.shellAgentIds.length === 0 ||
+    store.taskSplitMode[task.id] ||
+    isTaskSectionCollapsed(task.id, 'shell-section')
+  ) {
+    return 35;
+  }
   return store.focusMode ? 200 : 140;
 }
 
@@ -113,6 +122,10 @@ export function TaskShellSection(props: TaskShellSectionProps) {
 
   const hasShell = () => props.task.shellAgentIds.length > 0;
   const shellCount = () => props.task.shellAgentIds.length;
+  // Per-task user collapse (persisted under panelUserSize; see ui.ts). It
+  // hides the terminals row independently of the empty state above, leaving
+  // only the 35px toolbar row.
+  const shellCollapsed = () => isTaskSectionCollapsed(props.task.id, 'shell-section');
   const layout = () => getTaskShellLayout(props.task.id);
   const cols = () => shellColumns(layout(), shellCount());
 
@@ -149,7 +162,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
   // the terminal output gets clipped by the wrapper's overflow:hidden. Fall
   // back to 0 in that case and let the wrapper's allocated size drive xterm.
   const intrinsicHeight = () => {
-    if (!hasShell()) return '35px';
+    if (!hasShell() || shellCollapsed()) return '35px';
     if (store.taskSplitMode[props.task.id]) return '0';
     if (store.focusMode) return 'max(200px, 33vh)';
     return '140px';
@@ -171,8 +184,39 @@ export function TaskShellSection(props: TaskShellSectionProps) {
         background: 'transparent',
       }}
     >
-      {/* The layout menu sits outside the scrolling toolbar so many bookmarks can't push it out of reach. */}
+      {/* The collapse toggle and the layout menu sit outside the scrolling toolbar so many bookmarks can't push them out of reach. */}
       <div style={{ display: 'flex', 'align-items': 'center', 'flex-shrink': '0', gap: '4px' }}>
+        <button
+          type="button"
+          aria-expanded={!shellCollapsed()}
+          aria-controls={`${props.task.id}-shell-body`}
+          title={shellCollapsed() ? 'Show shell terminals' : 'Hide shell terminals'}
+          aria-label={shellCollapsed() ? 'Show shell terminals' : 'Hide shell terminals'}
+          onClick={() => setTaskSectionCollapsed(props.task.id, 'shell-section', !shellCollapsed())}
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            width: '18px',
+            height: '18px',
+            padding: '0',
+            background: 'transparent',
+            border: 'none',
+            'border-radius': 'var(--radius-sm)',
+            color: theme.fgMuted,
+            cursor: 'pointer',
+            'flex-shrink': '0',
+          }}
+        >
+          <ChevronDownAltIcon
+            size={12}
+            style={{
+              'flex-shrink': '0',
+              transform: shellCollapsed() ? 'rotate(-90deg)' : 'none',
+              transition: 'transform var(--motion-fast) var(--ease-out)',
+            }}
+          />
+        </button>
         <div
           ref={(el) => {
             shellToolbarEl = el;
@@ -265,8 +309,9 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           <ShellLayoutMenu taskId={props.task.id} mode={layout()} />
         </Show>
       </div>
-      <Show when={props.task.shellAgentIds.length > 0}>
+      <Show when={hasShell() && !shellCollapsed()}>
         <div
+          id={`${props.task.id}-shell-body`}
           class="shell-terminals-row"
           style={{
             flex: '1',

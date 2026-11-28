@@ -26,6 +26,8 @@ vi.mock('../store/store', () => ({
   isPanelFocused: () => false,
   registerFocusFn: vi.fn(),
   unregisterFocusFn: vi.fn(),
+  isTaskSectionCollapsed: () => false,
+  setTaskSectionCollapsed: vi.fn(),
 }));
 
 vi.mock('../store/plan-handoff', () => ({ taskPlanHandoffBlocker: handoffBlocker }));
@@ -106,9 +108,11 @@ describe('TaskNotesBody plan button', () => {
     const container = renderPlan({ task: { ...task, notes: 'Keep this note.' }, onPlanFullscreen });
 
     expect(container.querySelector('textarea')?.value).toBe('Keep this note.');
-    // Left to right: send arrow, plan button, tour button, its model chevron.
+    // Left to right: heading collapse toggle, send arrow, plan button, tour
+    // button, its model chevron.
     const buttons = Array.from(container.querySelectorAll('button'));
     expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      '',
       '',
       'Review Plan',
       'Take Tour',

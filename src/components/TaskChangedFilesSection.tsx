@@ -5,6 +5,8 @@ import {
   setTaskFocusedPanel,
   isPanelFocused,
   openCanvasDocument,
+  isTaskSectionCollapsed,
+  setTaskSectionCollapsed,
 } from '../store/store';
 import { isTaskWorking } from '../store/taskStatus';
 import { ChangedFilesList } from './ChangedFilesList';
@@ -19,6 +21,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { SUPPORT_PANE_MIN_HEIGHT } from '../lib/layout-sizes';
 import { useFocusRegistration } from '../lib/focus-registration';
+import { ChevronDownAltIcon } from './icons';
 import type { Task } from '../store/types';
 import type { ChangedFile, CommitInfo } from '../ipc/types';
 import type { ChangeTourController } from '../lib/create-change-tour';
@@ -46,6 +49,10 @@ interface TaskChangedFilesSectionProps {
 }
 
 export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
+  // Per-task collapse (persisted under panelUserSize; see ui.ts). The heading
+  // keeps its summary while collapsed; the banners, the list, and the tour
+  // footer go, and the floor drops from the pane to the heading row.
+  const filesCollapsed = () => isTaskSectionCollapsed(props.task.id, 'changed-files');
   const coverageReportPath = () => getProject(props.task.projectId)?.coverageReportPath;
   const diffBaseBranch = () =>
     getTaskDiffBaseBranch(props.task.gitIsolation, props.task.baseBranch);
@@ -102,7 +109,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
         // default. The ResizablePanel wrapper caps unpinned auto-growth, so no
         // cap here: it would stop an absorber or a dragged pin from growing.
         height: '100%',
-        'min-height': `${SUPPORT_PANE_MIN_HEIGHT}px`,
+        'min-height': filesCollapsed() ? undefined : `${SUPPORT_PANE_MIN_HEIGHT}px`,
         'min-width': '0',
         background: theme.taskPanelBg,
         display: 'flex',
@@ -111,6 +118,37 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
       onPointerDown={focusChangedFilesPanel}
     >
       <div class="task-pane-heading" style={{ 'font-size': sf(11) }}>
+        <button
+          type="button"
+          aria-expanded={!filesCollapsed()}
+          aria-controls={`${props.task.id}-changed-files-body`}
+          title={filesCollapsed() ? 'Show changed files' : 'Hide changed files'}
+          aria-label={filesCollapsed() ? 'Show changed files' : 'Hide changed files'}
+          onClick={() => setTaskSectionCollapsed(props.task.id, 'changed-files', !filesCollapsed())}
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            width: '18px',
+            height: '18px',
+            padding: '0',
+            background: 'transparent',
+            border: 'none',
+            'border-radius': 'var(--radius-sm)',
+            color: 'inherit',
+            cursor: 'pointer',
+            'flex-shrink': '0',
+          }}
+        >
+          <ChevronDownAltIcon
+            size={12}
+            style={{
+              'flex-shrink': '0',
+              transform: filesCollapsed() ? 'rotate(-90deg)' : 'none',
+              transition: 'transform var(--motion-fast) var(--ease-out)',
+            }}
+          />
+        </button>
         <span
           title={headingLabel()}
           style={{
@@ -154,10 +192,32 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
           </div>
         </Show>
       </div>
-      <Show when={selectedCommitInfo()}>
-        {(commit) => (
+      <Show when={!filesCollapsed()}>
+        <Show when={selectedCommitInfo()}>
+          {(commit) => (
+            <div
+              title={`${commit().hash.slice(0, 7)} ${commit().message}`}
+              style={{
+                padding: '4px 8px',
+                'font-size': sf(11),
+                'font-family': "'JetBrains Mono', monospace",
+                color: theme.fgMuted,
+                'border-bottom': `1px solid ${theme.border}`,
+                'flex-shrink': '0',
+                'white-space': 'nowrap',
+                overflow: 'hidden',
+                'text-overflow': 'ellipsis',
+              }}
+            >
+              <span style={{ color: theme.accent, 'font-weight': '600' }}>
+                {commit().hash.slice(0, 7)}
+              </span>{' '}
+              {commit().message}
+            </div>
+          )}
+        </Show>
+        <Show when={showUncommittedBanner()}>
           <div
-            title={`${commit().hash.slice(0, 7)} ${commit().message}`}
             style={{
               padding: '4px 8px',
               'font-size': sf(11),
@@ -170,93 +230,74 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
               'text-overflow': 'ellipsis',
             }}
           >
-            <span style={{ color: theme.accent, 'font-weight': '600' }}>
-              {commit().hash.slice(0, 7)}
-            </span>{' '}
-            {commit().message}
+            Uncommitted changes only
           </div>
-        )}
-      </Show>
-      <Show when={showUncommittedBanner()}>
-        <div
-          style={{
-            padding: '4px 8px',
-            'font-size': sf(11),
-            'font-family': "'JetBrains Mono', monospace",
-            color: theme.fgMuted,
-            'border-bottom': `1px solid ${theme.border}`,
-            'flex-shrink': '0',
-            'white-space': 'nowrap',
-            overflow: 'hidden',
-            'text-overflow': 'ellipsis',
-          }}
-        >
-          Uncommitted changes only
-        </div>
-      </Show>
-      {/* A grid row gives the list's `height: 100%` a definite size even when
+        </Show>
+        {/* A grid row gives the list's `height: 100%` a definite size even when
           the section is content-sized (focus-mode side column without shells);
           otherwise the list grows past the section and its footer is clipped. */}
-      <div
-        style={{
-          flex: '1',
-          overflow: 'hidden',
-          display: 'grid',
-          'grid-template-rows': 'minmax(0, 1fr)',
-          'grid-template-columns': 'minmax(0, 1fr)',
-        }}
-      >
-        <ChangedFilesList
-          worktreePath={props.task.worktreePath}
-          projectRoot={getProject(props.task.projectId)?.path}
-          branchName={props.task.branchName}
-          baseBranch={diffBaseBranch()}
-          isActive={props.isActive}
-          panelFocused={isPanelFocused(props.task.id, 'changed-files')}
-          coverageReportPath={coverageReportPath()}
-          selectedCommit={props.selectedCommit}
-          onFileClick={(file) => props.onDiffFileClick(file.path)}
-          onFilesChange={(files) => {
-            setFileCount(files.length);
-            props.onFilesChange?.(files);
+        <div
+          id={`${props.task.id}-changed-files-body`}
+          style={{
+            flex: '1',
+            overflow: 'hidden',
+            display: 'grid',
+            'grid-template-rows': 'minmax(0, 1fr)',
+            'grid-template-columns': 'minmax(0, 1fr)',
           }}
-          onTotalsChange={setTotals}
-          onUncommittedCountChange={setUncommittedCount}
-          hideTotals
-          onOpenInEditorClick={focusChangedFilesPanel}
-          onOpenMarkdownClick={openMarkdownInCanvas}
-          onUnderstandClick={props.onUnderstandClick}
-          understanding={props.understanding}
-          ref={(el) => (changedFilesRef = el)}
-        />
-      </div>
-      <Show when={props.tour}>
-        {(tour) => (
-          <div ref={tourAnchor} style={{ 'flex-shrink': '0' }}>
-            <ChangeTourButton
-              tour={tour()}
-              disabled={props.tourDisabled}
-              onClick={() => props.onTourClick?.()}
-            />
-            <FeatureHint
-              id="change-tour"
-              // A tour already generating or ready means the user found it, and
-              // one of a diff the agent is still writing would soon be stale.
-              when={
-                props.isActive &&
-                !props.tourDisabled &&
-                !isTaskWorking(props.task.id) &&
-                !tour().loading() &&
-                tour().stops().length === 0
-              }
-              anchor={() => tourAnchor}
-              title="Take a tour of these changes"
-            >
-              A short guided walkthrough of this task's diff, stop by stop. It generates in the
-              background, so you can keep working, and sends the diff to {askCodeModelLabel()}.
-            </FeatureHint>
-          </div>
-        )}
+        >
+          <ChangedFilesList
+            worktreePath={props.task.worktreePath}
+            projectRoot={getProject(props.task.projectId)?.path}
+            branchName={props.task.branchName}
+            baseBranch={diffBaseBranch()}
+            isActive={props.isActive}
+            panelFocused={isPanelFocused(props.task.id, 'changed-files')}
+            coverageReportPath={coverageReportPath()}
+            selectedCommit={props.selectedCommit}
+            onFileClick={(file) => props.onDiffFileClick(file.path)}
+            onFilesChange={(files) => {
+              setFileCount(files.length);
+              props.onFilesChange?.(files);
+            }}
+            onTotalsChange={setTotals}
+            onUncommittedCountChange={setUncommittedCount}
+            hideTotals
+            onOpenInEditorClick={focusChangedFilesPanel}
+            onOpenMarkdownClick={openMarkdownInCanvas}
+            onUnderstandClick={props.onUnderstandClick}
+            understanding={props.understanding}
+            ref={(el) => (changedFilesRef = el)}
+          />
+        </div>
+        <Show when={props.tour}>
+          {(tour) => (
+            <div ref={tourAnchor} style={{ 'flex-shrink': '0' }}>
+              <ChangeTourButton
+                tour={tour()}
+                disabled={props.tourDisabled}
+                onClick={() => props.onTourClick?.()}
+              />
+              <FeatureHint
+                id="change-tour"
+                // A tour already generating or ready means the user found it, and
+                // one of a diff the agent is still writing would soon be stale.
+                when={
+                  props.isActive &&
+                  !props.tourDisabled &&
+                  !isTaskWorking(props.task.id) &&
+                  !tour().loading() &&
+                  tour().stops().length === 0
+                }
+                anchor={() => tourAnchor}
+                title="Take a tour of these changes"
+              >
+                A short guided walkthrough of this task's diff, stop by stop. It generates in the
+                background, so you can keep working, and sends the diff to {askCodeModelLabel()}.
+              </FeatureHint>
+            </div>
+          )}
+        </Show>
       </Show>
     </div>
   );

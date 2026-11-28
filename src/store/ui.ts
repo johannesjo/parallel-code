@@ -74,6 +74,35 @@ export function deletePanelUserSize(keys: string[]): void {
   });
 }
 
+// --- Task Panel Section Collapse ---
+//
+// Per-task collapse flags for the task panel's secondary sections ride in
+// panelUserSize beside the drag pins: panelSizeSnapshot serializes the whole
+// map (persistence free), and cleanupPanelEntries scrubs `task:${id}:*` keys
+// when a task closes (cleanup free). The key never collides with a drag pin —
+// ResizablePanel reads pins only as `${persistKey}:${childId}` and no
+// persistKey is `task:${id}:collapsed` — so the stale-pin self-heal never
+// touches it. As before, absence of the entry means the default state
+// (expanded); the entry itself is the user's choice.
+
+export type TaskPanelSection = 'notes' | 'changed-files' | 'shell-section';
+
+/** Reactive read: the section body shows while no collapse entry exists. */
+export function isTaskSectionCollapsed(taskId: string, section: TaskPanelSection): boolean {
+  return store.panelUserSize[`task:${taskId}:collapsed:${section}`] !== undefined;
+}
+
+/** Collapse stores 1; expanding deletes the key, so absence stays "expanded". */
+export function setTaskSectionCollapsed(
+  taskId: string,
+  section: TaskPanelSection,
+  collapsed: boolean,
+): void {
+  const key = `task:${taskId}:collapsed:${section}`;
+  if (collapsed) setPanelUserSize(key, 1);
+  else deletePanelUserSize([key]);
+}
+
 export function getTaskViewportVisibility(taskId: string): TaskViewportVisibility | null {
   return store.taskViewportVisibility[taskId] ?? null;
 }

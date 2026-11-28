@@ -46,6 +46,8 @@ vi.mock('../store/store', () => ({
   getTaskShellLayout: () => store.shellLayoutOverride ?? 'row',
   setTaskShellAutoLayout: vi.fn(),
   setShellLayoutOverride,
+  isTaskSectionCollapsed: () => false,
+  setTaskSectionCollapsed: vi.fn(),
 }));
 vi.mock('../store/staged-prompt', () => ({ stageTaskPrompt: vi.fn() }));
 

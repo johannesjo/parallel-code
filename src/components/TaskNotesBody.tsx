@@ -7,11 +7,13 @@ import {
   sendPrompt,
   isAgentAskingQuestion,
   isPanelFocused,
+  isTaskSectionCollapsed,
+  setTaskSectionCollapsed,
 } from '../store/store';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { useFocusRegistration } from '../lib/focus-registration';
-import { ArrowDownIcon } from './icons';
+import { ArrowDownIcon, ChevronDownAltIcon } from './icons';
 import { SUPPORT_PANE_MIN_HEIGHT } from '../lib/layout-sizes';
 import { UnderstandButton } from './understanding/UnderstandButton';
 import { HoverHint } from './understanding/HoverHint';
@@ -64,6 +66,10 @@ export function notesMinHeight(task: Task): number {
 
 export function TaskNotesBody(props: TaskNotesBodyProps) {
   const [sendingNotes, setSendingNotes] = createSignal(false);
+  // Per-task collapse (persisted under panelUserSize; see ui.ts). While
+  // collapsed only the heading row shows; the floor drops to it as well so
+  // the hosting panel cell cannot keep the pane's full height.
+  const notesCollapsed = () => isTaskSectionCollapsed(props.task.id, 'notes');
 
   async function handleSendNotes() {
     if (sendingNotes()) return;
@@ -105,133 +111,167 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
       style={{
         width: '100%',
         height: '100%',
-        'min-height': `${notesMinHeight(props.task)}px`,
+        'min-height': notesCollapsed() ? undefined : `${notesMinHeight(props.task)}px`,
         display: 'flex',
         'flex-direction': 'column',
       }}
       onPointerDown={() => setTaskFocusedPanel(props.task.id, 'notes')}
     >
       <div class="task-pane-heading" style={{ 'font-size': sf(11) }}>
+        <button
+          type="button"
+          aria-expanded={!notesCollapsed()}
+          aria-controls={`${props.task.id}-notes-body`}
+          title={notesCollapsed() ? 'Show notes' : 'Hide notes'}
+          aria-label={notesCollapsed() ? 'Show notes' : 'Hide notes'}
+          onClick={() => setTaskSectionCollapsed(props.task.id, 'notes', !notesCollapsed())}
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            width: '18px',
+            height: '18px',
+            padding: '0',
+            background: 'transparent',
+            border: 'none',
+            'border-radius': 'var(--radius-sm)',
+            color: 'inherit',
+            cursor: 'pointer',
+            'flex-shrink': '0',
+          }}
+        >
+          <ChevronDownAltIcon
+            size={12}
+            style={{
+              'flex-shrink': '0',
+              transform: notesCollapsed() ? 'rotate(-90deg)' : 'none',
+              transition: 'transform var(--motion-fast) var(--ease-out)',
+            }}
+          />
+        </button>
         Notes
       </div>
-      <div
-        style={{
-          flex: '1',
-          display: 'flex',
-          'flex-direction': 'column',
-          position: 'relative',
-          'min-height': '0',
-        }}
-      >
-        <textarea
-          ref={(el) => (notesRef = el)}
-          value={props.task.notes}
-          onInput={(e) => updateTaskNotes(props.task.id, e.currentTarget.value)}
-          aria-label="Task notes"
-          placeholder="Add a note…"
+      <Show when={!notesCollapsed()}>
+        <div
+          id={`${props.task.id}-notes-body`}
           style={{
-            width: '100%',
             flex: '1',
-            background: theme.taskPanelBg,
-            border: 'none',
-            padding: '8px 12px 32px',
-            color: theme.fg,
-            'font-size': sf(12),
-            'font-family': "'JetBrains Mono', monospace",
-            resize: 'none',
-            outline: 'none',
+            display: 'flex',
+            'flex-direction': 'column',
+            position: 'relative',
+            'min-height': '0',
           }}
-        />
-        <div style={sendButtonStyle}>
-          <button
-            class="send-notes-btn"
-            type="button"
-            disabled={!canSendNotes()}
-            onClick={() => void handleSendNotes()}
-            title="Send notes as a prompt to the agent"
-            aria-label="Send notes as a prompt to the agent"
+        >
+          <textarea
+            ref={(el) => (notesRef = el)}
+            value={props.task.notes}
+            onInput={(e) => updateTaskNotes(props.task.id, e.currentTarget.value)}
+            aria-label="Task notes"
+            placeholder="Add a note…"
             style={{
-              width: '22px',
-              height: '22px',
-              padding: '0',
-              display: 'flex',
-              'align-items': 'center',
-              'justify-content': 'center',
-              background: theme.bgInput,
+              width: '100%',
+              flex: '1',
+              background: theme.taskPanelBg,
+              border: 'none',
+              padding: '8px 12px 32px',
               color: theme.fg,
-              border: `1px solid ${theme.border}`,
-              'border-radius': '50%',
-              cursor: canSendNotes() ? 'pointer' : 'default',
-              opacity: canSendNotes() ? '1' : '0.4',
+              'font-size': sf(12),
+              'font-family': "'JetBrains Mono', monospace",
+              resize: 'none',
+              outline: 'none',
             }}
-          >
-            <ArrowDownIcon size={12} />
-          </button>
-        </div>
-      </div>
-      {/* The same flat bar the Changed Files panel uses for its Change Tour, so
-          these actions sit beside the note instead of covering the text in it. */}
-      <Show when={hasTourFooter(props.task)}>
-        <div class="change-tour-footer notes-tour-footer">
-          <div class="change-tour-row">
-            <Show when={showPlanActions()}>
-              {/* Which file the app settled on is not obvious from the button, and
-                  a worktree can hold several candidates; the hint names it. */}
-              <HoverHint
-                hint={() => (
-                  <>
-                    <strong class="tour-hint-heading">Plan for this task</strong>
-                    <code class="tour-hint-subject" title={planFile()}>
-                      {planFile()}
-                    </code>
-                    <p class="tour-hint-body">
-                      Detected automatically: the most recently changed plan file in this worktree.
-                      Writing a newer one replaces it here.
-                    </p>
-                    <p class="tour-hint-action">
-                      {taskPlanHandoffBlocker(props.task.id)
-                        ? 'Click to open it.'
-                        : 'Click to open it, or to implement it in a fresh session.'}
-                    </p>
-                  </>
-                )}
-              >
-                {(describedBy) => (
-                  <button
-                    type="button"
-                    class="change-tour-action"
-                    aria-haspopup="dialog"
-                    aria-describedby={describedBy()}
-                    onClick={() => props.onPlanFullscreen()}
-                  >
-                    <span class="change-tour-action-label">Review Plan</span>
-                  </button>
-                )}
-              </HoverHint>
-              <UnderstandButton
-                label="Take Tour"
-                tour={props.understanding}
-                kind="plan"
-                subject={planTourSubject(props.task)}
-                onClick={() => props.onPlanTour()}
-                modelMenu
-              />
-            </Show>
-            {/* The agent publishes a tour on request; the button keeps it reachable
-                after the viewer is closed. */}
-            <Show when={props.task.agentTour}>
-              {(agentTour) => (
-                <UnderstandButton
-                  label="Agent Tour"
-                  tour={props.understanding}
-                  kind="agent"
-                  subject={agentTour().payload.subject}
-                  onClick={() => props.onAgentTour?.()}
-                />
-              )}
-            </Show>
+          />
+          <div style={sendButtonStyle}>
+            <button
+              class="send-notes-btn"
+              type="button"
+              disabled={!canSendNotes()}
+              onClick={() => void handleSendNotes()}
+              title="Send notes as a prompt to the agent"
+              aria-label="Send notes as a prompt to the agent"
+              style={{
+                width: '22px',
+                height: '22px',
+                padding: '0',
+                display: 'flex',
+                'align-items': 'center',
+                'justify-content': 'center',
+                background: theme.bgInput,
+                color: theme.fg,
+                border: `1px solid ${theme.border}`,
+                'border-radius': '50%',
+                cursor: canSendNotes() ? 'pointer' : 'default',
+                opacity: canSendNotes() ? '1' : '0.4',
+              }}
+            >
+              <ArrowDownIcon size={12} />
+            </button>
           </div>
         </div>
+        {/* The same flat bar the Changed Files panel uses for its Change Tour, so
+          these actions sit beside the note instead of covering the text in it. */}
+        <Show when={hasTourFooter(props.task)}>
+          <div class="change-tour-footer notes-tour-footer">
+            <div class="change-tour-row">
+              <Show when={showPlanActions()}>
+                {/* Which file the app settled on is not obvious from the button, and
+                  a worktree can hold several candidates; the hint names it. */}
+                <HoverHint
+                  hint={() => (
+                    <>
+                      <strong class="tour-hint-heading">Plan for this task</strong>
+                      <code class="tour-hint-subject" title={planFile()}>
+                        {planFile()}
+                      </code>
+                      <p class="tour-hint-body">
+                        Detected automatically: the most recently changed plan file in this
+                        worktree. Writing a newer one replaces it here.
+                      </p>
+                      <p class="tour-hint-action">
+                        {taskPlanHandoffBlocker(props.task.id)
+                          ? 'Click to open it.'
+                          : 'Click to open it, or to implement it in a fresh session.'}
+                      </p>
+                    </>
+                  )}
+                >
+                  {(describedBy) => (
+                    <button
+                      type="button"
+                      class="change-tour-action"
+                      aria-haspopup="dialog"
+                      aria-describedby={describedBy()}
+                      onClick={() => props.onPlanFullscreen()}
+                    >
+                      <span class="change-tour-action-label">Review Plan</span>
+                    </button>
+                  )}
+                </HoverHint>
+                <UnderstandButton
+                  label="Take Tour"
+                  tour={props.understanding}
+                  kind="plan"
+                  subject={planTourSubject(props.task)}
+                  onClick={() => props.onPlanTour()}
+                  modelMenu
+                />
+              </Show>
+              {/* The agent publishes a tour on request; the button keeps it reachable
+                after the viewer is closed. */}
+              <Show when={props.task.agentTour}>
+                {(agentTour) => (
+                  <UnderstandButton
+                    label="Agent Tour"
+                    tour={props.understanding}
+                    kind="agent"
+                    subject={agentTour().payload.subject}
+                    onClick={() => props.onAgentTour?.()}
+                  />
+                )}
+              </Show>
+            </div>
+          </div>
+        </Show>
       </Show>
     </div>
   );

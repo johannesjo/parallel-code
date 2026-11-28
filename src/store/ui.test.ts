@@ -84,6 +84,8 @@ import {
   getPanelUserSize,
   setPanelUserSize,
   deletePanelUserSize,
+  isTaskSectionCollapsed,
+  setTaskSectionCollapsed,
   setArchivedChildrenShown,
   setProjectTasksCollapsed,
   setProjectsCollapsed,
@@ -295,6 +297,43 @@ describe('panelUserSize', () => {
     setPanelUserSize('keep', 42);
     expect(() => deletePanelUserSize([])).not.toThrow();
     expect(getPanelUserSize('keep')).toBe(42);
+  });
+});
+
+describe('task section collapse', () => {
+  it('stores 1 under task:${id}:collapsed:${section} and reads back collapsed', () => {
+    expect(isTaskSectionCollapsed('task-1', 'notes')).toBe(false);
+
+    setTaskSectionCollapsed('task-1', 'notes', true);
+
+    expect(mockStore.panelUserSize['task:task-1:collapsed:notes']).toBe(1);
+    expect(isTaskSectionCollapsed('task-1', 'notes')).toBe(true);
+  });
+
+  it('deletes the key on expand, so absence means expanded', () => {
+    setTaskSectionCollapsed('task-1', 'shell-section', true);
+    setTaskSectionCollapsed('task-1', 'shell-section', false);
+
+    expect(mockStore.panelUserSize['task:task-1:collapsed:shell-section']).toBeUndefined();
+    expect(isTaskSectionCollapsed('task-1', 'shell-section')).toBe(false);
+  });
+
+  it('keeps sections and tasks independent', () => {
+    setTaskSectionCollapsed('task-1', 'changed-files', true);
+
+    expect(isTaskSectionCollapsed('task-1', 'changed-files')).toBe(true);
+    expect(isTaskSectionCollapsed('task-1', 'notes')).toBe(false);
+    expect(isTaskSectionCollapsed('task-1', 'shell-section')).toBe(false);
+    expect(isTaskSectionCollapsed('task-2', 'changed-files')).toBe(false);
+  });
+
+  it('rides the same panelUserSize map as the drag pins', () => {
+    setPanelUserSize('task:task-1:ai-terminal', 300);
+    setTaskSectionCollapsed('task-1', 'notes', true);
+
+    expect(getPanelUserSize('task:task-1:ai-terminal')).toBe(300);
+    deletePanelUserSize(['task:task-1:ai-terminal']);
+    expect(isTaskSectionCollapsed('task-1', 'notes')).toBe(true);
   });
 });
 

@@ -31,6 +31,8 @@ import {
   openCanvasDocument,
   enabledCards,
   isTaskPromptInputShown,
+  isTaskSectionCollapsed,
+  type TaskPanelSection,
 } from '../store/store';
 import { markFeatureHintSeen } from '../store/onboarding';
 import { useFocusRegistration } from '../lib/focus-registration';
@@ -120,6 +122,10 @@ const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh, 20%)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
 const CARDS_PANEL_AUTO_MAX = '45%';
 const NOTES_SPLIT_DEFAULT = 'min(240px, 25vh, 15%)';
+// A user-collapsed notes/changed-files section shows only its heading row: the
+// 30px `.task-pane-heading` minimum plus its 1px bottom border. The collapsed
+// shell floor (35px toolbar) comes from `shellSectionMinHeight` itself.
+const COLLAPSED_SECTION_MIN_HEIGHT = 31;
 // The split side column's shells take only what the panes above leave, so with
 // shells cards, changed files and notes together start at most ~60% of it
 // (more only on a short column, where their minimum heights take over).
@@ -454,6 +460,20 @@ export function TaskPanel(props: TaskPanelProps) {
   let promptHandle: PromptInputHandle | undefined;
 
   const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
+  // Per-task section collapse (persisted under panelUserSize; see ui.ts). Read
+  // reactively so the PanelChild getters below and the section components stay
+  // in sync across both layout trees.
+  const sectionCollapsed = (section: TaskPanelSection) =>
+    isTaskSectionCollapsed(props.task.id, section);
+  const notesCollapsed = () => sectionCollapsed('notes');
+  const changedFilesCollapsed = () => sectionCollapsed('changed-files');
+  const shellCollapsed = () => sectionCollapsed('shell-section');
+  // The notes-files zone shows nothing but headers when notes is collapsed and
+  // the changed files are not rendered beside it (both collapsed, or no git).
+  const notesFilesZoneCollapsed = () =>
+    notesCollapsed() && (changedFilesCollapsed() || isGitUnavailable());
+  const notesFilesZoneMinHeight = () =>
+    notesFilesZoneCollapsed() ? COLLAPSED_SECTION_MIN_HEIGHT : notesMinHeight(props.task);
   const [changedFiles, setChangedFiles] = createSignal<ChangedFile[]>([]);
   const changedFileCount = () => changedFiles().length;
   const openChangedFile = (path: string, line?: number) => {
@@ -825,9 +845,10 @@ export function TaskPanel(props: TaskPanelProps) {
   // what it needs (id, minSize for drag floor); the tree picks one child per
   // ResizablePanel to be the flex absorber via `absorberIds`.
 
-  // With no terminals open the shell section collapses to its 35 px toolbar.
-  // Mark it noPin so dragging an adjacent handle can't pin it past content
-  // size and leave a visible band of empty space above the AI terminal.
+  // With no terminals open — or while the user collapsed the section — the
+  // shell section is just its 35 px toolbar. Mark it noPin in those states so
+  // dragging an adjacent handle can't pin it past content size and leave a
+  // visible band of empty space above the AI terminal.
   const shellSectionChild: PanelChild = {
     id: 'shell-section',
     resizeLabel: 'Resize shell panel',
@@ -835,7 +856,7 @@ export function TaskPanel(props: TaskPanelProps) {
     get minSize() {
       return shellSectionMinHeight(props.task);
     },
-    noPin: () => props.task.shellAgentIds.length === 0,
+    noPin: () => props.task.shellAgentIds.length === 0 || shellCollapsed(),
     content: () => shellSectionEl,
   };
 
@@ -858,24 +879,32 @@ export function TaskPanel(props: TaskPanelProps) {
   const notesChild: PanelChild = {
     id: 'notes',
     resizeLabel: 'Resize notes panel',
-    // Never shorter than the pane itself, or the cell clips its bottom edge.
+    // Never shorter than the pane itself, or the cell clips its bottom edge;
+    // collapsed it is only the heading row.
     get minSize() {
-      return notesMinHeight(props.task);
+      return notesCollapsed() ? COLLAPSED_SECTION_MIN_HEIGHT : notesMinHeight(props.task);
     },
     maxAutoSize: NOTES_PANEL_AUTO_MAX,
     // In the split column the shells absorb all free height, so content-sized
     // notes would leave the first terminal nearly the whole column. Give
     // notes a modest start instead; ignored where notes absorb (stack mode).
+    // Collapsed notes stay content-sized so no blank band opens around it.
     get defaultSize() {
-      return props.task.shellAgentIds.length > 0 ? NOTES_SPLIT_DEFAULT : undefined;
+      return !notesCollapsed() && props.task.shellAgentIds.length > 0
+        ? NOTES_SPLIT_DEFAULT
+        : undefined;
     },
+    noPin: () => notesCollapsed(),
     content: () => notesBodyEl,
   };
 
   const changedFilesChild: PanelChild = {
     id: 'changed-files',
     resizeLabel: 'Resize changed files panel',
-    minSize: 100,
+    get minSize() {
+      return changedFilesCollapsed() ? COLLAPSED_SECTION_MIN_HEIGHT : 100;
+    },
+    noPin: () => changedFilesCollapsed(),
     maxAutoSize: CHANGED_FILES_PANEL_AUTO_MAX,
     content: () => changedFilesEl,
   };
@@ -901,23 +930,50 @@ export function TaskPanel(props: TaskPanelProps) {
   const notesAndFilesChild: PanelChild = {
     id: 'notes-files',
     get minSize() {
-      return notesMinHeight(props.task);
+      return notesFilesZoneMinHeight();
     },
     absorberWeight: 0.35,
+    // Headers alone are content-sized, like the empty-shell state, so a stale
+    // pin can't hold blank space for the whole zone.
+    noPin: () => notesFilesZoneCollapsed(),
     content: () => (
-      <div style={{ height: '100%', 'min-height': `${notesMinHeight(props.task)}px` }}>
+      <div style={{ height: '100%', 'min-height': `${notesFilesZoneMinHeight()}px` }}>
         {isGitUnavailable() ? (
           notesBodyEl
+        ) : notesCollapsed() && changedFilesCollapsed() ? (
+          // Both headers as a plain column: no nested split to keep alive while
+          // neither side can flex.
+          <>
+            {notesBodyEl}
+            {changedFilesEl}
+          </>
         ) : (
           <ResizablePanel
             direction="horizontal"
             persistKey={`task:${props.task.id}:notes-split`}
-            absorberIds={['notes', 'changed-files']}
+            // Collapsed sections never absorb; the expanded sibling takes the
+            // flex share instead of stretching a one-row header.
+            absorberIds={[
+              ...(notesCollapsed() ? [] : ['notes']),
+              ...(changedFilesCollapsed() ? [] : ['changed-files']),
+            ]}
             children={[notesChild, changedFilesChild]}
           />
         )}
       </div>
     ),
+  };
+
+  // The split-right column's sole absorber: shells when open, else the changed
+  // files (or notes without git) — skipping user-collapsed sections, since a
+  // collapsed cell must never hold the flex role. If every section is
+  // collapsed nothing can absorb: naming a non-child id leaves every cell
+  // content-sized instead of the last-child default stretching the toolbar.
+  const splitRightAbsorberId = (): string => {
+    if (props.task.shellAgentIds.length > 0 && !shellCollapsed()) return 'shell-section';
+    if (!isGitUnavailable() && !changedFilesCollapsed()) return 'changed-files';
+    if (!notesCollapsed()) return 'notes';
+    return 'none';
   };
 
   // The task body left of the canvas. Created once so toggling the canvas
@@ -935,7 +991,11 @@ export function TaskPanel(props: TaskPanelProps) {
             <ResizablePanel
               direction="vertical"
               persistKey={`task:${props.task.id}`}
-              absorberIds={['notes-files', 'ai-terminal']}
+              // While the whole notes-files zone is collapsed it can't absorb
+              // either; the AI terminal takes the free height alone.
+              absorberIds={
+                notesFilesZoneCollapsed() ? ['ai-terminal'] : ['notes-files', 'ai-terminal']
+              }
               children={[
                 notesAndFilesChild,
                 shellSectionChild,
@@ -974,14 +1034,9 @@ export function TaskPanel(props: TaskPanelProps) {
                     persistKey={`task:${props.task.id}:split-right`}
                     // An empty shell is just its toolbar, so without shells the
                     // changed files (or notes, without git) take the free height
-                    // instead of leaving it blank below a capped pane.
-                    absorberIds={[
-                      props.task.shellAgentIds.length > 0
-                        ? 'shell-section'
-                        : isGitUnavailable()
-                          ? 'notes'
-                          : 'changed-files',
-                    ]}
+                    // instead of leaving it blank below a capped pane. A
+                    // user-collapsed section is skipped the same way.
+                    absorberIds={[splitRightAbsorberId()]}
                     // Vertical pins don't shrink, so pinned or dragged panels can
                     // outgrow the column; scroll keeps them and their handles reachable.
                     style={{

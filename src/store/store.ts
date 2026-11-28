@@ -149,6 +149,8 @@ export {
   getPanelUserSize,
   setPanelUserSize,
   deletePanelUserSize,
+  isTaskSectionCollapsed,
+  setTaskSectionCollapsed,
   getTaskViewportVisibility,
   setTaskViewportVisibility,
   toggleSidebar,
@@ -236,6 +238,7 @@ export {
 } from './taskStatus';
 export type { TaskAttentionState, TaskDotStatus } from './taskStatus';
 export type { WorkspaceView } from './ui';
+export type { TaskPanelSection } from './ui';
 export { setShellLayoutOverride, setTaskShellAutoLayout, getTaskShellLayout } from './shell-layout';
 export { isTaskUnread, noteAgentTerminalInput } from './agentHookStatus';
 export type { TaskAgentHookStatus } from './agentHookStatus';
